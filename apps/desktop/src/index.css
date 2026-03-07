@@ -1,0 +1,173 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f9f9f9;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+  --secondary: #e8e8e8;
+  --secondary-foreground: #171717;
+  --muted: #737373;
+  --muted-foreground: #525252;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #dddddd;
+  --input: #d4d4d4;
+  --ring: #171717;
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: #171717;
+  --foreground: #e5e5e5;
+  --card: #1f1f1f;
+  --card-foreground: #e5e5e5;
+  --primary: #e5e5e5;
+  --primary-foreground: #171717;
+  --secondary: #262626;
+  --secondary-foreground: #e5e5e5;
+  --muted: #525252;
+  --muted-foreground: #a3a3a3;
+  --destructive: #f87171;
+  --destructive-foreground: #171717;
+  --border: #404040;
+  --input: #404040;
+  --ring: #e5e5e5;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  /* Prevent accidental text selection — native app feel */
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+  /* Prevent element dragging */
+  -webkit-user-drag: none;
+}
+
+/* Re-enable selection and cursor for text inputs */
+input, textarea, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+/* Pointer cursor for interactive elements */
+button, a, [role="button"], select,
+label[for], [tabindex]:not([tabindex="-1"]) {
+  cursor: pointer;
+}
+
+/* Remove browser default focus ring; use subtle custom one */
+:focus-visible {
+  outline: none;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--primary);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Native-style scrollbar (macOS overlay look) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 100px;
+  /* 2px transparent border + background-clip creates visual padding,
+     making the thumb appear ~4px wide like macOS */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.15s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.32);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Native overlay scrollbar (macOS style - only shows on hover/scroll) */
+.scrollbar-overlay {
+  scrollbar-gutter: stable;
+}
+
+.scrollbar-overlay::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-overlay::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-overlay::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 100px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.scrollbar-overlay::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  opacity: 1;
+}
+
+.scrollbar-overlay:hover::-webkit-scrollbar-thumb {
+  opacity: 1;
+}
+
+.dark .scrollbar-overlay::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark .scrollbar-overlay::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}

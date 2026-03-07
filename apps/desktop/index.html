@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>AriaType</title>
+    <style>
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #ffffff;
+        animation: splash-out 0.25s ease-out 0.85s forwards;
+      }
+      #splash.dark { background: #171717; }
+      #splash.dark #splash-name { color: #e5e5e5; }
+      #splash img {
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+      }
+      #splash-name {
+        font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+        font-size: 22px;
+        font-weight: 600;
+        font-style: italic;
+        color: #0a0a0a;
+        letter-spacing: -0.3px;
+      }
+      @keyframes splash-out {
+        to { opacity: 0; pointer-events: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="splash">
+      <img src="/assets/logo.png" alt="" />
+      <span id="splash-name">AriaType</span>
+    </div>
+    <script>
+      (function () {
+        var t = localStorage.getItem("ariatype-theme");
+        var isDark = t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (isDark) document.getElementById("splash").classList.add("dark");
+      })();
+    </script>
+    <div id="root"></div>
+    <script>
+      setTimeout(function () {
+        var s = document.getElementById("splash");
+        if (s) s.remove();
+      }, 1200);
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "extends": "../../packages/shared/tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@ariatype/shared": ["../../packages/shared/src"]
+    },
+    "noEmit": true
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "./tsconfig.node.json" },
+    { "path": "../../packages/shared" }
+  ]
+}

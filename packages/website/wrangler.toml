@@ -1,0 +1,16 @@
+# Wrangler configuration for Cloudflare Pages
+# Deploy from monorepo root: wrangler pages deploy packages/website/out --project-name aria-type
+# Or from packages/website/: wrangler pages deploy out --project-name aria-type
+name = "aria-type"
+pages_build_output_dir = "out"
+compatibility_date = "2024-09-23"
+
+# Required secret — set in Cloudflare Pages dashboard (Settings → Environment variables):
+#   RELEASES_REPO = ariatype/releases   (the public releases-only repo)
+# The repo name is kept server-side; it is never exposed to the browser.
+
+[env.production]
+name = "aria-type"
+
+[env.preview]
+name = "aria-type-preview"

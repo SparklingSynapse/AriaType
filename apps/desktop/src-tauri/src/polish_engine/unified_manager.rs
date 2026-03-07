@@ -1,0 +1,408 @@
+use crate::polish_engine::traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
+use crate::polish_engine::{qwen, lfm};
+use crate::utils::AppPaths;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tracing::{debug, info};
+
+type EngineCacheKey = (PolishEngineType, String);
+
+/// Unified manager for all polish engines with instance caching
+pub struct UnifiedPolishManager {
+    engines: HashMap<PolishEngineType, Arc<dyn PolishEngine>>,
+    /// Cache for engine instances (engine_type, model_filename) -> instance
+    engine_cache: Arc<Mutex<HashMap<EngineCacheKey, Arc<PolishEngineInstance>>>>,
+}
+
+impl UnifiedPolishManager {
+    pub fn new() -> Self {
+        let mut engines: HashMap<PolishEngineType, Arc<dyn PolishEngine>> = HashMap::new();
+
+        // Register Qwen engine
+        engines.insert(
+            PolishEngineType::Qwen,
+            Arc::new(qwen::QwenPolishEngine::new()),
+        );
+
+        // Register LFM engine
+        engines.insert(
+            PolishEngineType::Lfm,
+            Arc::new(lfm::LfmPolishEngine::new()),
+        );
+
+        info!("UnifiedPolishManager initialized with {} engines", engines.len());
+        Self {
+            engines,
+            engine_cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Auto-detect engine type from model ID
+    pub fn get_engine_by_model_id(model_id: &str) -> Option<PolishEngineType> {
+        if qwen::is_qwen_model(model_id) {
+            Some(PolishEngineType::Qwen)
+        } else if lfm::is_lfm_model(model_id) {
+            Some(PolishEngineType::Lfm)
+        } else {
+            None
+        }
+    }
+
+    /// Get or create cached engine instance
+    fn get_or_create_engine_instance(
+        &self,
+        engine_type: PolishEngineType,
+        model_filename: &str,
+    ) -> Result<Arc<PolishEngineInstance>, String> {
+        let cache_key = (engine_type, model_filename.to_string());
+        let mut cache = self.engine_cache.lock().unwrap();
+
+        if let Some(cached_instance) = cache.get(&cache_key) {
+            info!(
+                engine_type = ?engine_type,
+                model = model_filename,
+                "using cached polish engine instance"
+            );
+            return Ok(Arc::clone(cached_instance));
+        }
+
+        info!(
+            engine_type = ?engine_type,
+            model = model_filename,
+            "creating new polish engine instance"
+        );
+        let instance = Arc::new(PolishEngineInstance::new(engine_type, model_filename)?);
+        cache.insert(cache_key, Arc::clone(&instance));
+        Ok(instance)
+    }
+
+    /// Clear engine cache
+    pub fn clear_cache(&self) {
+        let mut cache = self.engine_cache.lock().unwrap();
+        cache.clear();
+        info!("polish engine cache cleared");
+    }
+
+    /// Clear specific engine cache
+    pub fn clear_engine_cache(&self, engine_type: PolishEngineType, model_filename: Option<&str>) {
+        let mut cache = self.engine_cache.lock().unwrap();
+
+        if let Some(filename) = model_filename {
+            // Clear specific model
+            let cache_key = (engine_type, filename.to_string());
+            if cache.remove(&cache_key).is_some() {
+                info!(
+                    engine_type = ?engine_type,
+                    model = filename,
+                    "polish engine cache cleared"
+                );
+            }
+        } else {
+            // Clear all models for this engine type
+            let keys_to_remove: Vec<_> = cache
+                .keys()
+                .filter(|(et, _)| *et == engine_type)
+                .cloned()
+                .collect();
+
+            for key in keys_to_remove {
+                cache.remove(&key);
+            }
+
+            info!(
+                engine_type = ?engine_type,
+                "all polish engine instances cleared for engine type"
+            );
+        }
+    }
+
+    /// Load model into cache (for preloading)
+    pub fn load_model(&self, engine_type: PolishEngineType, model_id: &str) -> Result<(), String> {
+        let model_filename = self.get_model_filename(engine_type, model_id)
+            .ok_or_else(|| format!("Model not found: {}", model_id))?;
+
+        // Check if model file exists
+        let model_path = AppPaths::models_dir().join(&model_filename);
+        if !model_path.exists() {
+            return Err(format!("Model file not found: {}", model_filename));
+        }
+
+        // Create instance (will be cached)
+        self.get_or_create_engine_instance(engine_type, &model_filename)?;
+        info!(
+            engine_type = ?engine_type,
+            model_id = model_id,
+            "polish model preloaded into cache"
+        );
+        Ok(())
+    }
+
+    /// Unload model from cache
+    pub fn unload_model(&self, engine_type: PolishEngineType, model_id: &str) {
+        if let Some(model_filename) = self.get_model_filename(engine_type, model_id) {
+            self.clear_engine_cache(engine_type, Some(&model_filename));
+            info!(
+                engine_type = ?engine_type,
+                model_id = model_id,
+                "polish model unloaded from cache"
+            );
+        }
+    }
+
+    /// Polish text using specified engine with caching support
+    pub async fn polish(
+        &self,
+        engine_type: PolishEngineType,
+        request: PolishRequest,
+    ) -> Result<PolishResult, String> {
+        let engine = self
+            .engines
+            .get(&engine_type)
+            .ok_or_else(|| format!("Engine not found: {:?}", engine_type))?;
+
+        debug!("Polishing with engine: {:?}", engine_type);
+
+        // If model_name is provided, use cached instance
+        if let Some(ref model_filename) = request.model_name {
+            let _instance = self.get_or_create_engine_instance(engine_type, model_filename)?;
+            // Instance is now cached, proceed with polish
+        }
+
+        engine.polish(request).await
+    }
+
+    /// Check if a model is downloaded for a specific engine
+    pub fn is_model_downloaded(&self, engine_type: PolishEngineType, model_id: &str) -> bool {
+        match engine_type {
+            PolishEngineType::Qwen => {
+                if let Some(model) = qwen::QwenModelDef::from_id(model_id) {
+                    let path = AppPaths::models_dir().join(model.filename);
+                    path.exists()
+                } else {
+                    false
+                }
+            }
+            PolishEngineType::Lfm => {
+                if let Some(model) = lfm::LfmModelDef::from_id(model_id) {
+                    let path = AppPaths::models_dir().join(model.filename);
+                    path.exists()
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Get model filename for a specific engine and model ID
+    pub fn get_model_filename(&self, engine_type: PolishEngineType, model_id: &str) -> Option<String> {
+        match engine_type {
+            PolishEngineType::Qwen => {
+                qwen::QwenModelDef::from_id(model_id).map(|m| m.filename.to_string())
+            }
+            PolishEngineType::Lfm => {
+                lfm::LfmModelDef::from_id(model_id).map(|m| m.filename.to_string())
+            }
+        }
+    }
+
+    /// Get all available engines
+    pub fn available_engines(&self) -> Vec<PolishEngineType> {
+        self.engines.keys().copied().collect()
+    }
+}
+
+impl Default for UnifiedPolishManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Polish engine instance wrapper for caching
+#[derive(Debug)]
+pub(crate) struct PolishEngineInstance {
+    engine_type: PolishEngineType,
+    model_filename: String,
+}
+
+impl PolishEngineInstance {
+    fn new(engine_type: PolishEngineType, model_filename: &str) -> Result<Self, String> {
+        // Verify model file exists
+        let model_path = AppPaths::models_dir().join(model_filename);
+        if !model_path.exists() {
+            return Err(format!("Model file not found: {}", model_filename));
+        }
+
+        Ok(Self {
+            engine_type,
+            model_filename: model_filename.to_string(),
+        })
+    }
+}
+
+/// Model information for UI display
+#[derive(Debug, Clone)]
+pub struct PolishModelInfo {
+    pub id: String,
+    pub display_name: String,
+    pub size_display: String,
+    pub engine_type: PolishEngineType,
+}
+
+/// Get all available polish models across all engines
+pub fn get_all_polish_models() -> Vec<PolishModelInfo> {
+    let mut models = Vec::new();
+
+    // Add Qwen models
+    for model in qwen::get_all_models() {
+        models.push(PolishModelInfo {
+            id: model.id.to_string(),
+            display_name: model.display_name.to_string(),
+            size_display: model.size_display.to_string(),
+            engine_type: PolishEngineType::Qwen,
+        });
+    }
+
+    // Add LFM models
+    for model in lfm::get_all_models() {
+        models.push(PolishModelInfo {
+            id: model.id.to_string(),
+            display_name: model.display_name.to_string(),
+            size_display: model.size_display.to_string(),
+            engine_type: PolishEngineType::Lfm,
+        });
+    }
+
+    models
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unified_polish_manager_new() {
+        let manager = UnifiedPolishManager::new();
+        let engines = manager.available_engines();
+        assert_eq!(engines.len(), 2);
+        assert!(engines.contains(&PolishEngineType::Qwen));
+        assert!(engines.contains(&PolishEngineType::Lfm));
+    }
+
+    #[test]
+    fn test_unified_polish_manager_default() {
+        let manager = UnifiedPolishManager::default();
+        let engines = manager.available_engines();
+        assert_eq!(engines.len(), 2);
+    }
+
+    #[test]
+    fn test_get_engine_by_model_id_qwen() {
+        let engine = UnifiedPolishManager::get_engine_by_model_id("qwen3.5-0.8b");
+        assert_eq!(engine, Some(PolishEngineType::Qwen));
+
+        let engine = UnifiedPolishManager::get_engine_by_model_id("qwen3.5-2b");
+        assert_eq!(engine, Some(PolishEngineType::Qwen));
+
+        let engine = UnifiedPolishManager::get_engine_by_model_id("qwen3-4b");
+        assert_eq!(engine, Some(PolishEngineType::Qwen));
+    }
+
+    #[test]
+    fn test_get_engine_by_model_id_lfm() {
+        let engine = UnifiedPolishManager::get_engine_by_model_id("lfm2.5-1.2b");
+        assert_eq!(engine, Some(PolishEngineType::Lfm));
+
+        let engine = UnifiedPolishManager::get_engine_by_model_id("lfm2-2.6b");
+        assert_eq!(engine, Some(PolishEngineType::Lfm));
+    }
+
+    #[test]
+    fn test_get_engine_by_model_id_unknown() {
+        let engine = UnifiedPolishManager::get_engine_by_model_id("gpt-4");
+        assert_eq!(engine, None);
+
+        let engine = UnifiedPolishManager::get_engine_by_model_id("unknown");
+        assert_eq!(engine, None);
+    }
+
+    #[test]
+    fn test_get_model_filename_qwen() {
+        let manager = UnifiedPolishManager::new();
+        let filename = manager.get_model_filename(PolishEngineType::Qwen, "qwen3.5-0.8b");
+        assert_eq!(filename, Some("Qwen3.5-0.8B-Q5_K_M.gguf".to_string()));
+    }
+
+    #[test]
+    fn test_get_model_filename_lfm() {
+        let manager = UnifiedPolishManager::new();
+        let filename = manager.get_model_filename(PolishEngineType::Lfm, "lfm2.5-1.2b");
+        assert_eq!(filename, Some("LFM2.5-1.2B-Instruct-Q4_K_M.gguf".to_string()));
+    }
+
+    #[test]
+    fn test_get_model_filename_not_found() {
+        let manager = UnifiedPolishManager::new();
+        let filename = manager.get_model_filename(PolishEngineType::Qwen, "nonexistent");
+        assert_eq!(filename, None);
+    }
+
+    #[test]
+    fn test_clear_cache() {
+        let manager = UnifiedPolishManager::new();
+        manager.clear_cache();
+        // Should not panic
+    }
+
+    #[test]
+    fn test_clear_engine_cache() {
+        let manager = UnifiedPolishManager::new();
+        manager.clear_engine_cache(PolishEngineType::Qwen, None);
+        manager.clear_engine_cache(PolishEngineType::Qwen, Some("model.gguf"));
+        // Should not panic
+    }
+
+    #[test]
+    fn test_polish_model_info() {
+        let info = PolishModelInfo {
+            id: "test-id".to_string(),
+            display_name: "Test Model".to_string(),
+            size_display: "~1GB".to_string(),
+            engine_type: PolishEngineType::Qwen,
+        };
+
+        assert_eq!(info.id, "test-id");
+        assert_eq!(info.display_name, "Test Model");
+        assert_eq!(info.size_display, "~1GB");
+        assert_eq!(info.engine_type, PolishEngineType::Qwen);
+    }
+
+    #[test]
+    fn test_get_all_polish_models() {
+        let models = get_all_polish_models();
+        assert!(!models.is_empty());
+        assert!(models.len() >= 5); // At least 3 Qwen + 2 LFM models
+
+        // Check that we have both engine types
+        let has_qwen = models.iter().any(|m| m.engine_type == PolishEngineType::Qwen);
+        let has_lfm = models.iter().any(|m| m.engine_type == PolishEngineType::Lfm);
+        assert!(has_qwen);
+        assert!(has_lfm);
+
+        // Check that all models have valid fields
+        for model in models {
+            assert!(!model.id.is_empty());
+            assert!(!model.display_name.is_empty());
+            assert!(!model.size_display.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_polish_engine_instance_new_invalid_path() {
+        let result = PolishEngineInstance::new(
+            PolishEngineType::Qwen,
+            "nonexistent-model.gguf"
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Model file not found"));
+    }
+}

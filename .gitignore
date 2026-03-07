@@ -1,0 +1,26 @@
+node_modules/
+**/node_modules/
+.DS_Store
+.expo/
+.expo-shared/
+.sisyphus/
+dist/
+web-build/
+coverage/
+.env
+.env.*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+target/
+
+# Next.js
+.next/
+output/
+out/
+
+**/test_model_download/
+
+# Website build
+packages/website/out/
+apps/desktop/tsconfig.tsbuildinfo

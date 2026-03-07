@@ -1,0 +1,227 @@
+name: Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Builds macOS and Windows installers in parallel, publishes them to the
+# public releases repo (ariatype/releases), then deploys the website.
+#
+# Required secrets:
+#   CLOUDFLARE_API_TOKEN      — Cloudflare API token (Pages deploy)
+#   CLOUDFLARE_ACCOUNT_ID     — Cloudflare account ID
+#   RELEASES_REPO_TOKEN       — GitHub PAT with `repo` scope on the public releases repo
+#   HOMEBREW_TAP_TOKEN        — GitHub PAT with `repo` scope on ariatype/homebrew-ariatype
+#   APPLE_CERTIFICATE         — base64-encoded Developer ID Application .p12
+#   APPLE_CERTIFICATE_PASSWORD — password used when exporting the .p12
+#   APPLE_SIGNING_IDENTITY    — e.g. "Developer ID Application: Your Name (TEAMID)"
+#   APPLE_ID                  — Apple ID email
+#   APPLE_PASSWORD            — App-Specific Password from appleid.apple.com
+#   APPLE_TEAM_ID             — 10-character Team ID
+
+jobs:
+  # ── macOS ──────────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (universal targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install
+
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          jq ".version = \"$VERSION\"" apps/desktop/src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json apps/desktop/src-tauri/tauri.conf.json
+
+      - name: Import Apple certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERT_PATH=$RUNNER_TEMP/cert.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o $CERT_PATH
+          security create-keychain -p "" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "" $KEYCHAIN_PATH
+          security import $CERT_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+      - name: Build universal macOS DMG
+        working-directory: apps/desktop
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm tauri:build:mac-universal
+
+      - name: Collect DMG
+        run: |
+          DMG=$(find apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" | head -1)
+          echo "DMG_PATH=$DMG" >> $GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: ${{ env.DMG_PATH }}
+          retention-days: 1
+
+  # ── Windows ────────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install
+
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          jq ".version = \"$VERSION\"" apps/desktop/src-tauri/tauri.conf.json > tauri.conf.tmp
+          mv tauri.conf.tmp apps/desktop/src-tauri/tauri.conf.json
+
+      - name: Build Windows NSIS installer
+        working-directory: apps/desktop
+        run: pnpm tauri:build:win
+
+      - name: Collect installer
+        shell: bash
+        run: |
+          EXE=$(find apps/desktop/src-tauri/target/release/bundle/nsis -name "*.exe" | head -1)
+          echo "EXE_PATH=$EXE" >> $GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: ${{ env.EXE_PATH }}
+          retention-days: 1
+
+  # ── Publish ────────────────────────────────────────────────────────────────
+  publish:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install
+
+      - name: Extract version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/
+
+      # Publish installers to the public releases-only repo.
+      # This repo contains no source code — only release assets.
+      - name: Create release on public releases repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+        run: |
+          gh release create v${{ env.VERSION }} dist/* \
+            --repo ariatype/releases \
+            --title "AriaType v${{ env.VERSION }}" \
+            --notes "$(git log -1 --pretty=%B)"
+
+      # Update Homebrew Cask formula in ariatype/homebrew-ariatype tap.
+      # The tap repo must contain Casks/ariatype.rb with version/sha256 placeholders.
+      - name: Update Homebrew Cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          DMG=$(find dist -name "*.dmg" | head -1)
+          SHA256=$(sha256sum "$DMG" | awk '{print $1}')
+          VERSION=${{ env.VERSION }}
+
+          git clone https://x-access-token:${GH_TOKEN}@github.com/ariatype/homebrew-ariatype.git /tmp/homebrew-ariatype
+          cd /tmp/homebrew-ariatype
+
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" Casks/ariatype.rb
+          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/ariatype.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/ariatype.rb
+          git commit -m "Update AriaType to ${VERSION}"
+          git push
+
+      - name: Copy installers to website public/release
+        run: |
+          mkdir -p packages/website/public/release
+          cp dist/* packages/website/public/release/
+
+      - name: Generate release/latest.json
+        run: |
+          DMG=$(find dist -name "*.dmg" | head -1)
+          DMG_NAME=$(basename "$DMG")
+          NOTES=$(git log -1 --pretty=%B)
+          cat > packages/website/public/release/latest.json <<EOF
+          {
+            "version": "${{ env.VERSION }}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "notes": $(echo "$NOTES" | jq -Rs .),
+            "url": "https://ariatype.com/release/${DMG_NAME}"
+          }
+          EOF
+
+      - name: Build website
+        run: pnpm --filter @ariatype/website build
+
+      - name: Deploy website to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ariatype-website
+          directory: packages/website/out
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

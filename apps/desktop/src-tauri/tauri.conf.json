@@ -1,0 +1,93 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AriaType",
+  "version": "0.1.0-beta.7",
+  "identifier": "com.ariatype.voicetotext",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1422",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "",
+        "width": 960,
+        "height": 720,
+        "minWidth": 600,
+        "minHeight": 400,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "visible": true,
+        "titleBarStyle": "Overlay"
+      },
+      {
+        "label": "toast",
+        "title": "AriaType Toast",
+        "url": "toast.html",
+        "width": 400,
+        "height": 80,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self' customprotocol: asset:",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: data:",
+        "font-src": "'self'",
+        "connect-src": "'self' ipc: http://ipc.localhost asset:",
+        "media-src": "'self'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app"],
+    "icon": [
+      "../assets/icons/icon.png",
+      "../assets/icons/icon.icns",
+      "../assets/icons/icon.ico"
+    ],
+    "resources": [
+      "bin/apple-silicon/ggml-metal.metal",
+      "bin/apple-silicon/sense-voice-main-aarch64-apple-darwin",
+      "assets/start_beep.wav",
+      "assets/stop_beep.wav"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "entitlements": "./entitlements.plist",
+      "hardenedRuntime": true,
+      "infoPlist": "./Info.plist",
+      "signingIdentity": "${APPLE_SIGNING_IDENTITY}",
+      "providerShortName": "${APPLE_TEAM_ID}",
+      "dmg": {
+        "background": "../assets/background.png",
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        }
+      }
+    },
+    "windows": {
+      "allowDowngrades": false,
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

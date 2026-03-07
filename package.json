@@ -1,0 +1,30 @@
+{
+  "name": "ariatype-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "AriaType - Voice to Text Application Monorepo",
+  "scripts": {
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "dev": "npm run tauri:dev",
+    "build": "npm run tauri:build:mac",
+    "tauri:dev": "pnpm --filter @ariatype/desktop tauri:dev",
+    "tauri:build:mac": "pnpm --filter @ariatype/desktop tauri:build:mac",
+    "tauri:build:mac-arm": "pnpm --filter @ariatype/desktop tauri:build:mac-arm",
+    "tauri:build:mac-intel": "pnpm --filter @ariatype/desktop tauri:build:mac-intel",
+    "tauri:build:mac-universal": "pnpm --filter @ariatype/desktop tauri:build:mac-universal",
+    "tauri:build:win": "pnpm --filter @ariatype/desktop tauri:build:win",
+    "release:local": "pnpm tauri:build:mac && pnpm build:website",
+    "release:local:universal": "pnpm tauri:build:mac-universal && pnpm build:website",
+    "dev:website": "pnpm --filter @ariatype/website dev",
+    "build:website": "pnpm --filter @ariatype/website build"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=8"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

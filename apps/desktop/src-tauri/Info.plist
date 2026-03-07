@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>AriaType needs access to your microphone to record audio for voice-to-text transcription.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>AriaType uses speech recognition to convert your voice to text.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>AriaType needs accessibility permissions to insert transcribed text at your cursor position.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>AriaType needs accessibility permissions to insert transcribed text at your cursor position.</string>
+</dict>
+</plist>

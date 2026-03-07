@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# Pre-commit hook: Run tests before commit
+
+set -e
+
+echo "Running pre-commit checks..."
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Track overall status
+FAILED=0
+
+# ============================================
+# Rust Tests (cargo test)
+# ============================================
+echo -e "\n${YELLOW}Running Rust tests...${NC}"
+
+if [ -d "apps/desktop/src-tauri" ]; then
+    cd apps/desktop/src-tauri
+    if cargo test --quiet 2>&1; then
+        echo -e "${GREEN}✓ Rust tests passed${NC}"
+    else
+        echo -e "${RED}✗ Rust tests failed${NC}"
+        FAILED=1
+    fi
+    cd ../..
+else
+    echo -e "${YELLOW}⚠ src-tauri not found, skipping Rust tests${NC}"
+fi
+
+# ============================================
+# TypeScript/JavaScript Tests
+# ============================================
+echo -e "\n${YELLOW}Running TypeScript/JavaScript tests...${NC}"
+
+# Check if there are test scripts in package.json
+if grep -q '"test"' package.json 2>/dev/null; then
+    if pnpm test 2>&1; then
+        echo -e "${GREEN}✓ JS/TS tests passed${NC}"
+    else
+        echo -e "${RED}✗ JS/TS tests failed${NC}"
+        FAILED=1
+    fi
+elif grep -q '"test"' apps/desktop/package.json 2>/dev/null; then
+    cd apps/desktop
+    if pnpm test 2>&1; then
+        echo -e "${GREEN}✓ JS/TS tests passed${NC}"
+    else
+        echo -e "${RED}✗ JS/TS tests failed${NC}"
+        FAILED=1
+    fi
+    cd ../..
+else
+    echo -e "${YELLOW}⚠ No test scripts found in package.json${NC}"
+fi
+
+# ============================================
+# TypeScript Type Check
+# ============================================
+echo -e "\n${YELLOW}Running TypeScript type check...${NC}"
+
+if [ -f "apps/desktop/package.json" ]; then
+    cd apps/desktop
+    if pnpm exec tsc --noEmit 2>&1; then
+        echo -e "${GREEN}✓ TypeScript type check passed${NC}"
+    else
+        echo -e "${RED}✗ TypeScript type check failed${NC}"
+        FAILED=1
+    fi
+    cd ../..
+else
+    echo -e "${YELLOW}⚠ Desktop app not found, skipping TypeScript check${NC}"
+fi
+
+# ============================================
+# Summary
+# ============================================
+echo ""
+if [ $FAILED -eq 0 ]; then
+    echo -e "${GREEN}========================================"
+    echo -e "✓ All pre-commit checks passed!"
+    echo -e "========================================${NC}"
+    exit 0
+else
+    echo -e "${RED}========================================"
+    echo -e "✗ Pre-commit checks failed!"
+    echo -e "========================================${NC}"
+    exit 1
+fi
