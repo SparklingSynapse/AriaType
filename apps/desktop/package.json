@@ -11,14 +11,14 @@
     "tauri": "tauri",
     "copy-installer": "node ../../scripts/copy-installers.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
-    "tauri:build:mac": "tauri build --config src-tauri/tauri.macos.conf.json && pnpm copy-installer",
+    "tauri:build:mac": "node ../../scripts/sign-macos-binaries.mjs && tauri build --config src-tauri/tauri.macos.conf.json && pnpm copy-installer",
     "tauri:build:mac:unsigned": "env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD tauri build --config src-tauri/tauri.macos.unsigned.conf.json && pnpm copy-installer",
     "tauri:build:mac:unsigned:arm": "env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD tauri build --config src-tauri/tauri.macos.unsigned.conf.json --target aarch64-apple-darwin && pnpm copy-installer",
     "tauri:build:mac:unsigned:intel": "env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD tauri build --config src-tauri/tauri.macos.unsigned.conf.json --target x86_64-apple-darwin && pnpm copy-installer",
     "tauri:build:mac:unsigned:universal": "env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD tauri build --config src-tauri/tauri.macos.unsigned.conf.json --target universal-apple-darwin && pnpm copy-installer",
-    "tauri:build:mac-arm": "tauri build --config src-tauri/tauri.macos.conf.json --target aarch64-apple-darwin && pnpm copy-installer",
-    "tauri:build:mac-intel": "tauri build --config src-tauri/tauri.macos.conf.json --target x86_64-apple-darwin && pnpm copy-installer",
-    "tauri:build:mac-universal": "tauri build --config src-tauri/tauri.macos.conf.json --target universal-apple-darwin && pnpm copy-installer",
+    "tauri:build:mac-arm": "node ../../scripts/sign-macos-binaries.mjs && tauri build --config src-tauri/tauri.macos.conf.json --target aarch64-apple-darwin && pnpm copy-installer",
+    "tauri:build:mac-intel": "node ../../scripts/sign-macos-binaries.mjs && tauri build --config src-tauri/tauri.macos.conf.json --target x86_64-apple-darwin && pnpm copy-installer",
+    "tauri:build:mac-universal": "node ../../scripts/sign-macos-binaries.mjs && tauri build --config src-tauri/tauri.macos.conf.json --target universal-apple-darwin && pnpm copy-installer",
     "tauri:build:win": "tauri build --config src-tauri/tauri.windows.conf.json && pnpm copy-installer"
   },
   "dependencies": {
