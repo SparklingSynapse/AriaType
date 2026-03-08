@@ -77,7 +77,7 @@ AriaType 商标包括但不限于：
 在您的 README 或关于页面中，您可以这样说明：
 
 ```markdown
-本项目基于 [AriaType](https://github.com/joe223/aria-type) 开发，
+本项目基于 [AriaType](https://github.com/SparklingSynapse/aria-type) 开发，
 AriaType 是一个开源的语音转文字应用。本项目是独立的 fork，
 不隶属于 AriaType 官方团队。
 ```
@@ -112,7 +112,7 @@ AriaType 是一个开源的语音转文字应用。本项目是独立的 fork，
 如果您需要以本政策未涵盖的方式使用 AriaType 商标，请联系我们：
 
 - 邮箱：[待补充 - 请在此填写联系邮箱]
-- GitHub Issues：https://github.com/joe223/aria-type/issues
+- GitHub Issues：https://github.com/SparklingSynapse/aria-type/issues
 
 我们会尽快审核您的请求。对于非商业、社区驱动的项目，我们通常会批准合理的使用请求。
 

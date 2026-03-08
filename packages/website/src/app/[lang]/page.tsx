@@ -209,7 +209,7 @@ function AIPolishSection() {
                       <div className="text-xs font-medium text-white mb-3 uppercase tracking-wide">
                         {t("home.input")}
                       </div>
-                      <div className="text-sm p-4 rounded-xl bg-background border border-border text-foreground leading-relaxed min-h-[80px] flex items-center">
+                      <div className="text-base p-4 rounded-xl bg-background border border-border text-foreground leading-relaxed min-h-[80px] flex items-center">
                         {template.input}
                       </div>
                     </div>
@@ -217,7 +217,7 @@ function AIPolishSection() {
                       <div className="text-xs font-medium text-white mb-3 uppercase tracking-wide">
                         {t("home.output")}
                       </div>
-                      <div className="text-sm p-4 rounded-xl bg-background border border-border text-foreground font-medium leading-relaxed min-h-[80px] flex items-center">
+                      <div className="text-base p-4 rounded-xl bg-background border border-border text-foreground font-medium leading-relaxed min-h-[80px] flex items-center">
                         {template.output}
                       </div>
                     </div>
@@ -647,7 +647,7 @@ export default function HomePage() {
               {/* Feature highlights - compact version */}
               <div className="space-y-2.5">
                 <motion.div
-                  initial={{ opacity: 0, x: -20 }}
+                  initial={{ opacity: 0, x: 20 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   className="inline-flex items-center gap-2.5"
@@ -664,7 +664,7 @@ export default function HomePage() {
                 </motion.div>
 
                 <motion.div
-                  initial={{ opacity: 0, x: -20 }}
+                  initial={{ opacity: 0, x: 20 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: 0.1 }}
@@ -682,7 +682,7 @@ export default function HomePage() {
                 </motion.div>
 
                 <motion.div
-                  initial={{ opacity: 0, x: -20 }}
+                  initial={{ opacity: 0, x: 20 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: 0.2 }}
@@ -817,7 +817,7 @@ export default function HomePage() {
                 ].map((item, i) => (
                   <motion.div
                     key={i}
-                    initial={{ opacity: 0, x: -20 }}
+                    initial={{ opacity: 0, x: 20 }}
                     whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true }}
                     transition={{ delay: i * 0.1 }}
@@ -1053,8 +1053,8 @@ export default function HomePage() {
             {steps.map((step, index) => (
               <motion.div
                 key={index}
-                initial={{ opacity: 0, x: -20 }}
-                whileInView={{ opacity: 1, x: 0 }}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
                 className="flex items-start gap-6 p-6 rounded-xl bg-card border border-border"
@@ -1086,19 +1086,10 @@ export default function HomePage() {
           <p className="text-muted-foreground mb-8">
             {t("features.ctaSubtitle")}
           </p>
-          <Link
-            href={`/${lang}/download`}
-            onClick={() =>
-              trackEvent(AnalyticsEvents.CTA_CLICK, {
-                location: "features",
-                label: "download",
-              })
-            }
-            className="inline-flex items-center gap-2 px-8 py-4 rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 text-white font-medium hover:from-blue-700 hover:to-violet-700 transition-all"
-          >
-            {t("features.ctaButton")}
-            <ArrowRight className="w-4 h-4" />
-          </Link>
+          <HomeDownloadButton
+            lang={lang}
+            className="bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700"
+          />
         </motion.div>
       </section>
     </div>
