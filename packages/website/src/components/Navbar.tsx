@@ -66,10 +66,10 @@ export default function Navbar() {
           </div>
 
           <Link
-            href="https://github.com/SparklingSynapse/aria-type"
+            href="https://github.com/SparklingSynapse/AriaType"
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => trackEvent(AnalyticsEvents.NAV_CLICK, { label: 'GitHub', href: 'https://github.com/SparklingSynapse/aria-type' })}
+            onClick={() => trackEvent(AnalyticsEvents.NAV_CLICK, { label: 'GitHub', href: 'https://github.com/SparklingSynapse/AriaType' })}
             className="text-foreground/80 hover:text-foreground transition-colors"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">

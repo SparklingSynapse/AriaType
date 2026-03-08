@@ -3,19 +3,19 @@
 
 <br/><br/>
 
-<img src="./assets/logo.png" alt="AriaType Logo" width="128" height="128" />
-
-# AriaType
+<img src="./assets/ariatype.png" alt="AriaType Logo"  height="128" />
 
 ### Your Private, Local Voice Keyboard
 
 **Hold to talk. Release to type. Local-first. Privacy-first.**
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/SparklingSynapse/aria-type/releases)
-[![Version](https://img.shields.io/badge/version-0.1.0--beta.7-orange)](https://github.com/SparklingSynapse/aria-type/releases)
+English | [简体中文](README-cn.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md)
 
-[Download](https://github.com/SparklingSynapse/aria-type/releases) • [Documentation](#quick-start) • [Community](https://github.com/SparklingSynapse/aria-type/discussions) • [Website](https://ariatype.com)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/SparklingSynapse/AriaType/releases)
+[![Version](https://img.shields.io/badge/version-0.1.0--beta.7-orange)](https://github.com/SparklingSynapse/AriaType/releases)
+
+[Download](https://github.com/SparklingSynapse/AriaType/releases) • [Documentation](#quick-start) • [Community](https://github.com/SparklingSynapse/AriaType/discussions) • [Website](https://ariatype.com)
 
 </div>
 
@@ -37,13 +37,13 @@ Powered by **carefully selected and optimized local AI models** for speech recog
 
 **macOS (Apple Silicon)**
 
-1. Download the latest [.dmg file](https://github.com/SparklingSynapse/aria-type/releases)
+1. Download the latest [.dmg file](https://github.com/SparklingSynapse/AriaType/releases)
 2. Open the .dmg and drag AriaType to Applications
 3. Launch AriaType from Applications
 
 **Windows** 🚧 Work in Progress
 
-Windows support is currently under development. [Watch this repo](https://github.com/SparklingSynapse/aria-type) or [join discussions](https://github.com/SparklingSynapse/aria-type/discussions) for updates.
+Windows support is currently under development. [Watch this repo](https://github.com/SparklingSynapse/AriaType) or [join discussions](https://github.com/SparklingSynapse/AriaType/discussions) for updates.
 
 ### First Time Setup
 
@@ -132,8 +132,8 @@ All models run entirely on your device—no internet required after download.
 
 ## 💬 Community & Support
 
-- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/SparklingSynapse/aria-type/issues)
-- **Discussions**: Join the community on [GitHub Discussions](https://github.com/SparklingSynapse/aria-type/discussions)
+- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/SparklingSynapse/AriaType/issues)
+- **Discussions**: Join the community on [GitHub Discussions](https://github.com/SparklingSynapse/AriaType/discussions)
 - **Website**: Visit [ariatype.com](https://ariatype.com) for more information
 
 ---
@@ -146,7 +146,7 @@ We welcome contributions! Whether it's:
 - 📝 Documentation improvements
 - 🔧 Code contributions
 
-Please open an issue or pull request on [GitHub](https://github.com/SparklingSynapse/aria-type).
+Please open an issue or pull request on [GitHub](https://github.com/SparklingSynapse/AriaType).
 
 ---
 
@@ -178,6 +178,6 @@ If AriaType helps you be more productive, please:
 
 **Made with ❤️ for developers, writers, and anyone who thinks faster than they type**
 
-[Download Now](https://github.com/SparklingSynapse/aria-type/releases) • [Get Started](#quick-start) • [Join Community](https://github.com/SparklingSynapse/aria-type/discussions)
+[Download Now](https://github.com/SparklingSynapse/AriaType/releases) • [Get Started](#quick-start) • [Join Community](https://github.com/SparklingSynapse/AriaType/discussions)
 
 </div>

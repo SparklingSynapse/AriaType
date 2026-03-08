@@ -81,7 +81,7 @@ If you create a fork or derivative work based on AriaType source code:
 In your README or About page, you can state:
 
 ```markdown
-This project is based on [AriaType](https://github.com/SparklingSynapse/aria-type),
+This project is based on [AriaType](https://github.com/SparklingSynapse/AriaType),
 an open-source voice-to-text application. This project is an independent fork
 and is not affiliated with the official AriaType team.
 ```
@@ -116,7 +116,7 @@ We protect AriaType trademarks to:
 If you need to use AriaType trademarks in ways not covered by this policy, please contact us:
 
 - Email: [To be added - please fill in contact email]
-- GitHub Issues: https://github.com/SparklingSynapse/aria-type/issues
+- GitHub Issues: https://github.com/SparklingSynapse/AriaType/issues
 
 We'll review your request promptly. For non-commercial, community-driven projects, we typically approve reasonable use requests.
 

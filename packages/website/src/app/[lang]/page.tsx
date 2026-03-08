@@ -894,7 +894,7 @@ export default function HomePage() {
                 desc: t("home.feature5Point3Desc"),
                 highlight: t("home.feature5Point3Tag"),
                 color: "bg-green-500",
-                href: "https://github.com/SparklingSynapse/aria-type",
+                href: "https://github.com/SparklingSynapse/AriaType",
               },
             ].map((item, i) => {
               const content = (
@@ -1014,7 +1014,7 @@ export default function HomePage() {
             className="mt-8 text-center"
           >
             <Link
-              href="https://github.com/SparklingSynapse/aria-type"
+              href="https://github.com/SparklingSynapse/AriaType"
               target="_blank"
               rel="noopener noreferrer"
               onClick={() =>
