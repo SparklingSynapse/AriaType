@@ -14,7 +14,7 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/SparklingSynapse/AriaType/releases)
-[![Version](https://img.shields.io/badge/version-0.1.0--beta.7-orange)](https://github.com/SparklingSynapse/AriaType/releases)
+[![Version](https://img.shields.io/badge/version-0.1.0--beta.8-orange)](https://github.com/SparklingSynapse/AriaType/releases)
 
 [Descargar](https://github.com/SparklingSynapse/AriaType/releases) • [Documentación](#inicio-rápido) • [Comunidad](https://github.com/SparklingSynapse/AriaType/discussions) • [Sitio web](https://ariatype.com)
 

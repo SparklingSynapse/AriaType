@@ -1,6 +1,6 @@
 {
   "name": "@ariatype/desktop",
-  "version": "0.1.0-beta.7",
+  "version": "0.1.0-beta.8",
   "license": "AGPL-3.0-only",
   "description": "AriaType Desktop Application",
   "type": "module",
