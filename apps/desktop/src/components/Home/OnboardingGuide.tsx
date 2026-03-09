@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import logoLight from "../../../assets/ariatype-light.png";
+import logoDark from "../../../assets/ariatype-dark.png";
 import {
   ChevronRight,
   ChevronLeft,
@@ -725,8 +727,11 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
       />
 
       <div className="relative z-10 w-[560px] min-h-[520px] mx-4 bg-background rounded-xl border border-border shadow-2xl overflow-hidden flex flex-col">
-        <div className="flex justify-center gap-2 pt-5 shrink-0">
-          {steps.map((_, index) => (
+        <div className="flex flex-col items-center gap-3 pt-6 shrink-0">
+          <img src={logoLight} alt="AriaType" className="h-7 dark:hidden" />
+          <img src={logoDark} alt="AriaType" className="h-7 hidden dark:block" />
+          <div className="flex justify-center gap-2">
+            {steps.map((_, index) => (
             <button
               key={index}
               onClick={() => setCurrentStep(index)}
@@ -740,6 +745,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
               )}
             />
           ))}
+          </div>
         </div>
 
         <div className="flex-1 px-14 py-6 flex flex-col">

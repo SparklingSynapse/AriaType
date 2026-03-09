@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
-import logo from "../../../assets/logo.png";
+import logoLight from "../../../assets/ariatype-light.png";
+import logoDark from "../../../assets/ariatype-dark.png";
 import { modelCommands, events, systemCommands } from "@/lib/tauri";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
@@ -94,11 +95,9 @@ export function HomeLayout() {
       <div className="flex flex-1 overflow-hidden ">
         <OnboardingGuide isOpen={isOpen} onClose={handleOnboardingClose} />
         <aside className="w-56 border-r border-border bg-card  pt-7">
-          <div className="p-4 border-b border-border flex items-center gap-2.5">
-            <img src={logo} alt="AriaType" className="h-7 w-7 rounded-lg" />
-            <h1 className="text-lg font-bold text-foreground font-serif italic">
-              {t("app.name")}
-            </h1>
+          <div className="pr-16 pl-4 py-4 border-b border-border flex items-center">
+            <img src={logoLight} alt="AriaType" className="w-full dark:hidden" />
+            <img src={logoDark} alt="AriaType" className="w-full hidden dark:block" />
           </div>
           <nav className="p-4 flex flex-col h-[calc(100%-4rem)]">
             <div className="space-y-1 flex-1">
