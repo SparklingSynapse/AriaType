@@ -267,10 +267,13 @@ async fn run_transcription(app: AppHandle, audio_path: String, task_id: u64) {
     }
 
     // Build transcription request
-    let _prompt = build_stt_engine_prompt(&initial_prompt, &domain, &subdomain, &glossary);
-    let request = crate::stt_engine::TranscriptionRequest::new(audio_path.clone())
+    let prompt = build_stt_engine_prompt(&initial_prompt, &domain, &subdomain, &glossary);
+    let mut request = crate::stt_engine::TranscriptionRequest::new(audio_path.clone())
         .with_model(model_name.clone())
         .with_language(language.clone());
+    if let Some(p) = prompt {
+        request = request.with_prompt(p);
+    }
 
     // Execute transcription using engine manager
     let result = state.engine_manager.transcribe(engine_type, request).await;

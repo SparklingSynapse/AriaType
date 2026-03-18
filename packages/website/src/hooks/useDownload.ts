@@ -1,22 +1,25 @@
-import { useRelease, getMacArchitecture } from './useRelease';
+import { useRelease, getMacArchitecture, pickMacDownloadUrl } from './useRelease';
 import { useAnalytics } from '@/lib/analytics';
 import { AnalyticsEvents } from '@/lib/events';
 
 export function useDownload(location: string) {
-  const { release, loading, unavailable, platform } = useRelease();
+  const { release, loading, unavailable, platform, macArch } = useRelease();
   const { trackEvent } = useAnalytics();
 
   const isMac = platform === 'mac';
-  const canDirectDownload = !!(release && isMac);
-  const downloadUrl = canDirectDownload ? release?.url : null;
+  const defaultMacUrl = release ? pickMacDownloadUrl(release, macArch) : '';
+  const canDirectDownload = !!(release && isMac && defaultMacUrl);
+  const downloadUrl = canDirectDownload ? defaultMacUrl : null;
 
-  const trackDownload = () => {
+  const trackDownload = (url?: string) => {
     if (!release) return;
+    const trackedUrl = url || defaultMacUrl || release.url;
     trackEvent(AnalyticsEvents.DOWNLOAD_CLICK, {
       platform,
-      url: release.url,
+      url: trackedUrl,
       version: release.version,
-      arch: getMacArchitecture(release.url) || 'unknown',
+      arch: getMacArchitecture(trackedUrl),
+      detected_arch: macArch,
       location,
     });
   };
@@ -29,6 +32,8 @@ export function useDownload(location: string) {
     isMac,
     canDirectDownload,
     downloadUrl,
+    defaultMacUrl,
+    macArch,
     trackDownload,
   };
 }

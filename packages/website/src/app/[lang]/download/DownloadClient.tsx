@@ -3,15 +3,7 @@
 import { useTranslation } from 'react-i18next';
 import { Download, Check, Loader2, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { getMacArchitecture } from '@/hooks/useRelease';
 import { useDownload } from '@/hooks/useDownload';
-
-interface LatestRelease {
-  version: string;
-  pub_date: string;
-  notes: string;
-  url: string;
-}
 
 function AppleIcon({ className }: { className?: string }) {
   return (
@@ -44,16 +36,23 @@ function MicrosoftIcon({ className }: { className?: string }) {
   );
 }
 
-interface LatestRelease {
-  version: string;
-  pub_date: string;
-  notes: string;
-  url: string;
-}
-
 export default function DownloadClient() {
   const { t } = useTranslation();
-  const { release, loading, unavailable, platform, trackDownload } = useDownload('download_page');
+  const { release, loading, unavailable, platform, defaultMacUrl, trackDownload } = useDownload('download_page');
+  const macUniversalUrl = release?.platforms?.mac?.universal || '';
+  const macArmUrl = release?.platforms?.mac?.aarch64 || '';
+  const macIntelUrl = release?.platforms?.mac?.x86_64 || '';
+  const macOptions = [
+    { label: t('download.universal'), url: macUniversalUrl },
+    { label: t('download.macArm'), url: macArmUrl },
+    { label: t('download.macIntel'), url: macIntelUrl },
+  ].filter((item) => item.url);
+  const windowsExeUrl = release?.platforms?.windows?.exe || '';
+  const windowsMsiUrl = release?.platforms?.windows?.msi || '';
+  const windowsOptions = [
+    { label: 'Windows (.exe)', url: windowsExeUrl },
+    { label: 'Windows (.msi)', url: windowsMsiUrl },
+  ].filter((item) => item.url);
 
   return (
     <div className="min-h-screen py-24 px-6">
@@ -109,24 +108,37 @@ export default function DownloadClient() {
                     <p className="text-sm text-muted-foreground">{t('download.requirementsMac')}</p>
                   </div>
                 </div>
-                <a
-                  href={release.url}
-                  onClick={trackDownload}
-                  className={`flex items-center justify-between space-x-4 p-3 rounded-lg border border-border transition-colors ${
-                    platform === 'mac' ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
-                  }`}
-                >
-                  <span className="text-sm font-medium">
-                    {getMacArchitecture(release.url) === 'universal'
-                      ? t('download.universal')
-                      : getMacArchitecture(release.url) === 'aarch64'
-                        ? t('download.macArm')
-                        : getMacArchitecture(release.url) === 'x86_64'
-                          ? t('download.macIntel')
-                          : t('download.macos')}
-                  </span>
-                  <Download className="w-4 h-4" />
-                </a>
+                <div className="space-y-2">
+                  {macOptions.map((option) => (
+                    <a
+                      key={option.url}
+                      href={option.url}
+                      onClick={() => trackDownload(option.url)}
+                      className={`flex items-center justify-between space-x-4 p-3 rounded-lg border border-border transition-colors ${
+                        option.url === defaultMacUrl
+                          ? 'border-primary bg-primary/5'
+                          : platform === 'mac'
+                            ? 'border-border hover:bg-secondary'
+                            : 'border-border hover:bg-secondary'
+                      }`}
+                    >
+                      <span className="text-sm font-medium">{option.label}</span>
+                      <Download className="w-4 h-4" />
+                    </a>
+                  ))}
+                  {macOptions.length === 0 && (
+                    <a
+                      href={release.url}
+                      onClick={() => trackDownload(release.url)}
+                      className={`flex items-center justify-between space-x-4 p-3 rounded-lg border border-border transition-colors ${
+                        platform === 'mac' ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
+                      }`}
+                    >
+                      <span className="text-sm font-medium">{t('download.macos')}</span>
+                      <Download className="w-4 h-4" />
+                    </a>
+                  )}
+                </div>
               </motion.div>
 
               <motion.div
@@ -144,7 +156,23 @@ export default function DownloadClient() {
                     <p className="text-sm text-muted-foreground">{t('download.requirementsWin')}</p>
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground py-2">{t('download.comingSoon')}</p>
+                {windowsOptions.length > 0 ? (
+                  <div className="space-y-2">
+                    {windowsOptions.map((option) => (
+                      <a
+                        key={option.url}
+                        href={option.url}
+                        onClick={() => trackDownload(option.url)}
+                        className="flex items-center justify-between space-x-4 p-3 rounded-lg border border-border transition-colors hover:bg-secondary"
+                      >
+                        <span className="text-sm font-medium">{option.label}</span>
+                        <Download className="w-4 h-4" />
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground py-2">{t('download.comingSoon')}</p>
+                )}
               </motion.div>
             </div>
 

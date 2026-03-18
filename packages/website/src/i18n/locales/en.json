@@ -62,7 +62,7 @@
   "download.currentVersion": "Latest version",
   "download.macos": "macOS",
   "download.windows": "Windows",
-  "download.macArm": "Apple Silicon (M1 / M2 / M3 / M4)",
+  "download.macArm": "Apple Silicon",
   "download.macIntel": "Intel Mac",
   "download.universal": "Universal (Recommended)",
   "download.releaseNotes": "What's new",

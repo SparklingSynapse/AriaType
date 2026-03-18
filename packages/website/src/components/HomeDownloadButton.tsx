@@ -31,7 +31,7 @@ export function HomeDownloadButton({ lang , className}: HomeDownloadButtonProps)
     return (
       <a
         href={downloadUrl}
-        onClick={trackDownload}
+        onClick={() => trackDownload(downloadUrl)}
         className={`inline-flex items-center gap-2 px-8 py-4 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors ${className}`}
       >
         {t('hero.cta')}

@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./assets/showcase.jpg" alt="AriaType Showcase" width="100%"/>
+<img src="https://github.com/user-attachments/assets/d2e99fe1-8516-41a8-b184-6a385c66d152" alt="AriaType Showcase" width="100%"/>
 
 <br/><br/>
 
