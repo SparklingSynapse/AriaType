@@ -1,12 +1,14 @@
 mod common;
 mod qwen;
 mod lfm;
+mod cloud;
 mod templates;
 mod traits;
 mod unified_manager;
 
 pub use qwen::{QwenModelDef, DEFAULT_POLISH_PROMPT as QWEN_DEFAULT_PROMPT};
 pub use lfm::{LfmModelDef, DEFAULT_POLISH_PROMPT as LFM_DEFAULT_PROMPT};
+pub use cloud::CloudPolishEngine;
 pub use templates::{PolishTemplate, POLISH_TEMPLATES, get_template_by_id, get_all_templates};
 pub use traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
 pub use unified_manager::{UnifiedPolishManager, PolishModelInfo, get_all_polish_models};

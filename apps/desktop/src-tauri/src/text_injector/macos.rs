@@ -56,20 +56,39 @@ unsafe fn run_on_main_sync<T: Send, F: FnOnce() -> T + Send>(f: F) -> T {
             }
         }
     }
-    let mut ctx = Ctx { f: Some(f), result: None };
+    let mut ctx = Ctx {
+        f: Some(f),
+        result: None,
+    };
     let main_queue = &_dispatch_main_q as *const u8 as DispatchQueue;
-    dispatch_sync_f(main_queue, &mut ctx as *mut _ as *mut c_void, trampoline::<T, F>);
+    dispatch_sync_f(
+        main_queue,
+        &mut ctx as *mut _ as *mut c_void,
+        trampoline::<T, F>,
+    );
     ctx.result.expect("run_on_main_sync failed")
 }
 
 // ── NSPasteboard save/restore ─────────────────────────────────────────────────
 
 #[derive(Copy, Clone)]
-enum SavedValueKind { Plist, Data, String }
+enum SavedValueKind {
+    Plist,
+    Data,
+    String,
+}
 
-struct SavedItemType { ty: id, value: id, kind: SavedValueKind }
-struct SavedItem { types: Vec<SavedItemType> }
-struct SavedItems { items: Vec<SavedItem> }
+struct SavedItemType {
+    ty: id,
+    value: id,
+    kind: SavedValueKind,
+}
+struct SavedItem {
+    types: Vec<SavedItemType>,
+}
+struct SavedItems {
+    items: Vec<SavedItem>,
+}
 unsafe impl Send for SavedItems {}
 
 impl Drop for SavedItems {
@@ -77,8 +96,12 @@ impl Drop for SavedItems {
         for item in &mut self.items {
             for t in &mut item.types {
                 unsafe {
-                    if !t.ty.is_null() { let _: () = msg_send![t.ty, release]; }
-                    if !t.value.is_null() { let _: () = msg_send![t.value, release]; }
+                    if !t.ty.is_null() {
+                        let _: () = msg_send![t.ty, release];
+                    }
+                    if !t.value.is_null() {
+                        let _: () = msg_send![t.value, release];
+                    }
                 }
             }
         }
@@ -89,7 +112,9 @@ unsafe fn pb_save() -> Option<SavedItems> {
     let pb: id = msg_send![class!(NSPasteboard), generalPasteboard];
     let items: id = msg_send![pb, pasteboardItems];
     let count: usize = msg_send![items, count];
-    if count == 0 { return None; }
+    if count == 0 {
+        return None;
+    }
     let mut saved_items = Vec::with_capacity(count);
     for index in 0..count {
         let item: id = msg_send![items, objectAtIndex: index];
@@ -102,27 +127,45 @@ unsafe fn pb_save() -> Option<SavedItems> {
             if !plist.is_null() {
                 let _: () = msg_send![ty, retain];
                 let _: () = msg_send![plist, retain];
-                saved_types.push(SavedItemType { ty, value: plist, kind: SavedValueKind::Plist });
+                saved_types.push(SavedItemType {
+                    ty,
+                    value: plist,
+                    kind: SavedValueKind::Plist,
+                });
                 continue;
             }
             let data: id = msg_send![item, dataForType: ty];
             if !data.is_null() {
                 let _: () = msg_send![ty, retain];
                 let _: () = msg_send![data, retain];
-                saved_types.push(SavedItemType { ty, value: data, kind: SavedValueKind::Data });
+                saved_types.push(SavedItemType {
+                    ty,
+                    value: data,
+                    kind: SavedValueKind::Data,
+                });
                 continue;
             }
             let string: id = msg_send![item, stringForType: ty];
-            if string.is_null() { continue; }
+            if string.is_null() {
+                continue;
+            }
             let _: () = msg_send![ty, retain];
             let _: () = msg_send![string, retain];
-            saved_types.push(SavedItemType { ty, value: string, kind: SavedValueKind::String });
+            saved_types.push(SavedItemType {
+                ty,
+                value: string,
+                kind: SavedValueKind::String,
+            });
         }
         if !saved_types.is_empty() {
             saved_items.push(SavedItem { types: saved_types });
         }
     }
-    if saved_items.is_empty() { None } else { Some(SavedItems { items: saved_items }) }
+    if saved_items.is_empty() {
+        None
+    } else {
+        Some(SavedItems { items: saved_items })
+    }
 }
 
 unsafe fn pb_write_text(text: &str) {
@@ -144,9 +187,15 @@ unsafe fn pb_restore(saved: &SavedItems) {
         let item: id = msg_send![item, init];
         for t in &saved_item.types {
             match t.kind {
-                SavedValueKind::Plist => { let _: bool = msg_send![item, setPropertyList: t.value forType: t.ty]; }
-                SavedValueKind::Data  => { let _: bool = msg_send![item, setData: t.value forType: t.ty]; }
-                SavedValueKind::String => { let _: bool = msg_send![item, setString: t.value forType: t.ty]; }
+                SavedValueKind::Plist => {
+                    let _: bool = msg_send![item, setPropertyList: t.value forType: t.ty];
+                }
+                SavedValueKind::Data => {
+                    let _: bool = msg_send![item, setData: t.value forType: t.ty];
+                }
+                SavedValueKind::String => {
+                    let _: bool = msg_send![item, setString: t.value forType: t.ty];
+                }
             }
         }
         let _: () = msg_send![array, addObject: item];
@@ -160,14 +209,26 @@ unsafe fn pb_restore(saved: &SavedItems) {
 /// Layer 0: enigo key_sequence — simulates keyboard input, never touches the clipboard.
 /// Best for short text without special formatting. Fast but can lose characters with long text.
 fn try_enigo_key_sequence(text: &str) -> bool {
-    info!(text_len = text.len(), "inject[L0]: trying enigo key_sequence");
+    info!(
+        text_len = text.len(),
+        "inject[L0]: trying enigo key_sequence"
+    );
     let mut enigo = match Enigo::new(&Settings::default()) {
         Ok(e) => e,
-        Err(e) => { warn!("inject[L0]: failed to create Enigo: {e}"); return false; }
+        Err(e) => {
+            warn!("inject[L0]: failed to create Enigo: {e}");
+            return false;
+        }
     };
     match enigo.text(text) {
-        Ok(_) => { info!("inject[L0]: succeeded"); true }
-        Err(e) => { warn!("inject[L0]: failed: {e}"); false }
+        Ok(_) => {
+            info!("inject[L0]: succeeded");
+            true
+        }
+        Err(e) => {
+            warn!("inject[L0]: failed: {e}");
+            false
+        }
     }
 }
 
@@ -181,17 +242,26 @@ fn try_clipboard_paste(text: &str) -> bool {
 
     let script = "tell application \"System Events\" to keystroke \"v\" using command down";
     let ok = match Command::new("osascript").args(["-e", script]).output() {
-        Ok(out) if out.status.success() => { info!("inject[L2]: osascript succeeded"); true }
+        Ok(out) if out.status.success() => {
+            info!("inject[L2]: osascript succeeded");
+            true
+        }
         Ok(out) => {
             warn!(exit_code = out.status.code(), stderr = %String::from_utf8_lossy(&out.stderr).trim(), "inject[L2]: osascript failed");
             false
         }
-        Err(e) => { warn!(error = %e, "inject[L2]: failed to spawn osascript"); false }
+        Err(e) => {
+            warn!(error = %e, "inject[L2]: failed to spawn osascript");
+            false
+        }
     };
 
     unsafe {
         schedule_on_main(500, move || match saved {
-            Some(items) => { pb_restore(&items); info!("inject[L2]: clipboard restored"); }
+            Some(items) => {
+                pb_restore(&items);
+                info!("inject[L2]: clipboard restored");
+            }
             None => {
                 let pb: id = msg_send![class!(NSPasteboard), generalPasteboard];
                 let _: () = msg_send![pb, clearContents];
@@ -206,9 +276,9 @@ impl super::TextInjector for MacosInjector {
     fn insert(&self, text: &str, _write_clipboard: &dyn Fn()) {
         info!(text_len = text.len(), "inject: starting injection");
 
-        // For long text (>200 chars) or text with newlines, use clipboard paste directly
+        // For long text (>400 chars) or text with newlines, use clipboard paste directly
         // to avoid character loss from fast keyboard simulation
-        if text.len() > 200 || text.contains('\n') {
+        if text.len() > 400 {
             info!("inject: using L2 (clipboard paste) for long/multiline text");
             let ok = try_clipboard_paste(text);
             info!(success = ok, "inject: done via L2");

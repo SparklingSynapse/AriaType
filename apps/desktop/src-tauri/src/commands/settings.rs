@@ -12,6 +12,24 @@ use crate::events::EventName;
 use crate::state::app_state::AppState;
 use crate::utils::AppPaths;
 
+/// Cloud provider configuration for polish
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct CloudProviderConfig {
+    /// Whether cloud polish is enabled
+    pub enabled: bool,
+    /// Provider type: "anthropic", "openai", "custom"
+    pub provider_type: String,
+    /// API key for the provider
+    pub api_key: String,
+    /// Base URL for the API (optional, uses provider default if empty)
+    pub base_url: String,
+    /// Model to use for polish
+    pub model: String,
+    /// Enable thinking mode for supported models (e.g., qwen with Coding Plan)
+    pub enable_thinking: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -45,6 +63,8 @@ pub struct AppSettings {
     /// Glossary terms (comma or newline separated)
     pub stt_engine_user_glossary: String,
     pub analytics_opt_in: bool,
+    /// Cloud provider configuration for polish
+    pub cloud_polish: CloudProviderConfig,
 }
 
 impl Default for AppSettings {
@@ -74,6 +94,7 @@ impl Default for AppSettings {
             stt_engine_work_subdomain: String::new(),
             stt_engine_user_glossary: String::new(),
             analytics_opt_in: false,
+            cloud_polish: CloudProviderConfig::default(),
         }
     }
 }
@@ -266,6 +287,11 @@ pub fn update_settings(
             "analytics_opt_in" => {
                 if let Some(v) = value.as_bool() {
                     settings.analytics_opt_in = v;
+                }
+            }
+            "cloud_polish" => {
+                if let Ok(v) = serde_json::from_value::<CloudProviderConfig>(value) {
+                    settings.cloud_polish = v;
                 }
             }
             _ => return Err(format!("Unknown setting key: {}", key)),

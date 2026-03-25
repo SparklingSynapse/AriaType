@@ -487,6 +487,18 @@ export function ModelSettings() {
     }
   };
 
+  const handleCloudPolishChange = async (key: string, value: string | boolean) => {
+    const currentConfig = settings?.cloud_polish ?? {
+      enabled: false,
+      provider_type: "anthropic",
+      api_key: "",
+      base_url: "",
+      model: "",
+    };
+    const newConfig = { ...currentConfig, [key]: value };
+    await updateSetting("cloud_polish", newConfig);
+  };
+
   if (!settings) return null;
 
   const downloadedModels = models.filter((m) => m.downloaded);
@@ -959,6 +971,92 @@ export function ModelSettings() {
                 </p>
               </div>
             )}
+
+            <div className="border-t pt-4 mt-4">
+              <div className="flex items-center justify-between space-x-4">
+                <div>
+                  <Label htmlFor="cloud-polish">{t("model.polish.cloud.enable")}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t("model.polish.cloud.enableDesc")}
+                  </p>
+                </div>
+                <Switch
+                  id="cloud-polish"
+                  checked={settings.cloud_polish?.enabled ?? false}
+                  onCheckedChange={(checked) => handleCloudPolishChange("enabled", checked)}
+                />
+              </div>
+
+              {settings.cloud_polish?.enabled && (
+                <div className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label>{t("model.polish.cloud.provider")}</Label>
+                    <Select
+                      value={settings.cloud_polish?.provider_type ?? "anthropic"}
+                      onChange={(e) => handleCloudPolishChange("provider_type", e.target.value)}
+                      options={[
+                        { value: "anthropic", label: t("model.polish.cloud.providerAnthropic") },
+                        { value: "openai", label: t("model.polish.cloud.providerOpenAI") },
+                        { value: "custom", label: t("model.polish.cloud.providerCustom") },
+                      ]}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="cloud-api-key">{t("model.polish.cloud.apiKey")}</Label>
+                    <input
+                      id="cloud-api-key"
+                      type="password"
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={settings.cloud_polish?.api_key ?? ""}
+                      onChange={(e) => handleCloudPolishChange("api_key", e.target.value)}
+                      placeholder={t("model.polish.cloud.apiKeyPlaceholder")}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="cloud-base-url">{t("model.polish.cloud.baseUrl")}</Label>
+                    <input
+                      id="cloud-base-url"
+                      type="text"
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={settings.cloud_polish?.base_url ?? ""}
+                      onChange={(e) => handleCloudPolishChange("base_url", e.target.value)}
+                      placeholder={t("model.polish.cloud.baseUrlPlaceholder")}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t("model.polish.cloud.baseUrlDesc")}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="cloud-model">{t("model.polish.cloud.model")}</Label>
+                    <input
+                      id="cloud-model"
+                      type="text"
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      value={settings.cloud_polish?.model ?? ""}
+                      onChange={(e) => handleCloudPolishChange("model", e.target.value)}
+                      placeholder={t("model.polish.cloud.modelPlaceholder")}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between space-x-4">
+                    <div>
+                      <Label htmlFor="cloud-thinking">{t("model.polish.cloud.enableThinking")}</Label>
+                      <p className="text-xs text-muted-foreground">
+                        {t("model.polish.cloud.enableThinkingDesc")}
+                      </p>
+                    </div>
+                    <Switch
+                      id="cloud-thinking"
+                      checked={settings.cloud_polish?.enable_thinking ?? false}
+                      onCheckedChange={(checked) => handleCloudPolishChange("enable_thinking", checked)}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 </CardContent>
         </Card>
       </div>

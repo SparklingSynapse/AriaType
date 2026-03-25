@@ -7,6 +7,7 @@ use async_trait::async_trait;
 pub enum PolishEngineType {
     Qwen,
     Lfm,
+    Cloud,
 }
 
 impl PolishEngineType {
@@ -14,11 +15,12 @@ impl PolishEngineType {
         match self {
             PolishEngineType::Qwen => "qwen",
             PolishEngineType::Lfm => "lfm",
+            PolishEngineType::Cloud => "cloud",
         }
     }
 
     pub fn all() -> Vec<PolishEngineType> {
-        vec![PolishEngineType::Qwen, PolishEngineType::Lfm]
+        vec![PolishEngineType::Qwen, PolishEngineType::Lfm, PolishEngineType::Cloud]
     }
 }
 
@@ -29,6 +31,7 @@ impl std::str::FromStr for PolishEngineType {
         match s.to_lowercase().as_str() {
             "qwen" => Ok(PolishEngineType::Qwen),
             "lfm" => Ok(PolishEngineType::Lfm),
+            "cloud" => Ok(PolishEngineType::Cloud),
             _ => Err(format!("Unknown polish engine type: {}", s)),
         }
     }

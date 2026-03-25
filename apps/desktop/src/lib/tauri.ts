@@ -23,6 +23,15 @@ export interface TranscriptionCompleteEvent {
   task_id: number;
 }
 
+export interface CloudProviderConfig {
+  enabled: boolean;
+  provider_type: string;
+  api_key: string;
+  base_url: string;
+  model: string;
+  enable_thinking: boolean;
+}
+
 export interface AppSettings {
   hotkey: string;
   model: string;
@@ -48,6 +57,7 @@ export interface AppSettings {
   stt_engine_work_subdomain: string;
   stt_engine_user_glossary: string;
   analytics_opt_in: boolean;
+  cloud_polish: CloudProviderConfig;
 }
 
 export interface ModelInfo {

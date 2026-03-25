@@ -1,5 +1,5 @@
 use crate::polish_engine::traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
-use crate::polish_engine::{qwen, lfm};
+use crate::polish_engine::{qwen, lfm, cloud::CloudPolishEngine};
 use crate::utils::AppPaths;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -190,6 +190,10 @@ impl UnifiedPolishManager {
                     false
                 }
             }
+            PolishEngineType::Cloud => {
+                // Cloud engine doesn't have local models
+                false
+            }
         }
     }
 
@@ -202,12 +206,37 @@ impl UnifiedPolishManager {
             PolishEngineType::Lfm => {
                 lfm::LfmModelDef::from_id(model_id).map(|m| m.filename.to_string())
             }
+            PolishEngineType::Cloud => {
+                // Cloud engine uses the model ID as the model name directly
+                Some(model_id.to_string())
+            }
         }
     }
 
     /// Get all available engines
     pub fn available_engines(&self) -> Vec<PolishEngineType> {
         self.engines.keys().copied().collect()
+    }
+
+    /// Polish using cloud provider
+    pub async fn polish_cloud(
+        &self,
+        request: PolishRequest,
+        provider_type: &str,
+        api_key: &str,
+        base_url: &str,
+        model: &str,
+        enable_thinking: bool,
+    ) -> Result<PolishResult, String> {
+        let config = crate::polish_engine::cloud::engine::CloudProviderConfig {
+            provider_type: provider_type.to_string(),
+            api_key: api_key.to_string(),
+            base_url: base_url.to_string(),
+            model: model.to_string(),
+            enable_thinking,
+        };
+        let engine = CloudPolishEngine::new(config);
+        engine.polish(request).await
     }
 }
 
@@ -293,6 +322,11 @@ mod tests {
         let manager = UnifiedPolishManager::default();
         let engines = manager.available_engines();
         assert_eq!(engines.len(), 2);
+    }
+
+    #[test]
+    fn test_cloud_polish_engine_type_available() {
+        assert!(PolishEngineType::all().contains(&PolishEngineType::Cloud));
     }
 
     #[test]

@@ -267,7 +267,7 @@ async fn run_transcription(app: AppHandle, audio_path: String, task_id: u64) {
     }
 
     // Build transcription request
-    let prompt = build_stt_engine_prompt(&initial_prompt, &domain, &subdomain, &glossary);
+    let prompt = build_stt_engine_prompt(&initial_prompt, &language, &domain, &subdomain, &glossary);
     let mut request = crate::stt_engine::TranscriptionRequest::new(audio_path.clone())
         .with_model(model_name.clone())
         .with_language(language.clone());
@@ -310,66 +310,99 @@ async fn run_transcription(app: AppHandle, audio_path: String, task_id: u64) {
         let _polish_start_time = std::time::Instant::now();
 
         let final_text = if polish_enabled {
-            let (polish_system_prompt, polish_language, polish_model_id) = {
+            let (polish_system_prompt, polish_language, polish_model_id, cloud_polish_config) = {
                 let settings = state.settings.lock();
                 let prompt = settings.polish_system_prompt.clone();
                 (
                     if prompt.is_empty() { crate::polish_engine::DEFAULT_POLISH_PROMPT.to_string() } else { prompt },
                     settings.stt_engine_language.clone(),
                     settings.polish_model.clone(),
+                    settings.cloud_polish.clone(),
                 )
             };
 
-            // Auto-detect engine type from model ID
-            match crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&polish_model_id) {
-                Some(engine_type) => {
-                    // Check if model is downloaded using polish engine manager
-                    let model_filename = state.polish_manager.get_model_filename(
-                        engine_type,
-                        &polish_model_id
-                    );
+            // Check if cloud polish is enabled
+            if cloud_polish_config.enabled && !cloud_polish_config.api_key.is_empty() && !cloud_polish_config.model.is_empty() {
+                debug!(task_id, provider = %cloud_polish_config.provider_type, model = %cloud_polish_config.model, "running cloud text polish");
 
-                    if model_filename.is_some() && state.polish_manager.is_model_downloaded(
-                        engine_type,
-                        &polish_model_id
-                    ) {
-                        debug!(task_id, engine = ?engine_type, model_id = %polish_model_id, "running text polish");
+                let request = crate::polish_engine::PolishRequest::new(
+                    text.clone(),
+                    polish_system_prompt,
+                    polish_language,
+                );
 
-                        // Build polish request
-                        let request = crate::polish_engine::PolishRequest::new(
-                            text.clone(),
-                            polish_system_prompt,
-                            polish_language,
-                        ).with_model(model_filename.unwrap());
-
-                        // Execute polish using engine manager
-                        match state.polish_manager.polish(
-                            engine_type,
-                            request
-                        ).await {
-                            Ok(result) if !result.text.is_empty() => {
-                                debug!(task_id, chars = result.text.len(), "polish complete");
-                                metrics.polish_time_ms = result.total_ms;
-                                metrics.total_time_ms += metrics.polish_time_ms;
-                                result.text
-                            }
-                            Ok(_) => {
-                                warn!(task_id, "polish returned empty result, using raw transcription");
-                                text
-                            }
-                            Err(e) => {
-                                warn!(task_id, error = %e, "polish failed, using raw transcription");
-                                text
-                            }
-                        }
-                    } else {
-                        warn!(task_id, "polish model not downloaded, using raw transcription");
+                match state.polish_manager.polish_cloud(
+                    request,
+                    &cloud_polish_config.provider_type,
+                    &cloud_polish_config.api_key,
+                    &cloud_polish_config.base_url,
+                    &cloud_polish_config.model,
+                    cloud_polish_config.enable_thinking,
+                ).await {
+                    Ok(result) if !result.text.is_empty() => {
+                        info!(task_id, polish_ms = result.total_ms, "cloud polish complete");
+                        metrics.polish_time_ms = result.total_ms;
+                        metrics.total_time_ms += metrics.polish_time_ms;
+                        result.text
+                    }
+                    Ok(_) => {
+                        warn!(task_id, provider = %cloud_polish_config.provider_type, "cloud polish returned empty result, using raw transcription");
+                        text
+                    }
+                    Err(e) => {
+                        warn!(task_id, provider = %cloud_polish_config.provider_type, error = %e, "cloud polish failed, using raw transcription");
                         text
                     }
                 }
-                None => {
-                    warn!(task_id, model_id = %polish_model_id, "unknown polish model, cannot determine engine");
-                    text
+            } else {
+                // Use local polish engine
+                match crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&polish_model_id) {
+                    Some(engine_type) => {
+                        let model_filename = state.polish_manager.get_model_filename(
+                            engine_type,
+                            &polish_model_id
+                        );
+
+                        if model_filename.is_some() && state.polish_manager.is_model_downloaded(
+                            engine_type,
+                            &polish_model_id
+                        ) {
+                            debug!(task_id, engine = ?engine_type, model_id = %polish_model_id, "running text polish");
+
+                            let request = crate::polish_engine::PolishRequest::new(
+                                text.clone(),
+                                polish_system_prompt,
+                                polish_language,
+                            ).with_model(model_filename.unwrap());
+
+                            match state.polish_manager.polish(
+                                engine_type,
+                                request
+                            ).await {
+                                Ok(result) if !result.text.is_empty() => {
+                                    debug!(task_id, chars = result.text.len(), "polish complete");
+                                    metrics.polish_time_ms = result.total_ms;
+                                    metrics.total_time_ms += metrics.polish_time_ms;
+                                    result.text
+                                }
+                                Ok(_) => {
+                                    warn!(task_id, "polish returned empty result, using raw transcription");
+                                    text
+                                }
+                                Err(e) => {
+                                    warn!(task_id, error = %e, "polish failed, using raw transcription");
+                                    text
+                                }
+                            }
+                        } else {
+                            warn!(task_id, "polish model not downloaded, using raw transcription");
+                            text
+                        }
+                    }
+                    None => {
+                        warn!(task_id, model_id = %polish_model_id, "unknown polish model, cannot determine engine");
+                        text
+                    }
                 }
             }
         } else {
@@ -555,24 +588,32 @@ pub fn start_audio_level_monitor(app: AppHandle) -> Result<(), String> {
     }
 }
 
-fn build_stt_engine_prompt(initial_prompt: &str, domain: &str, subdomain: &str, glossary: &str) -> Option<String> {
+fn build_stt_engine_prompt(initial_prompt: &str, language: &str, domain: &str, subdomain: &str, glossary: &str) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     
+    // Language-specific base prompt (most important for output language)
+    let lang_code = language.split('-').next().unwrap_or(language);
+    let base_prompt = get_language_base_prompt(lang_code);
+    if !base_prompt.is_empty() {
+        parts.push(base_prompt.to_string());
+    }
+    
+    // User's custom initial_prompt (if provided, takes precedence)
     if !initial_prompt.is_empty() {
         parts.push(initial_prompt.to_string());
     }
     
-    // Generate domain-specific prompt based on domain and subdomain
+    // Domain-specific prompt in target language
     if domain != "general" {
-        let domain_prompt = get_domain_prompt(domain, subdomain);
+        let domain_prompt = get_domain_prompt(lang_code, domain, subdomain);
         if !domain_prompt.is_empty() {
             parts.push(domain_prompt);
         }
     }
     
-    // Glossary is always used if provided, regardless of domain
+    // Glossary in target language format
     if !glossary.is_empty() {
-        let glossary_formatted = format!("Term glossary: {}", glossary);
+        let glossary_formatted = format_glossary(lang_code, glossary);
         parts.push(glossary_formatted);
     }
     
@@ -583,23 +624,73 @@ fn build_stt_engine_prompt(initial_prompt: &str, domain: &str, subdomain: &str, 
     }
 }
 
-fn get_domain_prompt(domain: &str, subdomain: &str) -> String {
+fn get_language_base_prompt(lang: &str) -> &'static str {
+    match lang {
+        "zh" => "以下是普通话的句子，请用简体中文输出。",
+        "en" => "The following is an English sentence.",
+        "ja" => "以下は日本語の文章です。",
+        "ko" => "다음은 한국어 문장입니다.",
+        "fr" => "Voici une phrase en français.",
+        "de" => "Das ist ein deutscher Satz.",
+        "es" => "Esta es una oración en español.",
+        "ru" => "Это предложение на русском языке.",
+        "pt" => "Esta é uma frase em português.",
+        "it" => "Questa è una frase in italiano.",
+        _ => "",
+    }
+}
+
+fn get_domain_prompt(lang: &str, domain: &str, subdomain: &str) -> String {
     if domain == "general" || domain.is_empty() {
         return String::new();
     }
 
-    // Dynamic prompt generation based on domain and subdomain
-    let domain_name = match domain {
-        "it" => "IT",
-        "legal" => "legal",
-        "medical" => "medical",
-        _ => domain,
-    };
+    match lang {
+        "zh" => {
+            if subdomain == "general" || subdomain.is_empty() {
+                format!("请优先识别{}领域的专业术语和技术词汇。", get_domain_name_zh(domain))
+            } else {
+                format!("请优先识别{}领域中{}相关的专业术语。", get_domain_name_zh(domain), subdomain)
+            }
+        }
+        "en" | _ => {
+            if subdomain == "general" || subdomain.is_empty() {
+                format!("Prioritize recognition of {} terminology and technical terms.", get_domain_name_en(domain))
+            } else {
+                format!("Prioritize recognition of {} terminology, focusing on {}.", get_domain_name_en(domain), subdomain)
+            }
+        }
+    }
+}
 
-    if subdomain == "general" || subdomain.is_empty() {
-        format!("Prioritize recognition of {} terminology, technical terms, and industry-specific language.", domain_name)
-    } else {
-        format!("Prioritize recognition of {} terminology, specifically focusing on {} related terms and expressions.", domain_name, subdomain)
+fn get_domain_name_zh(domain: &str) -> String {
+    match domain {
+        "it" => "IT技术".to_string(),
+        "legal" => "法律".to_string(),
+        "medical" => "医学".to_string(),
+        "finance" => "金融".to_string(),
+        "education" => "教育".to_string(),
+        _ => domain.to_string(),
+    }
+}
+
+fn get_domain_name_en(domain: &str) -> String {
+    match domain {
+        "it" => "IT".to_string(),
+        "legal" => "legal".to_string(),
+        "medical" => "medical".to_string(),
+        "finance" => "finance".to_string(),
+        "education" => "education".to_string(),
+        _ => domain.to_string(),
+    }
+}
+
+fn format_glossary(lang: &str, glossary: &str) -> String {
+    match lang {
+        "zh" => format!("专业词汇：{}", glossary),
+        "ja" => format!("専門用語：{}", glossary),
+        "ko" => format!("전문 용어：{}", glossary),
+        "en" | _ => format!("Terminology: {}", glossary),
     }
 }
 
