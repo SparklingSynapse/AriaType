@@ -24,7 +24,7 @@ If applicable, add screenshots to help explain your problem.
 
 ## Environment
 - OS: [e.g. macOS 14.0, Windows 11, Ubuntu 22.04]
-- AriaType Version: [e.g. 0.1.0-beta.8]
+- AriaType Version: [e.g. 0.1.0-beta.9]
 - Architecture: [e.g. Apple Silicon M1, Intel x64, ARM64]
 
 ## Additional Context

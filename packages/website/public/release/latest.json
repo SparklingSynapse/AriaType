@@ -1,12 +1,12 @@
 {
-  "version": "0.1.0-beta.8",
-  "pub_date": "2026-03-25T02:30:45.082Z",
+  "version": "0.1.0-beta.9",
+  "pub_date": "2026-03-25T02:41:30.428Z",
   "notes": "",
-  "url": "https://ariatype.com/release/AriaType_0.1.0-beta.8_aarch64.dmg",
+  "url": "https://ariatype.com/release/AriaType_0.1.0-beta.9_aarch64.dmg",
   "platforms": {
     "mac": {
       "universal": "",
-      "aarch64": "https://ariatype.com/release/AriaType_0.1.0-beta.8_aarch64.dmg",
+      "aarch64": "https://ariatype.com/release/AriaType_0.1.0-beta.9_aarch64.dmg",
       "x86_64": "https://ariatype.com/release/AriaType_0.1.0-beta.8_x64.dmg"
     },
     "windows": {
@@ -16,9 +16,9 @@
   },
   "files": [
     {
-      "file": "AriaType_0.1.0-beta.8_aarch64.dmg",
+      "file": "AriaType_0.1.0-beta.9_aarch64.dmg",
       "channel": "mac-aarch",
-      "url": "https://ariatype.com/release/AriaType_0.1.0-beta.8_aarch64.dmg"
+      "url": "https://ariatype.com/release/AriaType_0.1.0-beta.9_aarch64.dmg"
     },
     {
       "file": "AriaType_0.1.0-beta.8_x64.dmg",
