@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { audioCommands, windowCommands, settingsCommands } from "@/lib/tauri";
+import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
 import type { RecordingStatus } from "@/types";
@@ -18,7 +19,7 @@ export function useRecording() {
         const settings = await settingsCommands.getSettings();
         setHotkey(settings.hotkey);
       } catch (err) {
-        console.error("Failed to load settings:", err);
+        logger.error("failed_to_load_settings", { error: String(err) });
       }
     };
     loadSettings();
@@ -42,6 +43,8 @@ export function useRecording() {
             analytics.track(AnalyticsEvents.RECORDING_STATE_CHANGED, { state: "transcribing" });
           } else if (newStatus === "processing" && prevStatus === "transcribing") {
             analytics.track(AnalyticsEvents.RECORDING_STATE_CHANGED, { state: "processing" });
+          } else if (newStatus === "polishing" && prevStatus !== "polishing") {
+            analytics.track(AnalyticsEvents.RECORDING_STATE_CHANGED, { state: "polishing" });
           } else if (newStatus === "error" && prevStatus !== "error") {
             analytics.track(AnalyticsEvents.RECORDING_ERROR);
           }
@@ -71,7 +74,7 @@ export function useRecording() {
     try {
       await audioCommands.startRecording();
     } catch (err) {
-      console.error("Failed to start recording:", err);
+      logger.error("failed_to_start_recording", { error: String(err) });
       analytics.track(AnalyticsEvents.RECORDING_ERROR, { reason: "start_failed" });
     }
   }, []);
@@ -88,7 +91,7 @@ export function useRecording() {
         await windowCommands.showToast("Recording saved");
       }
     } catch (err) {
-      console.error("Failed to stop recording:", err);
+      logger.error("failed_to_stop_recording", { error: String(err) });
       analytics.track(AnalyticsEvents.RECORDING_ERROR, { reason: "stop_failed" });
     }
   }, []);

@@ -38,7 +38,7 @@ export default function FeaturesPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0 * 0.08 }}
-              className="p-6 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
+              className="p-8 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
             >
               <div className="w-11 h-11 rounded-lg flex items-center justify-center mb-4 bg-blue-500/10">
                 <Lock className="w-5 h-5 text-blue-500" />
@@ -51,7 +51,7 @@ export default function FeaturesPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 1 * 0.08 }}
-              className="p-6 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
+              className="p-8 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
             >
               <div className="w-11 h-11 rounded-lg flex items-center justify-center mb-4 bg-rose-500/10">
                 <Mic className="w-5 h-5 text-rose-500" />
@@ -64,7 +64,7 @@ export default function FeaturesPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 2 * 0.08 }}
-              className="p-6 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
+              className="p-8 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
             >
               <div className="w-11 h-11 rounded-lg flex items-center justify-center mb-4 bg-violet-500/10">
                 <Keyboard className="w-5 h-5 text-violet-500" />
@@ -77,7 +77,7 @@ export default function FeaturesPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 3 * 0.08 }}
-              className="p-6 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
+              className="p-8 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
             >
               <div className="w-11 h-11 rounded-lg flex items-center justify-center mb-4 bg-emerald-500/10">
                 <FileText className="w-5 h-5 text-emerald-500" />
@@ -90,7 +90,7 @@ export default function FeaturesPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 4 * 0.08 }}
-              className="p-6 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
+              className="p-8 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
             >
               <div className="w-11 h-11 rounded-lg flex items-center justify-center mb-4 bg-amber-500/10">
                 <Sparkles className="w-5 h-5 text-amber-500" />
@@ -103,7 +103,7 @@ export default function FeaturesPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 5 * 0.08 }}
-              className="p-6 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
+              className="p-8 rounded-xl bg-card border border-border hover:border-border/80 hover:shadow-md transition-all duration-200"
             >
               <div className="w-11 h-11 rounded-lg flex items-center justify-center mb-4 bg-cyan-500/10">
                 <Globe className="w-5 h-5 text-cyan-500" />
@@ -136,7 +136,7 @@ export default function FeaturesPage() {
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
-                className="flex items-start gap-6 p-6 rounded-xl bg-card border border-border"
+                className="flex items-start gap-6 p-8 rounded-xl bg-card border border-border"
               >
                 <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm shrink-0">
                   {index + 1}

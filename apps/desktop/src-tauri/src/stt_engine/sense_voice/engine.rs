@@ -11,7 +11,7 @@ pub struct SenseVoiceEngine {
 impl SenseVoiceEngine {
     pub fn new(models_dir: &std::path::Path, version: &str) -> Result<Self, String> {
         let model_path = models_dir.join(format!("{}.gguf", version));
-        
+
         if !model_path.exists() {
             return Err(format!(
                 "SenseVoice model '{}' not found at {:?}",
@@ -20,7 +20,7 @@ impl SenseVoiceEngine {
         }
 
         let transcriber = SenseVoiceTranscriber::new(&model_path)?;
-        
+
         Ok(Self {
             transcriber: Arc::new(transcriber),
         })
@@ -32,7 +32,10 @@ impl SttEngine for SenseVoiceEngine {
         EngineType::SenseVoice
     }
 
-    async fn transcribe(&self, request: TranscriptionRequest) -> Result<TranscriptionResult, String> {
+    async fn transcribe(
+        &self,
+        request: TranscriptionRequest,
+    ) -> Result<TranscriptionResult, String> {
         let engine_type = self.engine_type();
         let start = std::time::Instant::now();
 

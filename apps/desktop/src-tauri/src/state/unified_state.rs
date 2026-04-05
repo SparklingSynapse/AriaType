@@ -4,12 +4,51 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc, Arc,
 };
+use tauri::async_runtime::JoinHandle;
+use tokio::sync::mpsc as async_mpsc;
 
 #[derive(Debug, Clone)]
 pub struct TranscriptionJob {
     pub audio_path: String,
     pub timestamp: std::time::SystemTime,
     pub task_id: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SessionState {
+    pub task_id: u64,
+    pub accumulated_text: String,
+    pub chunk_count: usize,
+}
+
+/// Audio data storage for recording session
+pub enum AudioStorage {
+    /// Accumulating in memory for STT (both local and cloud)
+    Local {
+        samples: Arc<Mutex<Vec<i16>>>,
+        sample_rate: Arc<Mutex<u32>>,
+        channels: Arc<Mutex<u16>>,
+    },
+    /// Streaming STT (cloud) where audio is sent continuously
+    Streaming,
+}
+
+impl AudioStorage {
+    pub fn is_cloud(&self) -> bool {
+        matches!(self, AudioStorage::Streaming)
+    }
+}
+
+/// Streaming STT state for cloud providers (kept for backward compatibility)
+pub struct StreamingSttState {
+    /// Channel to send PCM data to the streaming client
+    pub audio_tx: async_mpsc::Sender<Vec<i16>>,
+    /// Accumulated transcription text
+    pub accumulated_text: String,
+    /// Task ID for this session
+    pub task_id: u64,
+    /// Handle to the spawned streaming task - must be awaited to ensure proper shutdown
+    pub streaming_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, Default)]
@@ -36,21 +75,21 @@ impl RecordingState {
     }
 
     pub fn can_transition_to(&self, next: RecordingState) -> bool {
-        match (self, next) {
-            (RecordingState::Idle, RecordingState::Starting) => true,
-            (RecordingState::Starting, RecordingState::Recording) => true,
-            (RecordingState::Starting, RecordingState::Error) => true,
-            (RecordingState::Starting, RecordingState::Idle) => true,
-            (RecordingState::Recording, RecordingState::Stopping) => true,
-            (RecordingState::Recording, RecordingState::Error) => true,
-            (RecordingState::Stopping, RecordingState::Transcribing) => true,
-            (RecordingState::Stopping, RecordingState::Idle) => true,
-            (RecordingState::Stopping, RecordingState::Error) => true,
-            (RecordingState::Transcribing, RecordingState::Idle) => true,
-            (RecordingState::Transcribing, RecordingState::Error) => true,
-            (RecordingState::Error, RecordingState::Idle) => true,
-            _ => false,
-        }
+        matches!(
+            (self, next),
+            (RecordingState::Idle, RecordingState::Starting)
+                | (RecordingState::Starting, RecordingState::Recording)
+                | (RecordingState::Starting, RecordingState::Error)
+                | (RecordingState::Starting, RecordingState::Idle)
+                | (RecordingState::Recording, RecordingState::Stopping)
+                | (RecordingState::Recording, RecordingState::Error)
+                | (RecordingState::Stopping, RecordingState::Transcribing)
+                | (RecordingState::Stopping, RecordingState::Idle)
+                | (RecordingState::Stopping, RecordingState::Error)
+                | (RecordingState::Transcribing, RecordingState::Idle)
+                | (RecordingState::Transcribing, RecordingState::Error)
+                | (RecordingState::Error, RecordingState::Idle)
+        )
     }
 }
 
@@ -83,17 +122,28 @@ impl UnifiedRecordingState {
 
     pub fn transition_to(&self, new_state: RecordingState) -> Result<(), String> {
         let mut current = self.current.lock();
+        let old_state = *current;
 
         if current.can_transition_to(new_state) {
             *current = new_state;
             if new_state != RecordingState::Error {
                 *self.error.lock() = None;
             }
+            tracing::info!(
+                from = %old_state.as_str(),
+                to = %new_state.as_str(),
+                "state_transition"
+            );
             Ok(())
         } else {
+            tracing::warn!(
+                from = %old_state.as_str(),
+                to = %new_state.as_str(),
+                "state_transition_rejected"
+            );
             Err(format!(
                 "Invalid state transition from {:?} to {:?}",
-                *current, new_state
+                old_state, new_state
             ))
         }
     }
@@ -111,10 +161,16 @@ impl UnifiedRecordingState {
     }
 
     pub fn force_transition(&self, new_state: RecordingState) {
+        let old_state = *self.current.lock();
         *self.current.lock() = new_state;
         if new_state != RecordingState::Error {
             *self.error.lock() = None;
         }
+        tracing::warn!(
+            from = %old_state.as_str(),
+            to = %new_state.as_str(),
+            "state_transition_forced"
+        );
     }
 }
 
@@ -143,7 +199,7 @@ pub struct AppState {
     pub output_path: Mutex<Option<String>>,
     /// When true, the global hotkey should not trigger recording (e.g. user is setting a new hotkey)
     pub hotkey_capture_mode: AtomicBool,
-    /// FIFO queue for transcription jobs
+    /// FIFO queue for transcription jobs (local STT only)
     pub transcription_queue: Mutex<VecDeque<TranscriptionJob>>,
     /// Number of jobs currently being processed
     pub processing_count: std::sync::atomic::AtomicUsize,
@@ -163,6 +219,14 @@ pub struct AppState {
     /// Cancellation flags for active polish model downloads, keyed by model ID
     pub polish_download_cancellations: Mutex<std::collections::HashMap<String, Arc<AtomicBool>>>,
     pub idle_timer_running: AtomicBool,
+    /// Current recording session state for accumulating transcription text
+    pub session_state: Mutex<Option<SessionState>>,
+    /// Streaming STT state for cloud providers (None when using local STT)
+    pub streaming_stt: Mutex<Option<StreamingSttState>>,
+    /// Audio storage for current recording (cloud streaming or local accumulation)
+    pub audio_storage: Mutex<Option<AudioStorage>>,
+    /// Transcription history store (SQLite)
+    pub history_store: Mutex<crate::history::HistoryStore>,
 }
 
 impl AppState {
@@ -203,6 +267,12 @@ impl AppState {
             download_cancellations: Mutex::new(std::collections::HashMap::new()),
             polish_download_cancellations: Mutex::new(std::collections::HashMap::new()),
             idle_timer_running: AtomicBool::new(false),
+            session_state: Mutex::new(None),
+            streaming_stt: Mutex::new(None),
+            audio_storage: Mutex::new(None),
+            history_store: Mutex::new(
+                crate::history::HistoryStore::new().expect("failed to initialize history store"),
+            ),
         }
     }
 
@@ -220,6 +290,48 @@ impl AppState {
 
     pub fn get_current_state(&self) -> RecordingState {
         self.recording_state.current()
+    }
+
+    pub fn start_session(&self, task_id: u64) {
+        let mut session = self.session_state.lock();
+        *session = Some(SessionState {
+            task_id,
+            accumulated_text: String::new(),
+            chunk_count: 0,
+        });
+    }
+
+    pub fn append_session_text(&self, task_id: u64, text: &str) {
+        let mut session = self.session_state.lock();
+        if let Some(s) = session.as_mut() {
+            if s.task_id == task_id && !text.is_empty() {
+                if !s.accumulated_text.is_empty() {
+                    s.accumulated_text.push(' ');
+                }
+                s.accumulated_text.push_str(text);
+                s.chunk_count += 1;
+            }
+        }
+    }
+
+    pub fn get_session_text(&self, task_id: u64) -> Option<(String, usize)> {
+        let session = self.session_state.lock();
+        session
+            .as_ref()
+            .filter(|s| s.task_id == task_id)
+            .map(|s| (s.accumulated_text.clone(), s.chunk_count))
+    }
+
+    pub fn finish_session(&self, task_id: u64) -> Option<(String, usize)> {
+        let mut session = self.session_state.lock();
+        session
+            .take()
+            .filter(|s| s.task_id == task_id)
+            .map(|s| (s.accumulated_text, s.chunk_count))
+    }
+
+    pub fn clear_session(&self) {
+        *self.session_state.lock() = None;
     }
 }
 

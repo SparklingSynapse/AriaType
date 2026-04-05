@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { systemCommands } from "@/lib/tauri";
+import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
 
@@ -65,7 +66,7 @@ export function usePermissions(): PermissionsState {
       await systemCommands.applyPermission(kind);
       checkPermissions();
     } catch (err) {
-      console.error(`Failed to apply ${kind} permission:`, err);
+      logger.error("failed_to_apply_permission", { kind, error: String(err) });
     }
   };
 

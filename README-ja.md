@@ -1,12 +1,10 @@
 <div align="center">
-<img src="https://github.com/user-attachments/assets/d2e99fe1-8516-41a8-b184-6a385c66d152" alt="AriaType ショーケース" width="100%"/>
+<img src="./assets/showcase.png" alt="AriaType ショーケース" width="100%"/>
 
 <br/><br/>
 
-<img src="./assets/ariatype.png" alt="AriaType ロゴ" height="128" />
 
-
-### プライベートでローカルな音声キーボード
+### AriaType - プライベートでローカルな音声キーボード
 
 **押して話す。離して入力。ローカル優先。プライバシー優先。**
 

@@ -3,48 +3,46 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #000000;
+  --background: #faf9f7;
+  --background-hover: #f0eeeb;
+  --foreground: #1c1917;
   --card: #ffffff;
-  --card-foreground: #000000;
-  --primary: #000000;
-  --primary-foreground: #ffffff;
-  --secondary: #f5f5f5;
-  --secondary-foreground: #000000;
-  --muted: #888888;
-  --muted-foreground: #666666;
-  --border: #e5e5e5;
-  --border-subtle: #f0f0f0;
-  --input: #e5e5e5;
-  --ring: #000000;
+  --card-foreground: #1c1917;
+  --primary: #1c1917;
+  --primary-foreground: #fafaf9;
+  --secondary: #e7e5e4;
+  --secondary-foreground: #1c1917;
+  --muted: #a8a29e;
+  --muted-foreground: #78716c;
+  --border: #e7e5e4;
+  --input: #d6d3d1;
+  --ring: #1c1917;
   --radius: 0.75rem;
-
-  --accent: #000000;
-  --muted-light: #fafafa;
-  --card-hover: #fafafa;
-  --black: #000000;
+  --accent-green: #4ade80;
+  --accent-blue: #60a5fa;
+  --accent-amber: #fbbf24;
+  --accent-purple: #c084fc;
 }
 
 .dark {
-  --background: #000000;
-  --foreground: #fafafa;
-  --card: #0a0a0a;
-  --card-foreground: #fafafa;
-  --primary: #ffffff;
-  --primary-foreground: #000000;
-  --secondary: #1a1a1a;
-  --secondary-foreground: #fafafa;
-  --muted: #666666;
-  --muted-foreground: #888888;
-  --border: #262626;
-  --border-subtle: #1a1a1a;
-  --input: #262626;
-  --ring: #ffffff;
-
-  --accent: #ffffff;
-  --muted-light: #1a1a1a;
-  --card-hover: #111111;
-  --black: #ffffff;
+  --background: #1c1917;
+  --background-hover: #292524;
+  --foreground: #e7e5e4;
+  --card: #292524;
+  --card-foreground: #e7e5e4;
+  --primary: #e7e5e4;
+  --primary-foreground: #1c1917;
+  --secondary: #44403c;
+  --secondary-foreground: #e7e5e4;
+  --muted: #78716c;
+  --muted-foreground: #a8a29e;
+  --border: #44403c;
+  --input: #57534e;
+  --ring: #e7e5e4;
+  --accent-green: #4ade80;
+  --accent-blue: #60a5fa;
+  --accent-amber: #fbbf24;
+  --accent-purple: #c084fc;
 }
 
 * {
@@ -66,7 +64,6 @@ body {
   line-height: 1.6;
 }
 
-/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -97,50 +94,14 @@ body {
   background: rgba(255, 255, 255, 0.32);
 }
 
-/* Animations */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-out forwards;
-}
-
-.animate-pulse-slow {
-  animation: pulse 2s ease-in-out infinite;
-}
-
-/* Stagger delays for animations */
-.delay-100 { animation-delay: 100ms; }
-.delay-200 { animation-delay: 200ms; }
-.delay-300 { animation-delay: 300ms; }
-.delay-400 { animation-delay: 400ms; }
-.delay-500 { animation-delay: 500ms; }
-
-/* Typewriter cursor - blinking block cursor */
 @keyframes cursor-blink {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .typewriter-cursor {

@@ -8,7 +8,7 @@ pub fn resample(input: &[f32], from_hz: u32, to_hz: u32) -> Result<Vec<f32>, Str
         return Ok(input.to_vec());
     }
 
-    debug!(from_hz, to_hz, "resampling audio");
+    debug!(from_hz, to_hz, "resampling_started");
 
     let ratio = to_hz as f64 / from_hz as f64;
 
@@ -32,7 +32,11 @@ pub fn resample(input: &[f32], from_hz: u32, to_hz: u32) -> Result<Vec<f32>, Str
 
     output.truncate(written);
 
-    debug!(input_samples = input.len(), output_samples = written, "resampling complete");
+    debug!(
+        input_samples = input.len(),
+        output_samples = written,
+        "resampling_completed"
+    );
 
     Ok(output)
 }

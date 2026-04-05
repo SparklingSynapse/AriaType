@@ -85,7 +85,7 @@ function dotTransition(i: number, isRecording: boolean) {
         ease: "easeOut" as const,
         delay: stagger + OFFSET,
       },
-      backgroundColor: { duration: 0 },
+      backgroundColor: { duration: 0.28, ease: "easeOut" as const },
     };
   } else {
     // width leads, borderRadius follows
@@ -96,7 +96,7 @@ function dotTransition(i: number, isRecording: boolean) {
         ease: "easeOut" as const,
         delay: stagger + OFFSET,
       },
-      backgroundColor: { duration: 0 },
+      backgroundColor: { duration: 0.28, ease: "easeOut" as const },
     };
   }
 }
@@ -104,11 +104,14 @@ function dotTransition(i: number, isRecording: boolean) {
 export function AudioDots({ status, audioLevel, hasAudioActivity }: AudioDotsProps) {
   const isDark = useIsDark();
   const isRecording = status === "recording";
-  const isTranscribing = status === "transcribing";
-  const isProcessing = status === "processing";
+  const isSttRunning = status === "transcribing" || status === "processing";
+  const isPolishing = status === "polishing";
   const isError = status === "error";
   const hasAudio = hasAudioActivity ?? audioLevel > AUDIO_ACTIVITY_THRESHOLD;
-  const showProcessing = isProcessing || isTranscribing;
+  const showAnimatedState = isSttRunning || isPolishing;
+  const processingColor = isPolishing
+    ? ["rgb(72, 148, 255)", "rgb(214, 231, 255)", "rgb(72, 148, 255)"]
+    : ["rgb(0, 170, 255)", "rgb(205, 219, 255)", "rgb(0, 170, 255)"];
 
   return (
     <div className="flex items-center justify-center w-8 h-4">
@@ -131,8 +134,8 @@ export function AudioDots({ status, audioLevel, hasAudioActivity }: AudioDotsPro
                 borderRadius: isRecording ? ACTIVE_RADIUS : IDLE_RADIUS[i],
                 backgroundColor: isError
                   ? "rgb(239, 68, 68)"
-                  : showProcessing
-                    ? ["rgb(0, 170, 255)", "rgb(205, 219, 255)", "rgb(0, 170, 255)"]
+                  : showAnimatedState
+                    ? processingColor
                     : isRecording
                       ? hasAudio
                         ? "rgb(3, 227, 52)"
@@ -140,11 +143,11 @@ export function AudioDots({ status, audioLevel, hasAudioActivity }: AudioDotsPro
                       : isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.15)",
               }}
               transition={
-                showProcessing
+                showAnimatedState
                   ? {
                       ...baseTransition,
                       backgroundColor: {
-                        duration: 0.9,
+                        duration: 1.4,
                         repeat: Infinity,
                         repeatType: "reverse",
                         ease: "easeInOut",

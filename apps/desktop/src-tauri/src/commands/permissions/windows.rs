@@ -14,8 +14,11 @@ impl super::PermissionProvider for WindowsPermissions {
     }
 
     fn check_microphone(&self) -> String {
-        // TODO: query Windows Privacy API (winrt / registry) for precise status
-        "not_determined".to_string()
+        let host = cpal::default_host();
+        match host.default_input_device() {
+            Some(_) => "granted".to_string(),
+            None => "not_determined".to_string(),
+        }
     }
 
     fn apply_accessibility(&self) -> Result<(), String> {

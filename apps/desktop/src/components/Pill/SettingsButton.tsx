@@ -1,5 +1,6 @@
 import { Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { logger } from "@/lib/logger";
 
 interface SettingsButtonProps {}
 
@@ -9,7 +10,7 @@ export function SettingsButton({}: SettingsButtonProps) {
     try {
       await invoke("show_main_window");
     } catch (err) {
-      console.error("Failed to show main window:", err);
+      logger.error("failed_to_show_main_window", { error: String(err) });
     }
   };
 

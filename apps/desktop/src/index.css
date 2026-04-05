@@ -4,6 +4,7 @@
 
 :root {
   --background: #f9f9f9;
+  --background-hover: #f1f1f1;
   --foreground: #0a0a0a;
   --card: #ffffff;
   --card-foreground: #0a0a0a;
@@ -15,14 +16,24 @@
   --muted-foreground: #525252;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #dddddd;
+  --border: #ebebeb;
   --input: #d4d4d4;
   --ring: #171717;
   --radius: 0.75rem;
+  --accent-green: #22c55e;
+  --accent-blue: #3b82f6;
+  --accent-amber: #f59e0b;
+  --accent-purple: #a855f7;
+  --chart-green: #22c55e;
+  --chart-blue: #3b82f6;
+  --chart-amber: #f59e0b;
+  --chart-purple: #a855f7;
+  --chart-red: #ef4444;
 }
 
 .dark {
   --background: #171717;
+  --background-hover: #232323;
   --foreground: #e5e5e5;
   --card: #1f1f1f;
   --card-foreground: #e5e5e5;
@@ -37,6 +48,15 @@
   --border: #404040;
   --input: #404040;
   --ring: #e5e5e5;
+  --accent-green: #4ade80;
+  --accent-blue: #60a5fa;
+  --accent-amber: #fbbf24;
+  --accent-purple: #c084fc;
+  --chart-green: #4ade80;
+  --chart-blue: #60a5fa;
+  --chart-amber: #fbbf24;
+  --chart-purple: #c084fc;
+  --chart-red: #f87171;
 }
 
 * {

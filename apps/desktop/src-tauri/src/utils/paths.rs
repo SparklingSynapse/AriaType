@@ -27,7 +27,9 @@ impl AppPaths {
 
     pub fn temp_dir() -> PathBuf {
         let path = Self::cache_dir().join("temp");
-        let _ = std::fs::create_dir_all(&path);
+        if let Err(e) = std::fs::create_dir_all(&path) {
+            tracing::warn!(error = %e, path = ?path, "temp_directory_creation_failed");
+        }
         path
     }
 
@@ -56,12 +58,24 @@ impl AppPaths {
     }
 
     pub fn ensure_dirs() {
-        let _ = std::fs::create_dir_all(Self::data_dir());
-        let _ = std::fs::create_dir_all(Self::models_dir());
-        let _ = std::fs::create_dir_all(Self::recordings_dir());
-        let _ = std::fs::create_dir_all(Self::cache_dir());
-        let _ = std::fs::create_dir_all(Self::temp_dir());
-        let _ = std::fs::create_dir_all(Self::log_dir());
+        if let Err(e) = std::fs::create_dir_all(Self::data_dir()) {
+            tracing::warn!(error = %e, "data_directory_creation_failed");
+        }
+        if let Err(e) = std::fs::create_dir_all(Self::models_dir()) {
+            tracing::warn!(error = %e, "models_directory_creation_failed");
+        }
+        if let Err(e) = std::fs::create_dir_all(Self::recordings_dir()) {
+            tracing::warn!(error = %e, "recordings_directory_creation_failed");
+        }
+        if let Err(e) = std::fs::create_dir_all(Self::cache_dir()) {
+            tracing::warn!(error = %e, "cache_directory_creation_failed");
+        }
+        if let Err(e) = std::fs::create_dir_all(Self::temp_dir()) {
+            tracing::warn!(error = %e, "temp_directory_creation_failed");
+        }
+        if let Err(e) = std::fs::create_dir_all(Self::log_dir()) {
+            tracing::warn!(error = %e, "log_directory_creation_failed");
+        }
     }
 
     pub fn cleanup_temp_dir(max_age_secs: u64) {
@@ -81,7 +95,9 @@ impl AppPaths {
             if let Ok(meta) = std::fs::metadata(&path) {
                 if let Ok(modified) = meta.modified() {
                     if modified < cutoff {
-                        let _ = std::fs::remove_file(&path);
+                        if let Err(e) = std::fs::remove_file(&path) {
+                            tracing::debug!(error = %e, path = ?path, "stale_temp_file_removal_failed");
+                        }
                     }
                 }
             }

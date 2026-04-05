@@ -37,7 +37,7 @@ pub fn denoise_audio(input: &[f32], sample_rate: u32) -> Result<Vec<f32>, String
         return Ok(Vec::new());
     }
 
-    debug!(samples = input.len(), sample_rate, "starting audio denoising");
+    debug!(samples = input.len(), sample_rate, "denoising_started");
 
     const DENOISE_RATE: u32 = 48_000;
     const FRAME_SIZE: usize = DenoiseState::FRAME_SIZE;
@@ -81,7 +81,7 @@ pub fn denoise_audio(input: &[f32], sample_rate: u32) -> Result<Vec<f32>, String
     debug!(
         input_samples = input.len(),
         output_samples = out_len,
-        "audio denoising complete"
+        "denoising_completed"
     );
 
     Ok(output[..out_len].to_vec())

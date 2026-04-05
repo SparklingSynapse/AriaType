@@ -1,0 +1,143 @@
+name: Test & Coverage
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/desktop/src-tauri/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/desktop/src-tauri/**'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test-macos:
+    name: Test & Coverage (macOS)
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate coverage report
+        working-directory: apps/desktop/src-tauri
+        run: |
+          cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: apps/desktop/src-tauri/lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: unittests
+          name: cargo-llvm-cov
+
+      - name: Display coverage summary
+        working-directory: apps/desktop/src-tauri
+        run: |
+          cargo llvm-cov --all-features --workspace --summary-only || true
+
+      - name: Run clippy
+        working-directory: apps/desktop/src-tauri
+        run: |
+          cargo clippy --all-features -- -D warnings || true
+
+      - name: Check formatting
+        working-directory: apps/desktop/src-tauri
+        run: |
+          cargo fmt -- --check || true
+
+  test-windows:
+    name: Test (Windows)
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --all-features --workspace
+
+      - name: Run clippy
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy --all-features -- -D warnings
+
+      - name: Check formatting
+        working-directory: apps/desktop/src-tauri
+        run: cargo fmt -- --check
+
+      - name: Build Rust backend (Windows)
+        working-directory: apps/desktop/src-tauri
+        run: cargo build --release --all-features
+
+  build-windows:
+    name: Build Windows Bundle
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install
+
+      - name: Build Windows NSIS installer
+        working-directory: apps/desktop
+        run: pnpm tauri:build:win
+
+      - name: Verify installer exists
+        shell: bash
+        run: |
+          EXE=$(find apps/desktop/src-tauri/target/release/bundle/nsis -name "*.exe" | head -1)
+          if [ -z "$EXE" ]; then
+            echo "ERROR: No NSIS installer found!"
+            exit 1
+          fi
+          echo "Installer built successfully: $EXE"
+          ls -la "$EXE"

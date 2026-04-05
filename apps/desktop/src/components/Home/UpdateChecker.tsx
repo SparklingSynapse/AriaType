@@ -7,6 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { UPDATE_CHECK_URL, DOWNLOAD_URL } from "@ariatype/shared";
 import { compareVersions, validate } from "compare-versions";
 import type { UpdateInfo } from "@ariatype/shared";
+import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
 
@@ -68,7 +69,7 @@ export function UpdateChecker() {
   };
 
   const openDownloadPage = () =>
-    open(updateInfo?.url || DOWNLOAD_URL).catch(console.error);
+    open(updateInfo?.url || DOWNLOAD_URL).catch((err: unknown) => logger.error("failed_to_open_download_url", { error: String(err) }));
 
   useEffect(() => { checkForUpdates(); }, []);
 
@@ -114,7 +115,7 @@ export function UpdateChecker() {
 
       {/* Update detail — hidden while checking to avoid visual overlap */}
       {!checking && updateAvailable && updateInfo && (
-        <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4 space-y-3">
+        <div className="rounded-2xl border border-green-500/20 bg-green-500/5 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <p className="text-sm font-medium">

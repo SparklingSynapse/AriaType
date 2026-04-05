@@ -1,12 +1,10 @@
 <div align="center">
-<img src="https://github.com/user-attachments/assets/d2e99fe1-8516-41a8-b184-6a385c66d152" alt="AriaType 쇼케이스" width="100%"/>
+<img src="./assets/showcase.png" alt="AriaType 쇼케이스" width="100%"/>
 
 <br/><br/>
 
-<img src="./assets/ariatype.png" alt="AriaType 로고"  height="128" />
 
-
-### 개인 정보 보호 중심의 로컬 음성 키보드
+### AriaType - 개인 정보 보호 중심의 로컬 음성 키보드
 
 **누르고 말하기. 놓으면 입력. 로컬 우선. 프라이버시 우선.**
 

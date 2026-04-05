@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { systemCommands } from "@/lib/tauri";
+import { logger } from "@/lib/logger";
 import { useTranslation } from "react-i18next";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
@@ -37,7 +38,7 @@ export function LogViewer() {
       const text = await systemCommands.getLogContent(LINE_COUNT);
       setContent(text);
     } catch (err) {
-      console.error("Failed to load logs:", err);
+      logger.error("failed_to_load_logs", { error: String(err) });
     }
   }, []);
 
@@ -67,7 +68,7 @@ export function LogViewer() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder={t("logs.filter")}
-          className="flex-1 h-8 rounded-md border border-input bg-background px-3 text-sm focus-visible:border-primary focus-visible:outline-none"
+          className="flex-1 h-10 rounded-2xl border border-border bg-background px-4 text-sm focus-visible:border-primary focus-visible:outline-none"
         />
         <Button
           variant="outline"
@@ -93,11 +94,11 @@ export function LogViewer() {
 
       <OverlayScrollbarsComponent
         defer
-        className="flex-1 rounded-lg border border-border bg-zinc-900 dark:bg-zinc-950 text-zinc-300 dark:text-zinc-400 font-mono text-xs p-3 min-h-0 max-h-[calc(100vh-220px)]"
+        className="flex-1 rounded-2xl border border-border bg-zinc-900 dark:bg-zinc-950 text-zinc-300 dark:text-zinc-400 font-mono text-xs p-4 min-h-0 max-h-[calc(100vh-220px)]"
         options={{
           scrollbars: {
             theme: "os-theme-dark",
-            autoHide: "leave",
+            autoHide: "scroll",
             autoHideDelay: 300,
           },
         }}

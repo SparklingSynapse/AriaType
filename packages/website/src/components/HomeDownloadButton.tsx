@@ -1,6 +1,5 @@
 'use client';
 
-import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import { useDownload } from '@/hooks/useDownload';
@@ -16,6 +15,7 @@ export function HomeDownloadButton({ lang , className}: HomeDownloadButtonProps)
   const { t } = useTranslation();
   const { platform, canDirectDownload, downloadUrl, trackDownload } = useDownload('home_hero');
   const { trackEvent } = useAnalytics();
+  const baseClassName = `inline-flex h-11 items-center justify-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 ${className ?? ''}`;
 
   // Always show the button immediately - don't wait for release data
   const handleLinkClick = () => {
@@ -32,10 +32,9 @@ export function HomeDownloadButton({ lang , className}: HomeDownloadButtonProps)
       <a
         href={downloadUrl}
         onClick={() => trackDownload(downloadUrl)}
-        className={`inline-flex items-center gap-2 px-8 py-4 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors ${className}`}
+        className={baseClassName}
       >
         {t('hero.cta')}
-        <ArrowRight className="w-4 h-4" />
       </a>
     );
   }
@@ -45,10 +44,9 @@ export function HomeDownloadButton({ lang , className}: HomeDownloadButtonProps)
     <Link
       href={`/${lang}/download`}
       onClick={handleLinkClick}
-      className="inline-flex items-center gap-2 px-8 py-4 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+      className={baseClassName}
     >
       {t('hero.cta')}
-      <ArrowRight className="w-4 h-4" />
     </Link>
   );
 }

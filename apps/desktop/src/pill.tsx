@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { PillWindow } from "./components/Pill/PillWindow";
 import { settingsCommands, events } from "./lib/tauri";
 import "./index.css";
+import "./i18n";
 
 type ThemeMode = "system" | "light" | "dark";
 

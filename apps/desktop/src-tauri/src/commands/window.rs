@@ -4,8 +4,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::events::EventName;
 use crate::state::app_state::AppState;
 
-const PILL_W_LOGICAL: f64 = 100.0;
-const PILL_H_LOGICAL: f64 = 52.0;
+const PILL_W_LOGICAL: f64 = 140.0;
+const PILL_H_LOGICAL: f64 = 80.0;
 const MARGIN_LOGICAL: f64 = 20.0;
 
 /// Update pill window visibility based on indicator mode and recording state.
@@ -19,13 +19,15 @@ pub fn update_pill_visibility(app: &AppHandle) {
     drop(settings);
 
     let is_recording = state.is_recording.load(std::sync::atomic::Ordering::SeqCst);
-    let is_transcribing = state.is_transcribing.load(std::sync::atomic::Ordering::SeqCst);
+    let is_transcribing = state
+        .is_transcribing
+        .load(std::sync::atomic::Ordering::SeqCst);
 
     if let Some(window) = app.get_webview_window("pill") {
         match indicator_mode.as_str() {
             "never" => {
                 let _ = window.hide();
-                info!("pill visibility: hidden (mode=never)");
+                info!(mode = "never", "pill_visibility_hidden");
             }
             "when_recording" => {
                 // Only SHOW from backend; frontend handles hiding via exit animation
@@ -45,7 +47,10 @@ pub fn update_pill_visibility(app: &AppHandle) {
                     {
                         let _ = window.show();
                     }
-                    info!("pill visibility: shown (mode=when_recording, is_recording={}, is_transcribing={})", is_recording, is_transcribing);
+                    info!(
+                        mode = "when_recording",
+                        is_recording, is_transcribing, "pill_visibility_shown"
+                    );
                 }
             }
             _ => {
@@ -65,7 +70,7 @@ pub fn update_pill_visibility(app: &AppHandle) {
                 {
                     let _ = window.show();
                 }
-                info!("pill visibility: shown (mode=always)");
+                info!(mode = "always", "pill_visibility_shown");
             }
         }
     }
@@ -84,7 +89,11 @@ fn get_monitor_at_cursor(app: &AppHandle) -> Option<tauri::Monitor> {
         let event_class = class!(NSEvent);
         let mouse_location: NSPoint = msg_send![event_class, mouseLocation];
 
-        debug!(x = mouse_location.x, y = mouse_location.y, "mouse cursor position");
+        debug!(
+            x = mouse_location.x,
+            y = mouse_location.y,
+            "mouse_cursor_position"
+        );
 
         let screens_class = class!(NSScreen);
         let screens: *mut objc::runtime::Object = msg_send![screens_class, screens];
@@ -99,7 +108,12 @@ fn get_monitor_at_cursor(app: &AppHandle) -> Option<tauri::Monitor> {
                 && mouse_location.y >= frame.origin.y
                 && mouse_location.y < frame.origin.y + frame.size.height
             {
-                debug!(screen = i, x = frame.origin.x, y = frame.origin.y, "found screen containing cursor");
+                debug!(
+                    screen = i,
+                    x = frame.origin.x,
+                    y = frame.origin.y,
+                    "screen_contains_cursor"
+                );
 
                 // Match by X origin + width — size-only matching fails when two
                 // monitors share the same resolution.
@@ -117,7 +131,7 @@ fn get_monitor_at_cursor(app: &AppHandle) -> Option<tauri::Monitor> {
                     if (logical_x - frame.origin.x).abs() < 2.0
                         && (logical_width - frame.size.width).abs() < 2.0
                     {
-                        info!(monitor = ?monitor.name(), logical_x, screen_x = frame.origin.x, "matched monitor by position+width");
+                        info!(monitor = ?monitor.name(), logical_x, screen_x = frame.origin.x, "monitor_matched_position_width");
                         return Some(monitor);
                     }
                 }
@@ -132,7 +146,7 @@ fn get_monitor_at_cursor(app: &AppHandle) -> Option<tauri::Monitor> {
                     if (logical_w - frame.size.width).abs() < 10.0
                         && (logical_h - frame.size.height).abs() < 10.0
                     {
-                        info!(monitor = ?monitor.name(), "matched monitor by size (fallback)");
+                        info!(monitor = ?monitor.name(), "monitor_matched_size_fallback");
                         return Some(monitor);
                     }
                 }
@@ -140,7 +154,7 @@ fn get_monitor_at_cursor(app: &AppHandle) -> Option<tauri::Monitor> {
         }
     }
 
-    info!("no monitor found at cursor position");
+    info!("monitor_not_found_cursor");
     None
 }
 
@@ -153,10 +167,10 @@ fn get_monitor_at_cursor(_app: &AppHandle) -> Option<tauri::Monitor> {
 pub fn position_pill_window(app: &AppHandle, preset: &str) {
     use tracing::info;
 
-    info!(preset = preset, "position_pill_window called");
+    info!(preset = %preset, "pill_position_requested");
 
     let Some(window) = app.get_webview_window("pill") else {
-        info!("pill window not found");
+        info!("pill_window_not_found");
         return;
     };
 
@@ -164,20 +178,20 @@ pub fn position_pill_window(app: &AppHandle, preset: &str) {
     // Fall back to pill's current monitor, then primary monitor
     let monitor = get_monitor_at_cursor(app)
         .or_else(|| {
-            info!("falling back to current monitor");
+            info!("monitor_fallback_current");
             window.current_monitor().ok().flatten()
         })
         .or_else(|| {
-            info!("falling back to primary monitor");
+            info!("monitor_fallback_primary");
             app.primary_monitor().ok().flatten()
         });
 
     let Some(monitor) = monitor else {
-        info!("no monitor found");
-        return
+        info!("monitor_not_found");
+        return;
     };
 
-    info!(monitor = ?monitor.name(), "using monitor for positioning");
+    info!(monitor = ?monitor.name(), "monitor_selected_positioning");
 
     let scale = monitor.scale_factor();
     let screen = monitor.size();
@@ -191,12 +205,12 @@ pub fn position_pill_window(app: &AppHandle, preset: &str) {
     let sh = screen.height as i32;
 
     let (rel_x, rel_y) = match preset {
-        "top-left"      => (margin, margin),
-        "top-center"    => ((sw - pill_w) / 2, margin),
-        "top-right"     => (sw - pill_w - margin, margin),
-        "bottom-left"   => (margin, sh - pill_h - margin),
-        "bottom-right"  => (sw - pill_w - margin, sh - pill_h - margin),
-        _               => ((sw - pill_w) / 2, sh - pill_h - margin), // bottom-center (default)
+        "top-left" => (margin, margin),
+        "top-center" => ((sw - pill_w) / 2, margin),
+        "top-right" => (sw - pill_w - margin, margin),
+        "bottom-left" => (margin, sh - pill_h - margin),
+        "bottom-right" => (sw - pill_w - margin, sh - pill_h - margin),
+        _ => ((sw - pill_w) / 2, sh - pill_h - margin), // bottom-center (default)
     };
 
     let x = origin.x + rel_x;
@@ -231,12 +245,12 @@ pub async fn hide_main_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn show_pill_window(app: AppHandle) -> Result<(), String> {
     use tracing::info;
-    info!("show_pill_window called");
+    info!("show_pill_window_requested");
     if let Some(window) = app.get_webview_window("pill") {
         window.show().map_err(|e| e.to_string())?;
-        info!("pill window shown");
+        info!("pill_window_shown");
     } else {
-        info!("pill window not found");
+        info!("pill_window_not_found");
     }
     Ok(())
 }
@@ -244,12 +258,12 @@ pub async fn show_pill_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn hide_pill_window(app: AppHandle) -> Result<(), String> {
     use tracing::info;
-    info!("hide_pill_window called");
+    info!("hide_pill_window_requested");
     if let Some(window) = app.get_webview_window("pill") {
         window.hide().map_err(|e| e.to_string())?;
-        info!("pill window hidden");
+        info!("pill_window_hidden");
     } else {
-        info!("pill window not found");
+        info!("pill_window_not_found");
     }
     Ok(())
 }
@@ -258,8 +272,10 @@ pub async fn hide_pill_window(app: AppHandle) -> Result<(), String> {
 pub async fn show_toast(app: AppHandle, message: String) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("toast") {
         window.show().map_err(|e| e.to_string())?;
-        window.emit(EventName::TOAST_MESSAGE, message).map_err(|e| e.to_string())?;
-        
+        window
+            .emit(EventName::TOAST_MESSAGE, message)
+            .map_err(|e| e.to_string())?;
+
         tokio::spawn(async move {
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             let _ = window.hide();
@@ -279,7 +295,11 @@ pub async fn hide_toast(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn update_pill_position(app: AppHandle, x: f64, y: f64) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("pill") {
-        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: x as i32, y: y as i32 }))
+        window
+            .set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                x: x as i32,
+                y: y as i32,
+            }))
             .map_err(|e| e.to_string())?;
     }
     Ok(())

@@ -6,10 +6,7 @@
 /// - Actual inference time (slow)
 ///
 /// Run manually with: cargo test --test polish_prompt_quality_test -- --ignored --nocapture
-
-use ariatype_lib::polish_engine::{
-    get_template_by_id, PolishRequest, UnifiedPolishManager,
-};
+use ariatype_lib::polish_engine::{get_template_by_id, PolishRequest, UnifiedPolishManager};
 use ariatype_lib::utils::AppPaths;
 
 /// Helper function to check if a model exists
@@ -27,9 +24,10 @@ async fn test_template_specific_behavior() {
     let model_id = "qwen3.5-0.8b";
     let manager = UnifiedPolishManager::new();
 
-    let engine_type = UnifiedPolishManager::get_engine_by_model_id(model_id)
-        .expect("Should detect engine type");
-    let model_filename = manager.get_model_filename(engine_type, model_id)
+    let engine_type =
+        UnifiedPolishManager::get_engine_by_model_id(model_id).expect("Should detect engine type");
+    let model_filename = manager
+        .get_model_filename(engine_type, model_id)
         .expect("Should get model filename");
 
     if !model_exists(&model_filename) {
@@ -50,5 +48,4 @@ async fn test_template_specific_behavior() {
     let formal_output = result.unwrap().text;
     println!("Input:  {}", casual_input);
     println!("Output: {}", formal_output);
-    
 }

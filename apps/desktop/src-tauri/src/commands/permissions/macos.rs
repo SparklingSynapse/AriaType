@@ -9,7 +9,11 @@ impl super::PermissionProvider for MacosPermissions {
         extern "C" {
             fn AXIsProcessTrusted() -> bool;
         }
-        if unsafe { AXIsProcessTrusted() } { "granted".to_string() } else { "denied".to_string() }
+        if unsafe { AXIsProcessTrusted() } {
+            "granted".to_string()
+        } else {
+            "denied".to_string()
+        }
     }
 
     fn check_input_monitoring(&self) -> String {
@@ -17,18 +21,21 @@ impl super::PermissionProvider for MacosPermissions {
         extern "C" {
             fn IOHIDCheckAccess(request_type: u32) -> u32;
         }
-        if unsafe { IOHIDCheckAccess(0) } == 0 { "granted".to_string() } else { "denied".to_string() }
+        if unsafe { IOHIDCheckAccess(0) } == 0 {
+            "granted".to_string()
+        } else {
+            "denied".to_string()
+        }
     }
 
     fn check_microphone(&self) -> String {
         use objc::{class, msg_send, sel, sel_impl};
-        use std::os::raw::c_char;
         #[link(name = "AVFoundation", kind = "framework")]
         extern "C" {}
         unsafe {
             let media_type: *mut objc::runtime::Object = msg_send![
                 class!(NSString),
-                stringWithUTF8String: b"soun\0".as_ptr() as *const c_char
+                stringWithUTF8String: c"soun".as_ptr()
             ];
             // AVAuthorizationStatus: 0=notDetermined, 1=restricted, 2=denied, 3=authorized
             let status: i64 = msg_send![
@@ -92,7 +99,6 @@ impl super::PermissionProvider for MacosPermissions {
     fn apply_microphone(&self) -> Result<(), String> {
         if self.check_microphone() == "not_determined" {
             use objc::{class, msg_send, sel, sel_impl};
-            use std::os::raw::c_char;
             #[link(name = "AVFoundation", kind = "framework")]
             extern "C" {}
             let (tx, rx) = std::sync::mpsc::channel::<bool>();
@@ -100,7 +106,7 @@ impl super::PermissionProvider for MacosPermissions {
             unsafe {
                 let media_type: *mut objc::runtime::Object = msg_send![
                     class!(NSString),
-                    stringWithUTF8String: b"soun\0".as_ptr() as *const c_char
+                    stringWithUTF8String: c"soun".as_ptr()
                 ];
                 let tx_ptr = Box::into_raw(Box::new(tx));
                 extern crate block;

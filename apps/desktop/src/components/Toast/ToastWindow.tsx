@@ -54,7 +54,7 @@ export function ToastWindow() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="flex items-center gap-3 rounded-xl bg-card border border-border px-4 py-3 shadow-lg"
+            className="flex items-center gap-3 rounded-2xl bg-card border border-border px-4 py-3 shadow-lg"
           >
             {getIcon(toast.type)}
             <span className="text-sm text-card-foreground">{toast.message}</span>

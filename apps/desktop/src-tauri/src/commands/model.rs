@@ -1,12 +1,15 @@
-use tauri::{AppHandle, Emitter, State};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use std::time::Instant;
-use tracing::{info, warn, error};
 use crate::events::EventName;
+use crate::polish_engine::{self as polish, PolishModel};
 use crate::state::app_state::AppState;
 use crate::stt_engine::{EngineType, ModelInfo};
-use crate::polish_engine::{self as polish, PolishModel};
 use crate::utils::downloader::{download, DownloadOptions};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Instant;
+use tauri::{AppHandle, Emitter, State};
+use tracing::{error, info, instrument, warn};
 
 // Legacy command for backward compatibility - returns all engines
 #[tauri::command]
@@ -16,7 +19,10 @@ pub fn get_models(state: State<'_, AppState>) -> Vec<ModelInfo> {
 
 // New command supporting multiple engines
 #[tauri::command]
-pub fn get_models_for_engine(engine: String, state: State<'_, AppState>) -> Result<Vec<ModelInfo>, String> {
+pub fn get_models_for_engine(
+    engine: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ModelInfo>, String> {
     let engine_type: EngineType = engine.parse()?;
     Ok(state.engine_manager.get_models(engine_type))
 }
@@ -24,7 +30,13 @@ pub fn get_models_for_engine(engine: String, state: State<'_, AppState>) -> Resu
 // Legacy command for backward compatibility (Whisper only)
 #[tauri::command]
 pub fn is_model_downloaded(model_name: String, state: State<'_, AppState>) -> bool {
-    state.engine_manager.is_model_downloaded(EngineType::Whisper, &model_name)
+    let engine_type =
+        crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name)
+            .unwrap_or(EngineType::Whisper); // fallback to Whisper if unknown
+
+    state
+        .engine_manager
+        .is_model_downloaded(engine_type, &model_name)
 }
 
 // New command supporting multiple engines
@@ -35,7 +47,9 @@ pub fn is_model_downloaded_for_engine(
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
     let engine_type: EngineType = engine.parse()?;
-    Ok(state.engine_manager.is_model_downloaded(engine_type, &model_name))
+    Ok(state
+        .engine_manager
+        .is_model_downloaded(engine_type, &model_name))
 }
 
 // Get recommended models for a language
@@ -44,7 +58,8 @@ pub fn recommend_models_by_language(
     language: String,
     state: State<'_, AppState>,
 ) -> Vec<serde_json::Value> {
-    state.engine_manager
+    state
+        .engine_manager
         .recommend_by_language(&language)
         .into_iter()
         .map(|rec| {
@@ -62,50 +77,63 @@ pub fn recommend_models_by_language(
 }
 
 #[tauri::command]
+#[instrument(skip(app, state), fields(model_name = %model_name), err)]
 pub async fn download_model(
     app: AppHandle,
     model_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let start_time = Instant::now();
-    
+
     // Auto-detect engine type from model name
-    let engine_type = crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name)
-        .ok_or_else(|| format!("Unknown model: {}", model_name))?;
-    
+    let engine_type =
+        crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name)
+            .ok_or_else(|| format!("Unknown model: {}", model_name))?;
+
     let cancel_flag = {
         let mut downloading = state.downloading_models.lock();
         if downloading.contains(&model_name) {
-            warn!(model = %model_name, "Duplicate download request rejected");
+            warn!(model = %model_name, "download_rejected-duplicate");
             return Err(format!("Model {} is already downloading", model_name));
         }
         downloading.insert(model_name.clone());
         let flag = Arc::new(AtomicBool::new(false));
-        state.download_cancellations.lock().insert(model_name.clone(), flag.clone());
-        info!(model = %model_name, engine = ?engine_type, "Download initiated");
+        state
+            .download_cancellations
+            .lock()
+            .insert(model_name.clone(), flag.clone());
+        info!(model = %model_name, engine = ?engine_type, "download_initiated");
         flag
     };
 
     let app_clone = app.clone();
     let model_name_clone = model_name.clone();
 
-    let result = state.engine_manager
-        .download_model(engine_type, &model_name, cancel_flag, move |downloaded, total| {
-            let progress = if total > 0 {
-                (downloaded as f64 / total as f64 * 100.0) as u32
-            } else {
-                0
-            };
-            let _ = app_clone.emit(
-                EventName::MODEL_DOWNLOAD_PROGRESS,
-                serde_json::json!({
-                    "model": model_name_clone,
-                    "downloaded": downloaded,
-                    "total": total,
-                    "progress": progress,
-                }),
-            );
-        })
+    let result = state
+        .engine_manager
+        .download_model(
+            engine_type,
+            &model_name,
+            cancel_flag,
+            move |downloaded, total| {
+                let progress = if total > 0 {
+                    (downloaded as f64 / total as f64 * 100.0) as u32
+                } else {
+                    0
+                };
+                if let Err(e) = app_clone.emit(
+                    EventName::MODEL_DOWNLOAD_PROGRESS,
+                    serde_json::json!({
+                        "model": model_name_clone,
+                        "downloaded": downloaded,
+                        "total": total,
+                        "progress": progress,
+                    }),
+                ) {
+                    warn!(error = %e, model = %model_name_clone, "model_download_progress_emit_failed");
+                }
+            },
+        )
         .await;
 
     let elapsed = start_time.elapsed();
@@ -114,16 +142,31 @@ pub async fn download_model(
 
     match result {
         Err(ref e) if e == "cancelled" => {
-            let path = state.engine_manager.get_model_path(engine_type, &model_name);
-            if path.exists() { let _ = std::fs::remove_file(&path); }
+            let path = state
+                .engine_manager
+                .get_model_path(engine_type, &model_name);
+            if path.exists() {
+                if let Err(e) = std::fs::remove_file(&path) {
+                    warn!(error = %e, path = ?path, model = %model_name, "model_file_cleanup_failed-cancellation");
+                }
+            }
             let tmp_path = path.with_extension("bin.tmp");
-            if tmp_path.exists() { let _ = std::fs::remove_file(&tmp_path); }
+            if tmp_path.exists() {
+                if let Err(e) = std::fs::remove_file(&tmp_path) {
+                    warn!(error = %e, path = ?tmp_path, model = %model_name, "temp_file_cleanup_failed-cancellation");
+                }
+            }
             warn!(
                 model = %model_name,
                 elapsed_secs = elapsed.as_secs(),
-                "Model download cancelled, temp files cleaned"
+                "model_download_cancelled-temp_cleaned"
             );
-            let _ = app.emit(EventName::MODEL_DOWNLOAD_CANCELLED, serde_json::json!({ "model": model_name }));
+            if let Err(e) = app.emit(
+                EventName::MODEL_DOWNLOAD_CANCELLED,
+                serde_json::json!({ "model": model_name }),
+            ) {
+                error!(error = %e, model = %model_name, "model_download_cancelled_emit_failed");
+            }
             Ok(())
         }
         Err(e) => {
@@ -131,18 +174,23 @@ pub async fn download_model(
                 model = %model_name,
                 elapsed_secs = elapsed.as_secs(),
                 error = %e,
-                "Model download failed"
+                "model_download_failed"
             );
             Err(e)
-        },
+        }
         Ok(_) => {
             info!(
                 model = %model_name,
                 elapsed_secs = elapsed.as_secs(),
                 elapsed_ms = elapsed.as_millis(),
-                "Model download complete"
+                "model_download_completed"
             );
-            let _ = app.emit(EventName::MODEL_DOWNLOAD_COMPLETE, serde_json::json!({ "model": model_name }));
+            if let Err(e) = app.emit(
+                EventName::MODEL_DOWNLOAD_COMPLETE,
+                serde_json::json!({ "model": model_name }),
+            ) {
+                error!(error = %e, model = %model_name, "model_download_complete_emit_failed");
+            }
             Ok(())
         }
     }
@@ -160,26 +208,40 @@ pub fn cancel_download(model_name: String, state: State<'_, AppState>) -> Result
 }
 
 #[tauri::command]
-pub fn delete_model(app: AppHandle, model_name: String, state: State<'_, AppState>) -> Result<(), String> {
+#[instrument(skip(app, state), fields(model_name = %model_name), err)]
+pub fn delete_model(
+    app: AppHandle,
+    model_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     // Auto-detect engine type from model name
-    let engine_type = crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name)
-        .ok_or_else(|| format!("Unknown model: {}", model_name))?;
-    
+    let engine_type =
+        crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name)
+            .ok_or_else(|| format!("Unknown model: {}", model_name))?;
+
     // Delete using the manager (which also clears cache)
-    state.engine_manager.delete_model(engine_type, &model_name)?;
+    state
+        .engine_manager
+        .delete_model(engine_type, &model_name)?;
 
     // Clean up temp file if exists
-    let path = state.engine_manager.get_model_path(engine_type, &model_name);
+    let path = state
+        .engine_manager
+        .get_model_path(engine_type, &model_name);
     let tmp_path = path.with_extension("bin.tmp");
     if tmp_path.exists() {
-        let _ = std::fs::remove_file(&tmp_path);
+        if let Err(e) = std::fs::remove_file(&tmp_path) {
+            warn!(error = %e, path = ?tmp_path, model = %model_name, "temp_file_cleanup_failed-deeletion");
+        }
     }
 
-    info!(model = %model_name, "model deleted");
-    let _ = app.emit(
+    info!(model = %model_name, "model_deleted");
+    if let Err(e) = app.emit(
         EventName::MODEL_DELETED,
         serde_json::json!({ "model": model_name }),
-    );
+    ) {
+        error!(error = %e, model = %model_name, "model_deleted_emit_failed");
+    }
     Ok(())
 }
 
@@ -189,7 +251,7 @@ pub fn get_polish_models(_state: State<'_, AppState>) -> Vec<serde_json::Value> 
         .into_iter()
         .map(|(id, name, size)| {
             let downloaded = PolishModel::from_id(&id)
-                .map(|m| polish::is_polish_model_downloaded_for(m))
+                .map(polish::is_polish_model_downloaded_for)
                 .unwrap_or(false);
             serde_json::json!({
                 "id": id,
@@ -214,7 +276,7 @@ pub fn is_polish_model_downloaded(_state: State<'_, AppState>) -> bool {
 #[tauri::command]
 pub fn is_polish_model_downloaded_for_model(model_id: String, _state: State<'_, AppState>) -> bool {
     PolishModel::from_id(&model_id)
-        .map(|m| polish::is_polish_model_downloaded_for(m))
+        .map(polish::is_polish_model_downloaded_for)
         .unwrap_or(false)
 }
 
@@ -232,8 +294,8 @@ pub async fn download_polish_model_by_id(
     model_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let model = PolishModel::from_id(&model_id)
-        .ok_or_else(|| format!("Unknown model: {}", model_id))?;
+    let model =
+        PolishModel::from_id(&model_id).ok_or_else(|| format!("Unknown model: {}", model_id))?;
     download_polish_model_internal(app, model, state).await
 }
 
@@ -248,19 +310,23 @@ pub fn cancel_polish_download(model_id: String, state: State<'_, AppState>) -> R
     }
 }
 
-async fn download_polish_model_internal(app: AppHandle, model: PolishModel, state: State<'_, AppState>) -> Result<(), String> {
+async fn download_polish_model_internal(
+    app: AppHandle,
+    model: PolishModel,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let start_time = Instant::now();
     let model_id = model.id().to_string();
 
     let cancel_flag = {
         let mut cancellations = state.polish_download_cancellations.lock();
         if cancellations.contains_key(&model_id) {
-            warn!(model_id = %model_id, "Duplicate polish model download request rejected");
+            warn!(model_id = %model_id, "polish_download_rejected-duplicate");
             return Err(format!("Model {} is already downloading", model_id));
         }
         let flag = Arc::new(AtomicBool::new(false));
         cancellations.insert(model_id.clone(), flag.clone());
-        info!(model_id = %model_id, "Polish model download initiated");
+        info!(model_id = %model_id, "polish_model_download_initiated");
         flag
     };
 
@@ -275,7 +341,7 @@ async fn download_polish_model_internal(app: AppHandle, model: PolishModel, stat
         } else {
             0
         };
-        let _ = app_clone.emit(
+        if let Err(e) = app_clone.emit(
             EventName::POLISH_MODEL_DOWNLOAD_PROGRESS,
             serde_json::json!({
                 "model_id": model_id_clone,
@@ -283,7 +349,9 @@ async fn download_polish_model_internal(app: AppHandle, model: PolishModel, stat
                 "total": total,
                 "progress": progress
             }),
-        );
+        ) {
+            error!(error = %e, model_id = %model_id_clone, "polish_model_download_progress_emit_failed");
+        }
     });
 
     let options = DownloadOptions::new(&urls[0], &model_path)
@@ -302,9 +370,14 @@ async fn download_polish_model_internal(app: AppHandle, model: PolishModel, stat
                 model_id = %model_id,
                 elapsed_secs = elapsed.as_secs(),
                 elapsed_ms = elapsed.as_millis(),
-                "Polish model download complete"
+                "polish_model_download_completed"
             );
-            let _ = app.emit(EventName::POLISH_MODEL_DOWNLOAD_COMPLETE, serde_json::json!({ "model_id": model_id }));
+            if let Err(e) = app.emit(
+                EventName::POLISH_MODEL_DOWNLOAD_COMPLETE,
+                serde_json::json!({ "model_id": model_id }),
+            ) {
+                error!(error = %e, model_id = %model_id, "polish_model_download_complete_emit_failed");
+            }
             Ok(())
         }
         Err(e) => {
@@ -312,16 +385,21 @@ async fn download_polish_model_internal(app: AppHandle, model: PolishModel, stat
                 warn!(
                     model_id = %model_id,
                     elapsed_secs = elapsed.as_secs(),
-                    "Polish model download cancelled"
+                    "polish_model_download_cancelled"
                 );
-                let _ = app.emit(EventName::POLISH_MODEL_DOWNLOAD_CANCELLED, serde_json::json!({ "model_id": model_id }));
+                if let Err(e) = app.emit(
+                    EventName::POLISH_MODEL_DOWNLOAD_CANCELLED,
+                    serde_json::json!({ "model_id": model_id }),
+                ) {
+                    error!(error = %e, model_id = %model_id, "polish_model_download_cancelled_emit_failed");
+                }
                 Ok(())
             } else {
                 error!(
                     model_id = %model_id,
                     elapsed_secs = elapsed.as_secs(),
                     error = %e,
-                    "Polish model download failed"
+                    "polish_model_download_failed"
                 );
                 Err(e)
             }
@@ -340,18 +418,24 @@ pub fn delete_polish_model_by_id(
     model_id: String,
     _state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let model = PolishModel::from_id(&model_id)
-        .ok_or_else(|| format!("Unknown model: {}", model_id))?;
+    let model =
+        PolishModel::from_id(&model_id).ok_or_else(|| format!("Unknown model: {}", model_id))?;
     delete_polish_model_internal(app, model)
 }
 
 fn delete_polish_model_internal(app: AppHandle, model: PolishModel) -> Result<(), String> {
     let path = polish::get_polish_model_path_for(model);
     if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete polish model: {e}"))?;
+        std::fs::remove_file(&path).map_err(|e| format!("polish_model_delete_failed: {e}"))?;
     }
-    info!(model_id = ?model, "polish model deleted");
-    let _ = app.emit(EventName::POLISH_MODEL_DELETED, serde_json::json!({ "model_id": model.id() }));
+    info!(model_id = ?model, "polish_model_deleted");
+
+    if let Err(e) = app.emit(
+        EventName::POLISH_MODEL_DELETED,
+        serde_json::json!({ "model_id": model.id() }),
+    ) {
+        error!(error = %e, model_id = ?model, "polish_model_deleted_emit_failed");
+    }
     Ok(())
 }
 
@@ -373,5 +457,5 @@ pub fn get_polish_templates() -> Vec<serde_json::Value> {
 pub fn get_polish_template_prompt(template_id: String) -> Result<String, String> {
     polish::get_template_by_id(&template_id)
         .map(|t| t.system_prompt.to_string())
-        .ok_or_else(|| format!("Unknown template: {}", template_id))
+        .ok_or_else(|| format!("unknown template: {}", template_id))
 }

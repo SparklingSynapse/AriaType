@@ -1,12 +1,9 @@
 <div align="center">
-<img src="https://github.com/user-attachments/assets/d2e99fe1-8516-41a8-b184-6a385c66d152" alt="AriaType 展示" width="100%"/>
+<img src="./assets/showcase.png" alt="AriaType 展示" width="100%"/>
 
 <br/><br/>
 
-<img src="./assets/ariatype.png" alt="AriaType Logo" height="128" />
-
-
-### 你的本地私密语音键盘
+### AriaType - 你的本地私密语音键盘
 
 **按住说话，松开即输入。本地优先，隐私优先。**
 

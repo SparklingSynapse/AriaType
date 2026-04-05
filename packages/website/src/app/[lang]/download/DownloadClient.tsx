@@ -62,7 +62,7 @@ export default function DownloadClient() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-16"
         >
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">{t('download.title')}</h1>
+          <h1 className="text-[clamp(2.5rem,5vw,4.5rem)] font-bold tracking-tight leading-[1.05] mb-4">{t('download.title')}</h1>
           <p className="text-xl text-muted-foreground">{t('download.subtitle')}</p>
         </motion.div>
 
@@ -97,10 +97,10 @@ export default function DownloadClient() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
-                className="p-6 rounded-xl bg-card border border-border"
+                className="p-8 rounded-[1.5rem] bg-card border border-border"
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
                     <AppleIcon className="text-foreground" />
                   </div>
                   <div>
@@ -114,7 +114,7 @@ export default function DownloadClient() {
                       key={option.url}
                       href={option.url}
                       onClick={() => trackDownload(option.url)}
-                      className={`flex items-center justify-between space-x-4 p-3 rounded-lg border border-border transition-colors ${
+                      className={`flex items-center justify-between space-x-4 p-3 rounded-2xl border border-border transition-colors ${
                         option.url === defaultMacUrl
                           ? 'border-primary bg-primary/5'
                           : platform === 'mac'
@@ -130,7 +130,7 @@ export default function DownloadClient() {
                     <a
                       href={release.url}
                       onClick={() => trackDownload(release.url)}
-                      className={`flex items-center justify-between space-x-4 p-3 rounded-lg border border-border transition-colors ${
+                      className={`flex items-center justify-between space-x-4 p-3 rounded-2xl border border-border transition-colors ${
                         platform === 'mac' ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
                       }`}
                     >
@@ -145,10 +145,10 @@ export default function DownloadClient() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="p-6 rounded-xl bg-card border border-border"
+                className="p-8 rounded-[1.5rem] bg-card border border-border"
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
                     <MicrosoftIcon className="text-foreground" />
                   </div>
                   <div>
@@ -163,7 +163,7 @@ export default function DownloadClient() {
                         key={option.url}
                         href={option.url}
                         onClick={() => trackDownload(option.url)}
-                        className="flex items-center justify-between space-x-4 p-3 rounded-lg border border-border transition-colors hover:bg-secondary"
+                        className="flex items-center justify-between space-x-4 p-3 rounded-2xl border border-border transition-colors hover:bg-secondary"
                       >
                         <span className="text-sm font-medium">{option.label}</span>
                         <Download className="w-4 h-4" />
@@ -181,7 +181,7 @@ export default function DownloadClient() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="p-6 rounded-xl bg-secondary/30"
+                className="p-8 rounded-[1.5rem] bg-secondary/30"
               >
                 <h3 className="font-semibold mb-3">{t('download.releaseNotes')}</h3>
                 <pre className="text-sm text-muted-foreground whitespace-pre-wrap font-mono max-h-60 overflow-y-auto">

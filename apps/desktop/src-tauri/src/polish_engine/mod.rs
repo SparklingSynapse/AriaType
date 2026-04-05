@@ -1,17 +1,17 @@
-mod common;
-mod qwen;
-mod lfm;
 mod cloud;
+mod common;
+pub mod lfm;
+pub mod qwen;
 mod templates;
 mod traits;
 mod unified_manager;
 
-pub use qwen::{QwenModelDef, DEFAULT_POLISH_PROMPT as QWEN_DEFAULT_PROMPT};
+pub use cloud::{CloudPolishEngine, CloudProviderConfig};
 pub use lfm::{LfmModelDef, DEFAULT_POLISH_PROMPT as LFM_DEFAULT_PROMPT};
-pub use cloud::CloudPolishEngine;
-pub use templates::{PolishTemplate, POLISH_TEMPLATES, get_template_by_id, get_all_templates};
+pub use qwen::{QwenModelDef, DEFAULT_POLISH_PROMPT as QWEN_DEFAULT_PROMPT};
+pub use templates::{get_all_templates, get_template_by_id, PolishTemplate, POLISH_TEMPLATES};
 pub use traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
-pub use unified_manager::{UnifiedPolishManager, PolishModelInfo, get_all_polish_models};
+pub use unified_manager::{get_all_polish_models, PolishModelInfo, UnifiedPolishManager};
 
 // Use Qwen's default prompt as the global default
 pub const DEFAULT_POLISH_PROMPT: &str = QWEN_DEFAULT_PROMPT;
@@ -50,41 +50,41 @@ impl PolishModel {
 
     pub fn filename(&self) -> &'static str {
         match self {
-            Self::Qwen3_5_0_8B => {
-                QwenModelDef::from_id("qwen3.5-0.8b").map(|m| m.filename).unwrap_or("")
-            }
-            Self::LFM2_5_1_2B => {
-                LfmModelDef::from_id("lfm2.5-1.2b").map(|m| m.filename).unwrap_or("")
-            }
-            Self::Qwen3_5_2B => {
-                QwenModelDef::from_id("qwen3.5-2b").map(|m| m.filename).unwrap_or("")
-            }
-            Self::LFM2_2_6B => {
-                LfmModelDef::from_id("lfm2-2.6b").map(|m| m.filename).unwrap_or("")
-            }
-            Self::Qwen3_4B => {
-                QwenModelDef::from_id("qwen3-4b").map(|m| m.filename).unwrap_or("")
-            }
+            Self::Qwen3_5_0_8B => QwenModelDef::from_id("qwen3.5-0.8b")
+                .map(|m| m.filename)
+                .unwrap_or(""),
+            Self::LFM2_5_1_2B => LfmModelDef::from_id("lfm2.5-1.2b")
+                .map(|m| m.filename)
+                .unwrap_or(""),
+            Self::Qwen3_5_2B => QwenModelDef::from_id("qwen3.5-2b")
+                .map(|m| m.filename)
+                .unwrap_or(""),
+            Self::LFM2_2_6B => LfmModelDef::from_id("lfm2-2.6b")
+                .map(|m| m.filename)
+                .unwrap_or(""),
+            Self::Qwen3_4B => QwenModelDef::from_id("qwen3-4b")
+                .map(|m| m.filename)
+                .unwrap_or(""),
         }
     }
 
     pub fn urls(&self) -> Vec<String> {
         match self {
-            Self::Qwen3_5_0_8B => {
-                QwenModelDef::from_id("qwen3.5-0.8b").map(|m| m.urls()).unwrap_or_default()
-            }
-            Self::LFM2_5_1_2B => {
-                LfmModelDef::from_id("lfm2.5-1.2b").map(|m| m.urls()).unwrap_or_default()
-            }
-            Self::Qwen3_5_2B => {
-                QwenModelDef::from_id("qwen3.5-2b").map(|m| m.urls()).unwrap_or_default()
-            }
-            Self::LFM2_2_6B => {
-                LfmModelDef::from_id("lfm2-2.6b").map(|m| m.urls()).unwrap_or_default()
-            }
-            Self::Qwen3_4B => {
-                QwenModelDef::from_id("qwen3-4b").map(|m| m.urls()).unwrap_or_default()
-            }
+            Self::Qwen3_5_0_8B => QwenModelDef::from_id("qwen3.5-0.8b")
+                .map(|m| m.urls())
+                .unwrap_or_default(),
+            Self::LFM2_5_1_2B => LfmModelDef::from_id("lfm2.5-1.2b")
+                .map(|m| m.urls())
+                .unwrap_or_default(),
+            Self::Qwen3_5_2B => QwenModelDef::from_id("qwen3.5-2b")
+                .map(|m| m.urls())
+                .unwrap_or_default(),
+            Self::LFM2_2_6B => LfmModelDef::from_id("lfm2-2.6b")
+                .map(|m| m.urls())
+                .unwrap_or_default(),
+            Self::Qwen3_4B => QwenModelDef::from_id("qwen3-4b")
+                .map(|m| m.urls())
+                .unwrap_or_default(),
         }
     }
 }

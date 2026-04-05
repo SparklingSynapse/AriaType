@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "./button";
+import { logger } from "@/lib/logger";
 
 interface ConfirmOptions {
   title: string;
@@ -82,7 +83,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
-                    className="bg-card border border-border rounded-xl p-6 max-w-sm w-[calc(100%-2rem)] shadow-lg pointer-events-auto"
+                    className="bg-card border border-border rounded-3xl p-8 max-w-sm w-[calc(100%-2rem)] shadow-lg pointer-events-auto"
                   >
                     <Dialog.Title className="text-lg font-semibold mb-2">
                       {state.title}
@@ -125,7 +126,7 @@ export function setGlobalConfirm(fn: (options: ConfirmOptions) => Promise<boolea
 
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   if (!globalConfirm) {
-    console.warn("confirm() called before ConfirmProvider was mounted");
+    logger.warn("confirm_called_before_confirmprovider_mounted");
     return Promise.resolve(false);
   }
   return globalConfirm(options);

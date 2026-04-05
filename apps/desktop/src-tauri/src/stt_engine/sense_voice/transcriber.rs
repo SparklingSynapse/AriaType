@@ -24,9 +24,10 @@ impl SenseVoiceTranscriber {
         }
 
         info!(
+            engine = "sensevoice",
             binary = ?binary_path,
             model = ?model_path,
-            "SenseVoice transcriber initialized"
+            "transcriber_initialized"
         );
 
         Ok(Self {
@@ -37,49 +38,34 @@ impl SenseVoiceTranscriber {
 
     fn get_sidecar_path() -> Result<PathBuf, String> {
         let binary_name = Self::get_sidecar_binary_name();
+        let relative_path = PathBuf::from("bin")
+            .join(Self::get_sidecar_platform_dir())
+            .join(binary_name);
 
-        #[cfg(debug_assertions)]
-        {
-            let platform_dir = {
-                #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-                {
-                    "apple-silicon"
-                }
-
-                #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-                {
-                    "apple-silicon"
-                }
-
-                #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-                {
-                    "linux"
-                }
-
-                #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-                {
-                    "windows"
-                }
-            };
-
-            let bin_path = std::env::current_dir()
-                .map_err(|e| format!("Failed to get current directory: {}", e))?
-                .join("bin")
-                .join(platform_dir)
-                .join(binary_name);
-
-            if bin_path.exists() {
-                return Ok(bin_path);
+        for candidate in Self::sidecar_candidates(&relative_path) {
+            if candidate.exists() {
+                return Ok(candidate);
             }
         }
 
-        #[cfg(not(debug_assertions))]
-        {
-            return Ok(PathBuf::from(binary_name));
-        }
+        Err(format!(
+            "SenseVoice binary not found at: {:?}",
+            relative_path
+        ))
+    }
 
-        #[cfg(debug_assertions)]
-        Err(format!("SenseVoice binary not found: {}", binary_name))
+    fn get_sidecar_platform_dir() -> &'static str {
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        return "apple-silicon";
+
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+        return "apple-silicon";
+
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        return "linux";
+
+        #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+        return "windows";
     }
 
     fn get_sidecar_binary_name() -> &'static str {
@@ -93,7 +79,30 @@ impl SenseVoiceTranscriber {
         return "sense-voice-main-x86_64-unknown-linux-gnu";
 
         #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-        return "sense-voice-main-x86_64-pc-windows-msvc.exe";
+        return "sense-voice-main-x86_64-pc-windows.exe";
+    }
+
+    fn sidecar_candidates(relative_path: &Path) -> Vec<PathBuf> {
+        let mut candidates = Vec::new();
+
+        if let Ok(current_dir) = std::env::current_dir() {
+            candidates.push(current_dir.join(relative_path));
+            candidates.push(current_dir.join("src-tauri").join(relative_path));
+        }
+
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        candidates.push(manifest_dir.join(relative_path));
+
+        if let Ok(current_exe) = std::env::current_exe() {
+            if let Some(exe_dir) = current_exe.parent() {
+                candidates.push(exe_dir.join(relative_path.file_name().unwrap_or_default()));
+                candidates.push(exe_dir.join(relative_path));
+                candidates.push(exe_dir.join("../Resources").join(relative_path));
+                candidates.push(exe_dir.join("../../Resources").join(relative_path));
+            }
+        }
+
+        candidates
     }
 
     pub fn transcribe(&self, audio_path: &Path, language: Option<&str>) -> Result<String, String> {
@@ -102,17 +111,15 @@ impl SenseVoiceTranscriber {
         }
 
         info!(
+            engine = "sensevoice",
             audio = ?audio_path,
             model = ?self.model_path,
             language = ?language,
-            "starting SenseVoice transcription"
+            "transcription_started"
         );
 
         let processed_audio = self.prepare_audio(audio_path)?;
-        let audio_to_use = processed_audio
-            .as_ref()
-            .map(|p| p.as_path())
-            .unwrap_or(audio_path);
+        let audio_to_use = processed_audio.as_deref().unwrap_or(audio_path);
 
         let threads = std::thread::available_parallelism()
             .map(|n| n.get().min(4))
@@ -128,10 +135,11 @@ impl SenseVoiceTranscriber {
             .arg("-np")
             .arg("-itn");
 
-        if let Some(lang) = language {
-            if lang != "auto" {
-                cmd.arg("-l").arg(lang);
-            }
+        let cli_language = normalize_cli_language(language);
+        if let Some(lang) = cli_language.as_deref() {
+            cmd.arg("-l").arg(lang);
+        } else if language.is_some_and(|lang| lang != "auto") {
+            warn!(engine = "sensevoice", requested_language = ?language, "language_not_supported_fallback_auto");
         }
 
         let output = cmd
@@ -144,13 +152,13 @@ impl SenseVoiceTranscriber {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!(stderr = %stderr, "SenseVoice execution failed");
+            warn!(engine = "sensevoice", stderr = %stderr, "execution_failed");
             return Err(format!("SenseVoice failed: {}", stderr));
         }
 
         // Parse stdout directly - SenseVoice outputs text to stdout
         let stdout = String::from_utf8_lossy(&output.stdout);
-        info!(stdout = %stdout, "SenseVoice raw stdout");
+        info!(engine = "sensevoice", stdout = %stdout, "raw_stdout");
 
         self.parse_text_output(&stdout)
     }
@@ -161,9 +169,10 @@ impl SenseVoiceTranscriber {
 
         let spec = reader.spec();
         info!(
+            engine = "sensevoice",
             sample_rate = spec.sample_rate,
             channels = spec.channels,
-            "input audio format"
+            "input_audio_format"
         );
 
         if spec.sample_rate == TARGET_SAMPLE_RATE {
@@ -171,9 +180,10 @@ impl SenseVoiceTranscriber {
         }
 
         info!(
+            engine = "sensevoice",
             from = spec.sample_rate,
             to = TARGET_SAMPLE_RATE,
-            "resampling audio for SenseVoice"
+            "resampling_audio"
         );
 
         let samples: Vec<f32> = reader
@@ -217,7 +227,7 @@ impl SenseVoiceTranscriber {
     fn parse_text_output(&self, text: &str) -> Result<String, String> {
         let trimmed = text.trim();
         if trimmed.is_empty() {
-            warn!("SenseVoice produced empty output");
+            warn!(engine = "sensevoice", "empty_output");
             return Ok(String::new());
         }
 
@@ -254,11 +264,72 @@ impl SenseVoiceTranscriber {
         }
 
         if segments.is_empty() {
-            warn!(output = %trimmed, "SenseVoice output format not recognized");
+            warn!(engine = "sensevoice", output = %trimmed, "output_format_not_recognized");
             return Ok(String::new());
         }
 
         // Join all segments without extra spaces (Chinese text doesn't need spaces)
         Ok(segments.join(""))
+    }
+}
+
+fn normalize_cli_language(language: Option<&str>) -> Option<String> {
+    let lang = match language {
+        Some("auto") | None => return None,
+        Some(lang) => lang,
+    };
+
+    let base = lang.split('-').next().unwrap_or(lang).to_ascii_lowercase();
+    match base.as_str() {
+        "zh" | "en" | "yue" | "ja" | "ko" => Some(base),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_cli_language;
+
+    #[test]
+    fn normalize_cli_language_keeps_supported_base_codes() {
+        assert_eq!(normalize_cli_language(Some("zh")), Some("zh".to_string()));
+        assert_eq!(normalize_cli_language(Some("en")), Some("en".to_string()));
+        assert_eq!(normalize_cli_language(Some("yue")), Some("yue".to_string()));
+    }
+
+    #[test]
+    fn normalize_cli_language_converts_bcp47_tags() {
+        assert_eq!(
+            normalize_cli_language(Some("zh-CN")),
+            Some("zh".to_string())
+        );
+        assert_eq!(
+            normalize_cli_language(Some("zh-TW")),
+            Some("zh".to_string())
+        );
+        assert_eq!(
+            normalize_cli_language(Some("en-US")),
+            Some("en".to_string())
+        );
+        assert_eq!(
+            normalize_cli_language(Some("yue-CN")),
+            Some("yue".to_string())
+        );
+        assert_eq!(
+            normalize_cli_language(Some("ja-JP")),
+            Some("ja".to_string())
+        );
+        assert_eq!(
+            normalize_cli_language(Some("ko-KR")),
+            Some("ko".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_cli_language_falls_back_to_auto_for_unsupported_tags() {
+        assert_eq!(normalize_cli_language(None), None);
+        assert_eq!(normalize_cli_language(Some("auto")), None);
+        assert_eq!(normalize_cli_language(Some("fr-FR")), None);
+        assert_eq!(normalize_cli_language(Some("de-DE")), None);
     }
 }

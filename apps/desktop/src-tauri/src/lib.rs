@@ -1,23 +1,25 @@
 // Suppress warnings from third-party macros (objc, cocoa) that we cannot control.
 #![allow(unexpected_cfgs)]
 #![allow(deprecated)]
-use tracing::{error, info, warn};
 use tauri::{Emitter, Manager};
 use tauri_plugin_aptabase::EventTracker;
+use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub mod audio;
 pub mod commands;
 pub mod events;
-pub mod state;
-pub mod text_injector;
-pub mod stt_engine;
+pub mod history;
 pub mod polish_engine;
+pub mod state;
+pub mod stt_engine;
+pub mod text_injector;
+pub mod tray;
 pub mod utils;
 
 use commands::audio::{
-    start_audio_level_monitor, start_recording, stop_recording,
-    get_audio_level, get_recording_state,
+    get_audio_level, get_recording_state, start_audio_level_monitor, start_recording,
+    stop_recording,
 };
 use commands::{model, model_cache, permissions, settings, system, text, window};
 use events::EventName;
@@ -25,18 +27,26 @@ use state::app_state::AppState;
 use stt_engine::EngineType;
 
 fn cleanup_old_logs(log_dir: &std::path::Path, keep_days: u64) {
-    let cutoff = std::time::SystemTime::now()
-        - std::time::Duration::from_secs(keep_days * 24 * 3600);
-    let Ok(entries) = std::fs::read_dir(log_dir) else { return };
+    let cutoff =
+        std::time::SystemTime::now() - std::time::Duration::from_secs(keep_days * 24 * 3600);
+    let Ok(entries) = std::fs::read_dir(log_dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_file() { continue; }
+        if !path.is_file() {
+            continue;
+        }
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if !name.starts_with("ariatype.log") { continue; }
+        if !name.starts_with("ariatype.log") {
+            continue;
+        }
         if let Ok(meta) = std::fs::metadata(&path) {
             if let Ok(modified) = meta.modified() {
                 if modified < cutoff {
-                    let _ = std::fs::remove_file(&path);
+                    if let Err(e) = std::fs::remove_file(&path) {
+                        tracing::debug!(error = %e, path = ?path, "Failed to remove old log file during cleanup");
+                    }
                 }
             }
         }
@@ -45,32 +55,30 @@ fn cleanup_old_logs(log_dir: &std::path::Path, keep_days: u64) {
 
 fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
     let log_dir = crate::utils::AppPaths::log_dir();
-    
+
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
     if let Err(e) = std::fs::create_dir_all(&log_dir) {
-        eprintln!("Failed to create log directory: {:?}", e);
+        // eprintln is acceptable here as a last-resort fallback BEFORE tracing is initialized
+        eprintln!("failed to create log directory {:?}: {}", log_dir, e);
     }
 
-    // Clean up log files older than 7 days
     cleanup_old_logs(&log_dir, 7);
 
     let file_appender = tracing_appender::rolling::hourly(&log_dir, "ariatype.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
-
     tracing_subscriber::registry()
         .with(env_filter)
-        .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::fmt::layer()
-            .with_writer(non_blocking)
-            .with_ansi(false)
-            .with_target(false)
-            .with_thread_ids(false)
-            .with_line_number(true))
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(non_blocking)
+                .with_ansi(false),
+        )
         .init();
 
-    info!(log_dir = ?log_dir, "logging initialized");
+    tracing::info!(log_dir = ?log_dir, "logging_initialized");
     guard
 }
 
@@ -78,10 +86,12 @@ fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
 pub fn run() {
     let _log_guard = init_logging();
 
-    info!("Starting AriaType application");
+    info!("app_started");
 
-    // Initialize the global beep player for low-latency audio feedback
+    // Initialize the global beep player with settings
+    let beep_enabled = crate::commands::settings::load_settings_from_disk().beep_on_record;
     crate::audio::beep::init_beep_player();
+    crate::audio::beep::initialize_beep_player(beep_enabled);
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_aptabase::Builder::new("A-US-3957940978").build())
@@ -120,6 +130,7 @@ pub fn run() {
             system::get_audio_devices,
             system::get_log_content,
             system::open_log_folder,
+            system::get_platform,
             permissions::check_permission,
             permissions::apply_permission,
             model::get_models,
@@ -147,16 +158,33 @@ pub fn run() {
             model_cache::get_polish_model_status,
             model_cache::preload_polish_model,
             model_cache::unload_polish_model,
+            history::get_transcription_history,
+            history::get_dashboard_stats,
+            history::get_daily_usage,
+            history::get_engine_usage,
+            history::delete_transcription_entry,
+            history::clear_transcription_history,
         ])
         .setup(|app| {
-            info!("Application setup complete");
+            info!("setup_completed");
+
+            {
+                let state = app.state::<AppState>();
+                let store = state.history_store.lock();
+                if let Err(e) = store.cleanup_old_entries(90) {
+                    tracing::warn!(error = %e, "history_cleanup_failed");
+                }
+            }
+
             let analytics_opt_in = {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock();
                 settings.analytics_opt_in
             };
             if analytics_opt_in {
-                let _ = app.track_event("desktop_app_started", None);
+                if let Err(e) = app.track_event("desktop_app_started", None) {
+                    tracing::debug!(error = %e, "Analytics tracking failed for app startup event");
+                }
             }
 
             // Intercept the main window's close button: hide instead of destroy.
@@ -167,7 +195,9 @@ pub fn run() {
                 main_win.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        let _ = win.hide();
+                        if let Err(e) = win.hide() {
+                            tracing::warn!(error = %e, "Failed to hide main window on close request");
+                        }
                     }
                 });
             }
@@ -183,7 +213,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 loop {
                     std::thread::sleep(std::time::Duration::from_secs(30));
-                    
+
                     let state = match app_idle.try_state::<AppState>() {
                         Some(s) => s,
                         None => continue,
@@ -219,7 +249,7 @@ pub fn run() {
 
                 // Check for base model (default)
                 if !state.engine_manager.is_model_downloaded(EngineType::Whisper, "base") {
-                    info!("No model downloaded, auto-downloading base model...");
+                    info!(model = "base", "auto_download_started");
                     let app_clone = app_handle.clone();
                     let runtime = tokio::runtime::Runtime::new().unwrap();
                     runtime.block_on(async {
@@ -231,11 +261,13 @@ pub fn run() {
                         ).await;
                         match result {
                             Ok(_) => {
-                                info!(model = "base", "auto-download complete");
-                                let _ = app_clone.emit(
+                                info!(model = "base", "auto_download_completed");
+                                if let Err(e) = app_clone.emit(
                                     EventName::MODEL_DOWNLOAD_COMPLETE,
                                     serde_json::json!({ "model": "base" }),
-                                );
+                                ) {
+                                    tracing::warn!(error = %e, "Failed to emit model download complete event");
+                                }
                             }
                             Err(e) => {
                                 error!(model = "base", error = %e, "auto-download failed");
@@ -269,7 +301,7 @@ pub fn run() {
                                 info!(
                                     engine = ?engine_type,
                                     model = %model_name,
-                                    "startup warmup: STT model preloaded successfully"
+                                    "model_loaded-startup_warmup"
                                 );
                             }
                             Err(e) => {
@@ -277,12 +309,12 @@ pub fn run() {
                                     engine = ?engine_type,
                                     model = %model_name,
                                     error = %e,
-                                    "startup warmup: failed to preload STT model"
+                                    "model_load_failed-startup_warmup"
                                 );
                             }
                         }
                     } else {
-                        warn!(model = %model_name, "startup warmup: unknown STT model, cannot determine engine");
+                        warn!(model = %model_name, "model_unknown-cannot_determine_engine");
                     }
 
                     // Preload polish model if enabled
@@ -293,7 +325,7 @@ pub fn run() {
                                     info!(
                                         engine = ?engine_type,
                                         model_id = %polish_model_id,
-                                        "startup warmup: polish model preloaded successfully"
+                                        "polish_model_loaded-startup_warmup"
                                     );
                                 }
                                 Err(e) => {
@@ -301,12 +333,12 @@ pub fn run() {
                                         engine = ?engine_type,
                                         model_id = %polish_model_id,
                                         error = %e,
-                                        "startup warmup: failed to preload polish model"
+                                        "polish_model_load_failed-startup_warmup"
                                     );
                                 }
                             }
                         } else {
-                            warn!(model_id = %polish_model_id, "startup warmup: unknown polish model, cannot determine engine");
+                            warn!(model_id = %polish_model_id, "polish_model_unknown-cannot_determine_engine");
                         }
                     }
                 }
@@ -326,7 +358,7 @@ pub fn run() {
             .always_on_top(true)
             .skip_taskbar(true)
             .visible_on_all_workspaces(true)
-            .inner_size(100.0, 52.0)
+            .inner_size(140.0, 80.0)
             .focused(false)
             .visible(false) // Start hidden; show after panel/collection-behavior setup
             .build()
@@ -375,10 +407,10 @@ pub fn run() {
                         // content. Combined with set_floating_panel(true) and NSNonactivatingPanelMask,
                         // the pill remains visible in all contexts without stealing focus.
                         panel.set_level(1000);
-                        info!("Pill window converted to NSPanel with full-screen support");
+                        info!("pill_window_nspanel_converted");
                     }
                     Err(e) => {
-                        warn!(error = %e, "failed to convert pill window to NSPanel");
+                        warn!(error = %e, "pill_window_nspanel_conversion_failed");
                     }
                 }
             }
@@ -405,18 +437,17 @@ pub fn run() {
                 // Small delay to let the app fully initialize
                 std::thread::sleep(std::time::Duration::from_millis(500));
 
-                info!("Requesting microphone permission...");
+                info!("microphone_permission_requesting");
                 #[cfg(target_os = "macos")]
                 {
                     use objc::{class, msg_send, sel, sel_impl};
-                    use std::os::raw::c_char;
                     #[link(name = "AVFoundation", kind = "framework")]
                     extern "C" {}
                     // Check current status first; only request if not yet determined
                     let status: i64 = unsafe {
                         let media_type: *mut objc::runtime::Object = msg_send![
                             class!(NSString),
-                            stringWithUTF8String: b"soun\0".as_ptr() as *const c_char
+                            stringWithUTF8String: c"soun".as_ptr()
                         ];
                         msg_send![class!(AVCaptureDevice), authorizationStatusForMediaType: media_type]
                     };
@@ -424,9 +455,9 @@ pub fn run() {
                         // not_determined — delegate to the existing in-process implementation
                         let runtime = tokio::runtime::Runtime::new().unwrap();
                         let result = runtime.block_on(commands::permissions::apply_permission("microphone".to_string()));
-                        info!("Microphone permission result: {:?}", result);
+                        info!(result = ?result, "microphone_permission_result");
                     } else {
-                        info!("Microphone permission already determined (status={})", status);
+                        info!(status, "microphone_permission_determined");
                     }
                 }
             });
@@ -436,7 +467,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 let status = commands::permissions::check_permission("accessibility".to_string());
-                info!("Accessibility permission status on startup: {}", status);
+                info!(status = %status, "accessibility_permission_checked");
             }
 
             // Register global shortcut from settings
@@ -446,10 +477,30 @@ pub fn run() {
                 hotkey
             };
             match commands::settings::register_global_shortcut(app.handle(), &hotkey) {
-                Ok(_) => info!(hotkey = %hotkey, "global shortcut registered"),
+                Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
                 Err(e) => {
-                    warn!(error = %e, "failed to register global shortcut; grant Accessibility permission");
-                    let _ = app.emit(EventName::SHORTCUT_REGISTRATION_FAILED, e.to_string());
+                    warn!(error = %e, "shortcut_registration_failed");
+                    if let Err(emit_err) = app.emit(EventName::SHORTCUT_REGISTRATION_FAILED, e.to_string()) {
+                        tracing::warn!(error = %emit_err, "event_emit_failed-shortcut_registration");
+                    }
+                }
+            }
+
+            // Create tray only if stay_in_tray is enabled
+            let stay_in_tray = app.state::<AppState>().settings.lock().stay_in_tray;
+            if stay_in_tray {
+                match tray::create_tray(app.handle()) {
+                    Ok(_) => info!("tray_created"),
+                    Err(e) => warn!(error = %e, "tray_creation_failed"),
+                }
+            } else {
+                info!("tray_creation_skipped-stay_in_tray_disabled");
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                if let Err(e) = commands::settings::set_activation_policy_for_app(app.handle(), stay_in_tray) {
+                    warn!(error = %e, "activation_policy_set_failed");
                 }
             }
 

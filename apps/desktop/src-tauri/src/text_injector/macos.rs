@@ -6,6 +6,7 @@ use objc::{class, msg_send, sel, sel_impl};
 use std::ffi::c_void;
 use std::process::Command;
 use tracing::{info, warn};
+use unicode_segmentation::UnicodeSegmentation;
 
 pub struct MacosInjector;
 
@@ -206,29 +207,65 @@ unsafe fn pb_restore(saved: &SavedItems) {
 
 // ── Layers ────────────────────────────────────────────────────────────────────
 
+const CHUNK_SIZE: usize = 100;
+const CHUNK_DELAY_MS: u64 = 50;
+
 /// Layer 0: enigo key_sequence — simulates keyboard input, never touches the clipboard.
-/// Best for short text without special formatting. Fast but can lose characters with long text.
+/// Splits text into grapheme-aware chunks with delays to prevent IME composition reset.
 fn try_enigo_key_sequence(text: &str) -> bool {
+    let grapheme_count = text.graphemes(true).count();
     info!(
         text_len = text.len(),
-        "inject[L0]: trying enigo key_sequence"
+        grapheme_count, "text_injection_enigo_started"
     );
+
     let mut enigo = match Enigo::new(&Settings::default()) {
         Ok(e) => e,
         Err(e) => {
-            warn!("inject[L0]: failed to create Enigo: {e}");
+            warn!(error = %e, "enigo_creation_failed");
             return false;
         }
     };
-    match enigo.text(text) {
-        Ok(_) => {
-            info!("inject[L0]: succeeded");
-            true
+
+    if grapheme_count <= CHUNK_SIZE {
+        match enigo.text(text) {
+            Ok(_) => {
+                info!("text_injection_enigo_succeeded-single_chunk");
+                true
+            }
+            Err(e) => {
+                warn!(error = %e, "text_injection_enigo_failed");
+                false
+            }
         }
-        Err(e) => {
-            warn!("inject[L0]: failed: {e}");
-            false
+    } else {
+        let graphemes: Vec<&str> = text.graphemes(true).collect();
+        let chunk_count = grapheme_count.div_ceil(CHUNK_SIZE);
+        info!(chunk_count, "text_injection_chunking_started");
+
+        for (i, chunk) in graphemes.chunks(CHUNK_SIZE).enumerate() {
+            let chunk_str: String = chunk.concat();
+            match enigo.text(&chunk_str) {
+                Ok(_) => {
+                    info!(
+                        chunk_index = i + 1,
+                        chunk_graphemes = chunk.len(),
+                        "text_injection_chunk_injected"
+                    );
+                }
+                Err(e) => {
+                    warn!(chunk_index = i + 1, error = %e, "text_injection_chunk_failed");
+                    return false;
+                }
+            }
+
+            if i < chunk_count - 1 {
+                std::thread::sleep(std::time::Duration::from_millis(CHUNK_DELAY_MS));
+            }
         }
+
+        info!("text_injection_enigo_succeeded-chunked");
+        true
     }
 }
 
@@ -238,20 +275,20 @@ fn try_enigo_key_sequence(text: &str) -> bool {
 fn try_clipboard_paste(text: &str) -> bool {
     let saved = unsafe { run_on_main_sync(|| pb_save()) };
     unsafe { run_on_main_sync(|| pb_write_text(text)) };
-    info!("inject[L2]: clipboard written");
+    info!("clipboard_written");
 
     let script = "tell application \"System Events\" to keystroke \"v\" using command down";
     let ok = match Command::new("osascript").args(["-e", script]).output() {
         Ok(out) if out.status.success() => {
-            info!("inject[L2]: osascript succeeded");
+            info!("osascript_cmdv_succeeded");
             true
         }
         Ok(out) => {
-            warn!(exit_code = out.status.code(), stderr = %String::from_utf8_lossy(&out.stderr).trim(), "inject[L2]: osascript failed");
+            warn!(exit_code = out.status.code(), stderr = %String::from_utf8_lossy(&out.stderr).trim(), "osascript_cmdv_failed");
             false
         }
         Err(e) => {
-            warn!(error = %e, "inject[L2]: failed to spawn osascript");
+            warn!(error = %e, "osascript_spawn_failed");
             false
         }
     };
@@ -260,12 +297,12 @@ fn try_clipboard_paste(text: &str) -> bool {
         schedule_on_main(500, move || match saved {
             Some(items) => {
                 pb_restore(&items);
-                info!("inject[L2]: clipboard restored");
+                info!("clipboard_restored");
             }
             None => {
                 let pb: id = msg_send![class!(NSPasteboard), generalPasteboard];
                 let _: () = msg_send![pb, clearContents];
-                info!("inject[L2]: clipboard cleared (was empty)");
+                info!("clipboard_cleared");
             }
         });
     }
@@ -274,23 +311,25 @@ fn try_clipboard_paste(text: &str) -> bool {
 
 impl super::TextInjector for MacosInjector {
     fn insert(&self, text: &str, _write_clipboard: &dyn Fn()) {
-        info!(text_len = text.len(), "inject: starting injection");
+        let grapheme_count = text.graphemes(true).count();
+        info!(
+            text_len = text.len(),
+            grapheme_count, "text_injection_started"
+        );
 
-        // For long text (>400 chars) or text with newlines, use clipboard paste directly
-        // to avoid character loss from fast keyboard simulation
-        if text.len() > 400 {
-            info!("inject: using L2 (clipboard paste) for long/multiline text");
+        if grapheme_count > 400 {
+            info!(grapheme_count, "text_injection_clipboard_mode-long_text");
             let ok = try_clipboard_paste(text);
-            info!(success = ok, "inject: done via L2");
+            info!(success = ok, "text_injection_completed-clipboard");
             return;
         }
 
         if try_enigo_key_sequence(text) {
-            info!("inject: done via L0 (enigo)");
+            info!("text_injection_completed-enigo");
             return;
         }
-        info!("inject: L0 failed, falling through to L2 (clipboard paste)");
+        info!("text_injection_fallback-clipboard");
         let ok = try_clipboard_paste(text);
-        info!(success = ok, "inject: done via L2");
+        info!(success = ok, "text_injection_completed-clipboard");
     }
 }

@@ -1,34 +1,23 @@
-/// One-time utility to generate beep audio files
-/// Run this once to create start_beep.wav and stop_beep.wav
 use hound::{WavSpec, WavWriter};
 use std::f32::consts::PI;
 use std::path::Path;
+use tracing::info;
 
 pub fn generate_beep_files() -> Result<(), Box<dyn std::error::Error>> {
     let assets_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
     std::fs::create_dir_all(&assets_dir)?;
 
     // Generate start beep (ascending: 430 Hz → 570 Hz, 220ms)
-    generate_beep(
-        &assets_dir.join("start_beep.wav"),
-        430.0,
-        570.0,
-        0.22,
-    )?;
+    generate_beep(&assets_dir.join("start_beep.wav"), 430.0, 570.0, 0.22)?;
 
     // Generate stop beep (descending: 430 Hz → 290 Hz, 250ms)
-    generate_beep(
-        &assets_dir.join("stop_beep.wav"),
-        430.0,
-        290.0,
-        0.25,
-    )?;
+    generate_beep(&assets_dir.join("stop_beep.wav"), 430.0, 290.0, 0.25)?;
 
-    println!("✓ Generated beep files in {:?}", assets_dir);
+    info!(path = ?assets_dir, "beep_files_generated");
     Ok(())
 }
 
-fn generate_beep(
+pub fn generate_beep(
     path: &Path,
     start_freq: f32,
     end_freq: f32,
@@ -74,6 +63,6 @@ fn generate_beep(
     }
 
     writer.finalize()?;
-    println!("✓ Generated: {:?}", path);
+    info!(path = ?path, "beep_file_generated");
     Ok(())
 }

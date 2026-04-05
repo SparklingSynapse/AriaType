@@ -2,6 +2,11 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "targets": ["nsis"],
+    "resources": [
+      "bin/windows/sense-voice-main-x86_64-pc-windows.exe",
+      "assets/start_beep.wav",
+      "assets/stop_beep.wav"
+    ],
     "windows": {
       "allowDowngrades": false,
       "webviewInstallMode": {

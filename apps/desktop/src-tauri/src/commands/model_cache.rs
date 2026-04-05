@@ -1,6 +1,7 @@
 use crate::state::app_state::AppState;
 use crate::stt_engine::EngineType;
 use tauri::State;
+use tracing::instrument;
 
 #[tauri::command]
 pub fn get_model_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
@@ -27,6 +28,7 @@ pub fn get_model_status(state: State<'_, AppState>) -> Result<serde_json::Value,
 }
 
 #[tauri::command]
+#[instrument(skip(state), err)]
 pub fn preload_model(state: State<'_, AppState>) -> Result<(), String> {
     let (engine_str, model_name) = {
         let settings = state.settings.lock();
@@ -41,6 +43,7 @@ pub fn preload_model(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[instrument(skip(state), err)]
 pub fn unload_model(state: State<'_, AppState>) -> Result<(), String> {
     // Clear the engine cache to free memory
     state.engine_manager.clear_cache();
@@ -85,6 +88,7 @@ pub fn get_polish_model_status(state: State<'_, AppState>) -> Result<serde_json:
 }
 
 #[tauri::command]
+#[instrument(skip(state), err)]
 pub fn preload_polish_model(state: State<'_, AppState>) -> Result<(), String> {
     let (polish_enabled, polish_model_id) = {
         let settings = state.settings.lock();
@@ -106,6 +110,7 @@ pub fn preload_polish_model(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[instrument(skip(state), err)]
 pub fn unload_polish_model(state: State<'_, AppState>) -> Result<(), String> {
     // Clear the polish engine cache to free memory
     state.polish_manager.clear_cache();

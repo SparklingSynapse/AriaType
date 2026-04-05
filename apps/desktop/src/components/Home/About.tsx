@@ -139,9 +139,9 @@ export function About() {
             {features.map((feature, index) => (
               <div
                 key={index}
-                className="flex items-start gap-3 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
+                className="flex items-start gap-3 p-4 rounded-2xl bg-secondary/50 hover:bg-secondary transition-colors"
               >
-                <div className="rounded-lg bg-background p-2 shrink-0 shadow-sm">
+                <div className="rounded-2xl bg-background p-2 shrink-0 shadow-sm">
                   <feature.icon className={`h-4 w-4 ${feature.highlight ? "text-green-600 dark:text-green-500" : "text-foreground"}`} />
                 </div>
                 <div>
@@ -166,7 +166,7 @@ export function About() {
             {platforms.map((platform) => (
               <div
                 key={platform.name}
-                className="flex items-center gap-3 rounded-lg border border-border bg-background px-4 py-3 shadow-sm"
+                className="flex items-center gap-3 rounded-2xl border border-border bg-background px-4 py-3 shadow-sm"
               >
                 <img
                   src={platform.logo}

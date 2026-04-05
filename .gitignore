@@ -13,6 +13,21 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 target/
+**/.sisyphus/
+.omx/
+.claude/
+.sisyphus/
+.playwright-mcp/
+.playwright-mcp/screenshots/
+.playwright-mcp/traces/
+.playwright-mcp/dumps/
+
+# Test artifacts (never commit)
+test-results/
+playwright-report/
+**/e2e-output/
+**/*-screenshot.png
+**/*-trace.zip
 
 # Next.js
 .next/

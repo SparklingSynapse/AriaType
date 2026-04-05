@@ -13,6 +13,13 @@ pub struct TranscriptionCompleteEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionPartialEvent {
+    pub text: String,
+    pub is_definite: bool,
+    pub task_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionMetrics {
     pub load_time_ms: u64,
     pub preprocess_time_ms: u64,
@@ -97,6 +104,7 @@ pub mod EventName {
     pub const AUDIO_LEVEL: &str = "audio-level";
     pub const AUDIO_ACTIVITY: &str = "audio-activity";
     pub const TRANSCRIPTION_COMPLETE: &str = "transcription-complete";
+    pub const TRANSCRIPTION_PARTIAL: &str = "transcription-partial";
     pub const TRANSCRIPTION_ERROR: &str = "transcription-error";
     pub const TRANSCRIPTION_METRICS: &str = "transcription-metrics";
     pub const MODEL_DOWNLOAD_PROGRESS: &str = "model-download-progress";

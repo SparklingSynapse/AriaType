@@ -62,3 +62,15 @@ pub fn open_log_folder() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn get_platform() -> String {
+    #[cfg(target_os = "macos")]
+    return "macos".to_string();
+    #[cfg(target_os = "windows")]
+    return "windows".to_string();
+    #[cfg(target_os = "linux")]
+    return "linux".to_string();
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    return "unknown".to_string();
+}

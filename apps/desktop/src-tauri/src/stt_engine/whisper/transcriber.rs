@@ -27,6 +27,7 @@ impl Transcriber {
         language: Option<&str>,
         initial_prompt: Option<&str>,
         denoise_mode: &str,
+        vad_enabled: bool,
     ) -> Result<(String, TranscriptionMetrics), String> {
         let start_time = Instant::now();
 
@@ -43,10 +44,11 @@ impl Transcriber {
 
         let spec = reader.spec();
         debug!(
+            engine = "whisper",
             channels = spec.channels,
             sample_rate = spec.sample_rate,
             bits = spec.bits_per_sample,
-            "WAV spec"
+            "wav_spec"
         );
 
         let samples_i16: Vec<i16> = reader
@@ -82,10 +84,10 @@ impl Transcriber {
             _ => should_denoise(&audio, spec.sample_rate), // "auto"
         };
         let audio = if apply_denoise {
-            debug!(mode = denoise_mode, "applying denoising");
+            debug!(engine = "whisper", mode = denoise_mode, "denoising_applied");
             denoise_audio(&audio, spec.sample_rate)?
         } else {
-            debug!(mode = denoise_mode, "skipping denoising");
+            debug!(engine = "whisper", mode = denoise_mode, "denoising_skipped");
             audio
         };
 
@@ -95,7 +97,11 @@ impl Transcriber {
             audio
         };
 
-        let audio = trim_and_collapse_silence(&audio, 16_000);
+        let audio = if vad_enabled {
+            trim_and_collapse_silence(&audio, 16_000)
+        } else {
+            audio
+        };
 
         let duration = audio.len() as f32 / 16_000.0;
         if duration < 0.35 {
@@ -120,11 +126,12 @@ impl Transcriber {
         };
 
         info!(
+            engine = "whisper",
             duration_secs = format!("{:.2}", duration),
             language = ?lang_opt,
             has_prompt = initial_prompt.is_some(),
             prompt = ?initial_prompt,
-            "transcribing audio"
+            "transcription_started"
         );
 
         let mut params = FullParams::new(SamplingStrategy::BeamSearch {
@@ -171,7 +178,11 @@ impl Transcriber {
         let inference_time_ms = inference_start.elapsed().as_millis() as u64;
 
         let result = text.trim().to_string();
-        info!(chars = result.len(), "transcription complete");
+        info!(
+            engine = "whisper",
+            chars = result.len(),
+            "transcription_completed"
+        );
 
         let total_time_ms = start_time.elapsed().as_millis() as u64;
 
@@ -254,9 +265,10 @@ fn trim_and_collapse_silence(audio: &[f32], sample_rate: u32) -> Vec<f32> {
     }
 
     debug!(
+        engine = "whisper",
         input_samples = audio.len(),
         output_samples = out.len(),
-        "silence trim complete"
+        "silence_trim_completed"
     );
 
     out

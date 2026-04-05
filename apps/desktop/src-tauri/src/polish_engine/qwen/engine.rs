@@ -16,6 +16,12 @@ impl QwenPolishEngine {
     }
 }
 
+impl Default for QwenPolishEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl PolishEngine for QwenPolishEngine {
     fn engine_type(&self) -> PolishEngineType {
@@ -44,7 +50,14 @@ impl PolishEngine for QwenPolishEngine {
 
         // Run blocking polish in a separate thread
         let result = tokio::task::spawn_blocking(move || {
-            polish_text_blocking(&text, &system_prompt, &language, &model_path, &default_prompt, &config)
+            polish_text_blocking(
+                &text,
+                &system_prompt,
+                &language,
+                &model_path,
+                &default_prompt,
+                &config,
+            )
         })
         .await
         .map_err(|e| format!("Task join error: {}", e))??;

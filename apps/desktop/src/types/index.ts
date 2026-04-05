@@ -1,4 +1,4 @@
-export type RecordingStatus = "idle" | "recording" | "transcribing" | "processing" | "error";
+export type RecordingStatus = "idle" | "recording" | "transcribing" | "processing" | "polishing" | "error";
 
 export interface PillPosition {
   x: number;

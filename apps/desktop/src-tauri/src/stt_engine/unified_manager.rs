@@ -1,19 +1,20 @@
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicBool;
 use serde::{Deserialize, Serialize};
-use tracing::{info, error};
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use tracing::{error, info, instrument};
 
-use crate::utils::AppPaths;
+use super::cloud::CloudSttEngine;
+use super::sense_voice::SenseVoiceEngine;
 use super::traits::{EngineType, SttEngine, TranscriptionRequest, TranscriptionResult};
 use super::whisper::WhisperEngine;
-use super::sense_voice::SenseVoiceEngine;
+use crate::utils::AppPaths;
 use crate::utils::{download, DownloadOptions, HuggingFaceSource};
 
-use super::whisper::models as whisper_models;
 use super::sense_voice::models as sense_voice_models;
-use whisper_models::versions as whisper_versions;
+use super::whisper::models as whisper_models;
 use sense_voice_models::versions as sense_voice_versions;
+use whisper_models::versions as whisper_versions;
 
 type EngineCacheKey = (EngineType, String);
 
@@ -51,7 +52,7 @@ pub struct UnifiedEngineManager {
 
 impl UnifiedEngineManager {
     pub fn new(models_dir: PathBuf) -> Self {
-        info!(models_dir = ?models_dir, "initializing unified engine manager");
+        info!(models_dir = ?models_dir, "engine_manager_initialized");
         Self {
             models_dir,
             engine_cache: Arc::new(Mutex::new(None)),
@@ -62,7 +63,11 @@ impl UnifiedEngineManager {
         AppPaths::models_dir()
     }
 
-    fn create_engine_instance(&self, engine_type: EngineType, version: &str) -> Result<EngineInstance, String> {
+    fn create_engine_instance(
+        &self,
+        engine_type: EngineType,
+        version: &str,
+    ) -> Result<EngineInstance, String> {
         match engine_type {
             EngineType::Whisper => {
                 let engine = WhisperEngine::new(&self.models_dir, version)?;
@@ -72,29 +77,27 @@ impl UnifiedEngineManager {
                 let engine = SenseVoiceEngine::new(&self.models_dir, version)?;
                 Ok(EngineInstance::SenseVoice(engine))
             }
+            EngineType::Cloud => {
+                let engine = CloudSttEngine::new()?;
+                Ok(EngineInstance::Cloud(engine))
+            }
         }
     }
 
-    pub(crate) fn get_or_create_engine(&self, engine_type: EngineType, version: &str) -> Result<EngineInstance, String> {
+    pub(crate) fn get_or_create_engine(
+        &self,
+        engine_type: EngineType,
+        version: &str,
+    ) -> Result<EngineInstance, String> {
         let cache_key = (engine_type, version.to_string());
         let mut cache = self.engine_cache.lock().unwrap();
 
         if let Some((cached_key, cached_engine)) = cache.as_ref() {
             if *cached_key == cache_key {
-                info!(engine_type = ?engine_type, version = version, "using cached engine");
                 return Ok(cached_engine.clone());
-            } else {
-                info!(
-                    old_engine = ?cached_key.0,
-                    old_version = &cached_key.1,
-                    new_engine = ?engine_type,
-                    new_version = version,
-                    "replacing cached engine"
-                );
             }
         }
 
-        info!(engine_type = ?engine_type, version = version, "creating new engine instance");
         let engine = self.create_engine_instance(engine_type, version)?;
         *cache = Some((cache_key, engine.clone()));
         Ok(engine)
@@ -103,9 +106,9 @@ impl UnifiedEngineManager {
     pub(crate) fn clear_cache(&self) {
         let mut cache = self.engine_cache.lock().unwrap();
         *cache = None;
-        info!("engine cache cleared");
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn clear_engine_cache(&self, engine_type: EngineType, version: Option<&str>) {
         let mut cache = self.engine_cache.lock().unwrap();
         if let Some((cached_key, _)) = cache.as_ref() {
@@ -118,46 +121,67 @@ impl UnifiedEngineManager {
             if should_clear {
                 *cache = None;
                 info!(
-                    engine_type = ?engine_type,
+                    engine = ?engine_type,
                     version = ?version,
-                    "engine cache cleared"
+                    "engine_cache_cleared"
                 );
             }
         }
     }
 
+    #[instrument(
+        skip(self, request),
+        fields(
+            engine = ?engine_type,
+            model = request.model_name.as_deref().unwrap_or("default"),
+            language = request.language.as_deref().unwrap_or("auto"),
+        ),
+        ret,
+        err
+    )]
     pub async fn transcribe(
         &self,
         engine_type: EngineType,
         request: TranscriptionRequest,
     ) -> Result<TranscriptionResult, String> {
-        info!("[stt] ====== TRANSCRIBE CONFIG ======");
-        info!("[stt] engine: {:?}", engine_type);
-        info!("[stt] model: {:?}", request.model_name.as_deref().unwrap_or("default"));
-        info!("[stt] language: {:?}", request.language.as_deref().unwrap_or("auto"));
-        info!("[stt] audio_path: {:?}", request.audio_path);
-        info!("[stt] ==============================");
+        let model = request
+            .model_name
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+        let lang = request
+            .language
+            .clone()
+            .unwrap_or_else(|| "auto".to_string());
+        info!(
+            engine = ?engine_type,
+            model = %model,
+            language = %lang,
+            path = ?request.audio_path,
+            "transcription_started"
+        );
 
         // Get model version from request, use default if not specified
-        let version = request.model_name.as_deref().unwrap_or_else(|| {
+        let version = request.model_name.as_deref().unwrap_or({
             match engine_type {
                 EngineType::Whisper => whisper_versions::DEFAULT,
                 EngineType::SenseVoice => sense_voice_versions::DEFAULT,
+                EngineType::Cloud => "cloud",
             }
         });
 
-        info!("[stt] creating engine instance: {:?} version={}", engine_type, version);
-        
         let engine = self.get_or_create_engine(engine_type, version)?;
-        
-        info!("[stt] starting transcription...");
+
         let result = engine.transcribe(request).await;
-        
+
         match &result {
-            Ok(r) => info!("[stt] transcription complete: {} chars in {}ms", r.text.len(), r.total_ms),
-            Err(e) => error!("[stt] transcription failed: {}", e),
+            Ok(r) => {
+                info!(engine = ?engine_type, model = %model, text_len = r.text.len(), duration_ms = r.total_ms, "transcription_completed")
+            }
+            Err(e) => {
+                error!(engine = ?engine_type, model = %model, error = %e, "transcription_failed")
+            }
         }
-        
+
         result
     }
 
@@ -171,9 +195,10 @@ impl UnifiedEngineManager {
     /// Get all models for a specific engine
     pub fn get_models(&self, engine_type: EngineType) -> Vec<ModelInfo> {
         let models: Vec<ModelInfo> = match engine_type {
-            EngineType::Whisper => {
-                whisper_models::ALL.iter().map(|def| {
-                    let path = self.models_dir.join(&def.filename);
+            EngineType::Whisper => whisper_models::ALL
+                .iter()
+                .map(|def| {
+                    let path = self.models_dir.join(def.filename);
                     ModelInfo {
                         name: def.name.to_string(),
                         display_name: def.display_name.to_string(),
@@ -184,11 +209,12 @@ impl UnifiedEngineManager {
                         accuracy_score: def.accuracy_score,
                         engine: "whisper".to_string(),
                     }
-                }).collect()
-            }
-            EngineType::SenseVoice => {
-                sense_voice_models::ALL.iter().map(|def| {
-                    let path = self.models_dir.join(&def.filename);
+                })
+                .collect(),
+            EngineType::SenseVoice => sense_voice_models::ALL
+                .iter()
+                .map(|def| {
+                    let path = self.models_dir.join(def.filename);
                     ModelInfo {
                         name: def.name.to_string(),
                         display_name: def.display_name.to_string(),
@@ -199,17 +225,33 @@ impl UnifiedEngineManager {
                         accuracy_score: def.accuracy_score,
                         engine: "sensevoice".to_string(),
                     }
-                }).collect()
+                })
+                .collect(),
+            EngineType::Cloud => {
+                vec![ModelInfo {
+                    name: "cloud".to_string(),
+                    display_name: "Cloud STT".to_string(),
+                    size_mb: 0,
+                    filename: "cloud".to_string(),
+                    downloaded: true,
+                    speed_score: 10,
+                    accuracy_score: 10,
+                    engine: "cloud".to_string(),
+                }]
             }
         };
 
         models
     }
 
-    /// Get all models from all engines
+    /// Get all models from all local engines (excludes Cloud which is configured separately)
     pub fn get_all_models(&self) -> Vec<ModelInfo> {
         let mut all_models = Vec::new();
         for engine_type in EngineType::all() {
+            // Skip Cloud engine - it's configured separately and doesn't have downloadable models
+            if engine_type == EngineType::Cloud {
+                continue;
+            }
             all_models.extend(self.get_models(engine_type));
         }
         all_models
@@ -217,7 +259,9 @@ impl UnifiedEngineManager {
 
     /// Auto-detect engine type by model name
     pub fn get_engine_by_model_name(model_name: &str) -> Option<EngineType> {
-        if whisper_models::find_by_name(model_name).is_some() {
+        if model_name == "cloud" {
+            Some(EngineType::Cloud)
+        } else if whisper_models::find_by_name(model_name).is_some() {
             Some(EngineType::Whisper)
         } else if sense_voice_models::find_by_name(model_name).is_some() {
             Some(EngineType::SenseVoice)
@@ -243,6 +287,9 @@ impl UnifiedEngineManager {
                     return false;
                 }
             }
+            EngineType::Cloud => {
+                return true;
+            }
         };
 
         self.models_dir.join(filename).exists()
@@ -265,6 +312,7 @@ impl UnifiedEngineManager {
                     self.models_dir.join(format!("{}.gguf", model_name))
                 }
             }
+            EngineType::Cloud => PathBuf::new(),
         }
     }
 
@@ -290,6 +338,9 @@ impl UnifiedEngineManager {
                     .ok_or_else(|| format!("Unknown SenseVoice model: {}", model_name))?;
                 (SENSEVOICE_REPO, None, model.filename)
             }
+            EngineType::Cloud => {
+                return Err("Cloud models do not need to be downloaded".to_string());
+            }
         };
 
         let output_path = self.models_dir.join(filename);
@@ -312,6 +363,7 @@ impl UnifiedEngineManager {
     }
 
     /// Preload model into cache
+    #[instrument(skip(self), fields(engine = ?engine_type, model = %model_name), ret, err)]
     pub fn load_model(&self, engine_type: EngineType, model_name: &str) -> Result<(), String> {
         // Check if model is downloaded
         if !self.is_model_downloaded(engine_type, model_name) {
@@ -323,17 +375,17 @@ impl UnifiedEngineManager {
 
         // Create engine instance and put it into cache
         info!(
-            engine_type = ?engine_type,
-            model_name = model_name,
-            "preloading model into cache"
+            engine = ?engine_type,
+            model = %model_name,
+            "model_preload_started"
         );
 
         let _ = self.get_or_create_engine(engine_type, model_name)?;
 
         info!(
-            engine_type = ?engine_type,
-            model_name = model_name,
-            "model preloaded successfully"
+            engine = ?engine_type,
+            model = %model_name,
+            "model_preloaded"
         );
 
         Ok(())
@@ -352,22 +404,17 @@ impl UnifiedEngineManager {
             ));
         }
 
-// If model is in cache, clear it first
+        // If model is in cache, clear it first
 
         // Delete the model file
-        std::fs::remove_file(&model_path).map_err(|e| {
-            format!(
-                "Failed to delete model '{}': {}",
-                model_name,
-                e
-            )
-        })?;
+        std::fs::remove_file(&model_path)
+            .map_err(|e| format!("Failed to delete model '{}': {}", model_name, e))?;
 
         info!(
-            engine_type = ?engine_type,
-            model_name = model_name,
-            path = %model_path.display(),
-            "model deleted successfully"
+            engine = ?engine_type,
+            model = %model_name,
+            path = ?model_path,
+            "model_deleted"
         );
 
         Ok(())
@@ -411,14 +458,15 @@ impl UnifiedEngineManager {
 
         // Sort by accuracy descending, then by speed descending for same accuracy
         recommendations.sort_by(|a, b| {
-            b.accuracy_score.cmp(&a.accuracy_score)
+            b.accuracy_score
+                .cmp(&a.accuracy_score)
                 .then_with(|| b.speed_score.cmp(&a.speed_score))
         });
 
         info!(
-            lang = lang,
+            language = %lang,
             count = recommendations.len(),
-            "generated language recommendations"
+            "language_recommendations_generated"
         );
 
         recommendations
@@ -430,13 +478,18 @@ impl UnifiedEngineManager {
 pub(crate) enum EngineInstance {
     Whisper(WhisperEngine),
     SenseVoice(SenseVoiceEngine),
+    Cloud(CloudSttEngine),
 }
 
 impl EngineInstance {
-    pub async fn transcribe(&self, request: TranscriptionRequest) -> Result<TranscriptionResult, String> {
+    pub async fn transcribe(
+        &self,
+        request: TranscriptionRequest,
+    ) -> Result<TranscriptionResult, String> {
         match self {
             EngineInstance::Whisper(engine) => engine.transcribe(request).await,
             EngineInstance::SenseVoice(engine) => engine.transcribe(request).await,
+            EngineInstance::Cloud(engine) => engine.transcribe(request).await,
         }
     }
 }
@@ -447,18 +500,28 @@ mod tests {
 
     #[test]
     fn test_engine_type_parsing() {
-        assert_eq!("whisper".parse::<EngineType>().unwrap(), EngineType::Whisper);
-        assert_eq!("sensevoice".parse::<EngineType>().unwrap(), EngineType::SenseVoice);
-        assert_eq!("WHISPER".parse::<EngineType>().unwrap(), EngineType::Whisper);
+        assert_eq!(
+            "whisper".parse::<EngineType>().unwrap(),
+            EngineType::Whisper
+        );
+        assert_eq!(
+            "sensevoice".parse::<EngineType>().unwrap(),
+            EngineType::SenseVoice
+        );
+        assert_eq!(
+            "WHISPER".parse::<EngineType>().unwrap(),
+            EngineType::Whisper
+        );
         assert!("unknown".parse::<EngineType>().is_err());
     }
 
     #[test]
     fn test_available_engines() {
         let engines = UnifiedEngineManager::available_engines();
-        assert_eq!(engines.len(), 2);
+        assert_eq!(engines.len(), 3);
         assert!(engines.contains(&EngineType::Whisper));
         assert!(engines.contains(&EngineType::SenseVoice));
+        assert!(engines.contains(&EngineType::Cloud));
     }
 
     #[test]
@@ -473,7 +536,10 @@ mod tests {
         assert!(whisper_versions::ALL.contains(&whisper_versions::LARGE_V3_TURBO_Q8_0));
 
         // Test SenseVoice version constants
-        assert_eq!(sense_voice_versions::DEFAULT, sense_voice_versions::SMALL_Q4_K);
+        assert_eq!(
+            sense_voice_versions::DEFAULT,
+            sense_voice_versions::SMALL_Q4_K
+        );
         assert_eq!(sense_voice_versions::ALL.len(), 2);
         assert!(sense_voice_versions::ALL.contains(&sense_voice_versions::SMALL_Q4_K));
         assert!(sense_voice_versions::ALL.contains(&sense_voice_versions::SMALL_Q8_0));
@@ -489,7 +555,10 @@ mod tests {
         assert_eq!(whisper_models::ALL.len(), 5);
 
         // Test SenseVoice model definitions
-        assert_eq!(sense_voice_models::SMALL_Q4_K.name, "sense-voice-small-q4_k");
+        assert_eq!(
+            sense_voice_models::SMALL_Q4_K.name,
+            "sense-voice-small-q4_k"
+        );
         assert_eq!(sense_voice_models::SMALL_Q4_K.size_mb, 244);
         assert_eq!(sense_voice_models::DEFAULT.name, "sense-voice-small-q4_k");
         assert_eq!(sense_voice_models::ALL.len(), 2);
@@ -511,7 +580,7 @@ mod tests {
         assert!(!zh_models.is_empty());
         // Should be sorted by accuracy descending
         for i in 1..zh_models.len() {
-            assert!(zh_models[i-1].accuracy_score >= zh_models[i].accuracy_score);
+            assert!(zh_models[i - 1].accuracy_score >= zh_models[i].accuracy_score);
         }
 
         // Test recommending Whisper models by speed
@@ -530,11 +599,7 @@ mod tests {
     fn test_transcription_result_creation() {
         use super::super::traits::TranscriptionResult;
 
-        let result = TranscriptionResult::new(
-            "test text".to_string(),
-            EngineType::Whisper,
-            1000,
-        );
+        let result = TranscriptionResult::new("test text".to_string(), EngineType::Whisper, 1000);
         assert_eq!(result.text, "test text");
         assert_eq!(result.engine, EngineType::Whisper);
         assert_eq!(result.total_ms, 1000);
@@ -578,7 +643,7 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
 
-let _ = std::fs::remove_dir_all(&temp_dir);
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
@@ -593,11 +658,15 @@ let _ = std::fs::remove_dir_all(&temp_dir);
         assert!(!recommendations.is_empty());
 
         // Should include SenseVoice model (optimized for Chinese)
-        let has_sensevoice = recommendations.iter().any(|r| r.engine_type == EngineType::SenseVoice);
+        let has_sensevoice = recommendations
+            .iter()
+            .any(|r| r.engine_type == EngineType::SenseVoice);
         assert!(has_sensevoice, "Should recommend SenseVoice for Chinese");
 
         // Should include Whisper models that support Chinese
-        let has_whisper = recommendations.iter().any(|r| r.engine_type == EngineType::Whisper);
+        let has_whisper = recommendations
+            .iter()
+            .any(|r| r.engine_type == EngineType::Whisper);
         assert!(has_whisper, "Should recommend Whisper models for Chinese");
 
         // Verify sorted by accuracy descending
@@ -651,14 +720,19 @@ let _ = std::fs::remove_dir_all(&temp_dir);
         let recommendations = manager.recommend_by_language("zh");
 
         // Find SenseVoice Small Q4 model
-        let sensevoice_q4 = recommendations.iter()
+        let sensevoice_q4 = recommendations
+            .iter()
             .find(|r| r.model_name == "sense-voice-small-q4_k");
 
         assert!(sensevoice_q4.is_some());
-        assert!(sensevoice_q4.unwrap().downloaded, "Should detect downloaded model");
+        assert!(
+            sensevoice_q4.unwrap().downloaded,
+            "Should detect downloaded model"
+        );
 
         // Other models should be undownloaded
-        let other_models: Vec<_> = recommendations.iter()
+        let other_models: Vec<_> = recommendations
+            .iter()
             .filter(|r| r.model_name != "sense-voice-small-q4_k")
             .collect();
 
@@ -679,7 +753,10 @@ let _ = std::fs::remove_dir_all(&temp_dir);
         let recommendations = manager.recommend_by_language("xyz");
 
         // Should return empty list
-        assert!(recommendations.is_empty(), "Should return empty list for unsupported language");
+        assert!(
+            recommendations.is_empty(),
+            "Should return empty list for unsupported language"
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

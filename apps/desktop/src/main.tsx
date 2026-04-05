@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { events, windowCommands, systemCommands } from "./lib/tauri";
+import { logger } from "./lib/logger";
 import { initAnalytics } from "./lib/analytics";
 import { SettingsProvider, useSettingsContext } from "./contexts/SettingsContext";
 import { ConfirmProvider, setGlobalConfirm, useConfirm } from "./components/ui/confirm";
@@ -59,7 +60,7 @@ function PermissionNotice() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     events.onShortcutRegistrationFailed((error) => {
-      console.error("Shortcut registration failed:", error);
+      logger.error("shortcut_registration_failed", { error });
       setShowPermissionPrompt(true);
       windowCommands.showToast(t("permission.description"));
     }).then((fn) => { unlisten = fn; });
@@ -70,7 +71,7 @@ function PermissionNotice() {
     try {
       await systemCommands.applyPermission("accessibility");
     } catch (err) {
-      console.error("Failed to open settings:", err);
+      logger.error("failed_to_open_settings", { error: String(err) });
     }
   };
 
@@ -78,7 +79,7 @@ function PermissionNotice() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-card border border-border rounded-xl p-6 max-w-sm mx-4 shadow-lg">
+      <div className="bg-card border border-border rounded-3xl p-8 max-w-sm mx-4 shadow-lg">
         <h3 className="text-lg font-semibold mb-2">{t("permission.title")}</h3>
         <p className="text-muted-foreground text-sm mb-4">
           {t("permission.description")}
@@ -86,13 +87,13 @@ function PermissionNotice() {
         <div className="flex gap-3">
           <button
             onClick={() => setShowPermissionPrompt(false)}
-            className="flex-1 px-4 py-2 text-sm border border-input rounded-lg hover:bg-secondary transition-colors"
+            className="flex-1 px-5 py-2 text-sm border border-border rounded-full hover:bg-secondary transition-colors"
           >
             {t("permission.later")}
           </button>
           <button
             onClick={handleOpenSettings}
-            className="flex-1 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
+            className="flex-1 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-full hover:opacity-90 transition-opacity"
           >
             {t("permission.openSystemSettings")}
           </button>

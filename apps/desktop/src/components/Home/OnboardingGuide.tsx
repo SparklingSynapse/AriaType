@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import logoLight from "../../../assets/ariatype-light.png";
-import logoDark from "../../../assets/ariatype-dark.png";
 import {
   ChevronRight,
   ChevronLeft,
@@ -11,13 +9,13 @@ import {
   Accessibility,
   Check,
   Loader2,
-  Keyboard,
   Shield,
   Zap,
   Eye,
-  Languages,
+  Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
 import {
@@ -25,40 +23,56 @@ import {
   modelCommands,
   events,
   audioCommands,
-  type ModelInfo,
+  windowCommands,
+  type RecommendedModel,
 } from "@/lib/tauri";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 import { HotkeyInput, formatHotkey } from "@/components/ui/hotkey-input";
 import { Select } from "@/components/ui/select";
+import permissionsSvg from "@/assets/illustrations/onboarding/permissions.png";
+import languageSvg from "@/assets/illustrations/onboarding/language.png";
+import modelSvg from "@/assets/illustrations/onboarding/model.png";
+import hotkeySvg from "@/assets/illustrations/onboarding/hotkey.png";
+import practiceSvg from "@/assets/illustrations/onboarding/practice.png";
+import doneSvg from "@/assets/illustrations/onboarding/done.png";
 
 const DEFAULT_HOTKEY = "Shift+Space";
 
-// Common languages for onboarding
 const COMMON_LANGUAGES = [
   { code: "auto", label: "Auto" },
-  { code: "en", label: "English" },
-  { code: "zh", label: "Chinese (Simplified)" },
+  { code: "en-US", label: "English" },
+  { code: "zh-CN", label: "Chinese (Simplified)" },
   { code: "zh-TW", label: "Chinese (Traditional)" },
-  { code: "yue", label: "Cantonese" },
-  { code: "es", label: "Spanish" },
-  { code: "fr", label: "French" },
-  { code: "de", label: "German" },
-  { code: "ja", label: "Japanese" },
-  { code: "ko", label: "Korean" },
-  { code: "pt", label: "Portuguese" },
-  { code: "ru", label: "Russian" },
-  { code: "ar", label: "Arabic" },
-  { code: "hi", label: "Hindi" },
-  { code: "it", label: "Italian" },
-  { code: "nl", label: "Dutch" },
-  { code: "pl", label: "Polish" },
-  { code: "tr", label: "Turkish" },
-  { code: "vi", label: "Vietnamese" },
-  { code: "th", label: "Thai" },
-  { code: "id", label: "Indonesian" },
+  { code: "yue-CN", label: "Cantonese" },
+  { code: "es-ES", label: "Spanish" },
+  { code: "fr-FR", label: "French" },
+  { code: "de-DE", label: "German" },
+  { code: "ja-JP", label: "Japanese" },
+  { code: "ko-KR", label: "Korean" },
+  { code: "pt-BR", label: "Portuguese" },
+  { code: "ru-RU", label: "Russian" },
+  { code: "ar-SA", label: "Arabic" },
+  { code: "hi-IN", label: "Hindi" },
+  { code: "it-IT", label: "Italian" },
+  { code: "nl-NL", label: "Dutch" },
+  { code: "pl-PL", label: "Polish" },
+  { code: "tr-TR", label: "Turkish" },
+  { code: "vi-VN", label: "Vietnamese" },
+  { code: "th-TH", label: "Thai" },
+  { code: "id-ID", label: "Indonesian" },
 ];
 
-type StepId = "permissions" | "model" | "language" | "hotkey" | "practice" | "done";
+type StepId =
+  | "permissions"
+  | "model"
+  | "language"
+  | "hotkey"
+  | "practice"
+  | "done";
+
+// --- SVG Icons Components ---
+// Removed PracticeSvgIcon in favor of imported practiceSvg asset
+// --- End SVG Icons ---
 
 interface Step {
   id: StepId;
@@ -79,11 +93,11 @@ function PermissionStep() {
     systemCommands
       .checkPermission("microphone")
       .then((s) => setMicStatus(s as typeof micStatus))
-      .catch(console.error);
+      .catch((err: unknown) => logger.error("check_microphone_permission_failed", { error: String(err) }));
     systemCommands
       .checkPermission("accessibility")
       .then((s) => setAxStatus(s === "granted"))
-      .catch(console.error);
+      .catch((err: unknown) => logger.error("check_accessibility_permission_failed", { error: String(err) }));
   }, []);
 
   useEffect(() => {
@@ -99,7 +113,7 @@ function PermissionStep() {
       await systemCommands.applyPermission("microphone");
       setTimeout(checkPermissions, 500);
     } catch (err) {
-      console.error("Failed to request microphone permission:", err);
+      logger.error("failed_to_request_microphone_permission", { error: String(err) });
     } finally {
       setMicLoading(false);
     }
@@ -111,118 +125,208 @@ function PermissionStep() {
       await systemCommands.applyPermission("accessibility");
       setTimeout(checkPermissions, 500);
     } catch (err) {
-      console.error("Failed to request accessibility permission:", err);
+      logger.error("failed_to_request_accessibility_permission", { error: String(err) });
     } finally {
       setAxLoading(false);
     }
   };
 
   return (
-    <div className="space-y-4 w-full">
-      <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              "w-8 h-8 rounded-full flex items-center justify-center",
-              micStatus === "granted" ? "bg-green-500/20" : "bg-muted",
-            )}
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+      <img
+        src={permissionsSvg}
+        alt="Permissions"
+        className="w-full max-w-[160px] max-h-[120px] object-contain"
+      />
+      <div className="space-y-4 w-full">
+        <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center border",
+                micStatus === "granted"
+                  ? "bg-green-500/10 border-green-500/20 text-green-600"
+                  : "bg-transparent border-border text-muted-foreground",
+              )}
+            >
+              {micStatus === "granted" ? (
+                <Check className="w-4 h-4 text-green-500" />
+              ) : (
+                <Mic className="w-4 h-4 text-muted-foreground" />
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-medium">
+                {t("onboarding.permissions.microphone")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("onboarding.permissions.microphoneDesc")}
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={micStatus === "granted" ? "outline" : "default"}
+            onClick={handleMicPermission}
+            disabled={micLoading || micStatus === "granted"}
           >
-            {micStatus === "granted" ? (
-              <Check className="w-4 h-4 text-green-500" />
+            {micLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : micStatus === "granted" ? (
+              t("onboarding.permissions.granted")
             ) : (
-              <Mic className="w-4 h-4 text-muted-foreground" />
+              t("onboarding.permissions.grant")
             )}
-          </div>
-          <div>
-            <p className="text-sm font-medium">
-              {t("onboarding.permissions.microphone")}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t("onboarding.permissions.microphoneDesc")}
-            </p>
-          </div>
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant={micStatus === "granted" ? "outline" : "default"}
-          onClick={handleMicPermission}
-          disabled={micLoading || micStatus === "granted"}
-        >
-          {micLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : micStatus === "granted" ? (
-            t("onboarding.permissions.granted")
-          ) : (
-            t("onboarding.permissions.grant")
-          )}
-        </Button>
-      </div>
 
-      <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              "w-8 h-8 rounded-full flex items-center justify-center",
-              axStatus === true ? "bg-green-500/20" : "bg-muted",
-            )}
+        <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center border",
+                axStatus === true
+                  ? "bg-green-500/10 border-green-500/20 text-green-600"
+                  : "bg-transparent border-border text-muted-foreground",
+              )}
+            >
+              {axStatus === true ? (
+                <Check className="w-4 h-4 text-green-500" />
+              ) : (
+                <Accessibility className="w-4 h-4 text-muted-foreground" />
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-medium">
+                {t("onboarding.permissions.accessibility")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("onboarding.permissions.accessibilityDesc")}
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={axStatus === true ? "outline" : "default"}
+            onClick={handleAxPermission}
+            disabled={axLoading || axStatus === true}
           >
-            {axStatus === true ? (
-              <Check className="w-4 h-4 text-green-500" />
+            {axLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : axStatus === true ? (
+              t("onboarding.permissions.granted")
             ) : (
-              <Accessibility className="w-4 h-4 text-muted-foreground" />
+              t("onboarding.permissions.grant")
             )}
-          </div>
-          <div>
-            <p className="text-sm font-medium">
-              {t("onboarding.permissions.accessibility")}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t("onboarding.permissions.accessibilityDesc")}
-            </p>
-          </div>
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant={axStatus === true ? "outline" : "default"}
-          onClick={handleAxPermission}
-          disabled={axLoading || axStatus === true}
-        >
-          {axLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : axStatus === true ? (
-            t("onboarding.permissions.granted")
-          ) : (
-            t("onboarding.permissions.grant")
-          )}
-        </Button>
       </div>
     </div>
   );
 }
 
-function ModelStep() {
+function CircularProgress({
+  progress,
+  size = 16,
+  strokeWidth = 2,
+}: {
+  progress: number;
+  size?: number;
+  strokeWidth?: number;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (progress / 100) * circumference;
+
+  return (
+    <svg width={size} height={size} className="text-green-500">
+      <circle
+        className="text-green-500/20"
+        strokeWidth={strokeWidth}
+        stroke="currentColor"
+        fill="transparent"
+        r={radius}
+        cx={size / 2}
+        cy={size / 2}
+      />
+      <circle
+        className="transition-all duration-300"
+        strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        stroke="currentColor"
+        fill="transparent"
+        r={radius}
+        cx={size / 2}
+        cy={size / 2}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+    </svg>
+  );
+}
+
+function ModelStep({
+  language,
+  selectedModel,
+  onSelectModel,
+  onModelReadyChange,
+}: {
+  language: string;
+  selectedModel: string | null;
+  onSelectModel: (modelName: string) => void;
+  onModelReadyChange: (isReady: boolean) => void;
+}) {
   const { t } = useTranslation();
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [downloading, setDownloading] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
+  const [models, setModels] = useState<RecommendedModel[]>([]);
+  const [progressMap, setProgressMap] = useState<Record<string, number>>({});
+  const [autoDownloadStarted, setAutoDownloadStarted] = useState(false);
 
+  const DEFAULT_MODELS = ["base", "sense-voice-small-q4_k"];
+  const CJK_LANGUAGES = ["zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR"];
+
+  const getRecommendedModelName = (lang: string): string => {
+    if (
+      lang &&
+      lang !== "auto" &&
+      CJK_LANGUAGES.some((l) => lang.startsWith(l))
+    ) {
+      return "sense-voice-small-q4_k";
+    }
+    return "base";
+  };
+
+  const recommendedModelName = getRecommendedModelName(language);
+
+  // Fetch recommendations when language changes
   useEffect(() => {
-    modelCommands.getModels().then(setModels).catch(console.error);
-  }, []);
+    modelCommands
+      .recommendModelsByLanguage(language || "auto")
+      .then(setModels)
+      .catch((err: unknown) => logger.error("failed_to_recommend_models", { error: String(err) }));
+  }, [language]);
 
+  // Listen for download progress and completion
   useEffect(() => {
     let unlistenProgress: (() => void) | undefined;
     let unlistenComplete: (() => void) | undefined;
 
     const setup = async () => {
       unlistenProgress = await events.onModelDownloadProgress((data) => {
-        setProgress(data.progress);
+        setProgressMap((prev) => ({ ...prev, [data.model]: data.progress }));
       });
-      unlistenComplete = await events.onModelDownloadComplete(() => {
-        setDownloading(null);
-        setProgress(0);
-        modelCommands.getModels().then(setModels).catch(console.error);
-      });
+      unlistenComplete = await events.onModelDownloadComplete(
+        async (modelName) => {
+          setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
+          modelCommands
+            .recommendModelsByLanguage(language || "auto")
+            .then(setModels)
+            .catch((err: unknown) => logger.error("failed_to_refresh_models_after_download", { error: String(err) }));
+          const displayName =
+            modelName === "base" ? "Whisper Base" : "SenseVoice Small Q4";
+          await windowCommands.showToast(`${displayName} download complete`);
+        },
+      );
     };
     setup();
 
@@ -230,96 +334,113 @@ function ModelStep() {
       unlistenProgress?.();
       unlistenComplete?.();
     };
-  }, []);
+  }, [language]);
 
-  const handleDownload = async (modelName: string) => {
-    setDownloading(modelName);
-    setProgress(0);
-    try {
-      await modelCommands.downloadModel(modelName);
-    } catch (err) {
-      console.error("Failed to download model:", err);
-      setDownloading(null);
+  useEffect(() => {
+    if (autoDownloadStarted) return;
+    setAutoDownloadStarted(true);
+
+    const startDownloads = async () => {
+      for (const modelName of DEFAULT_MODELS) {
+        try {
+          const isDownloaded = await modelCommands.isModelDownloaded(modelName);
+          if (isDownloaded) {
+            setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
+          } else {
+            await modelCommands.downloadModel(modelName);
+          }
+        } catch (err) {
+          logger.error("failed_to_start_model_download", { modelName, error: String(err) });
+        }
+      }
+      modelCommands
+        .recommendModelsByLanguage(language || "auto")
+        .then(setModels)
+        .catch((err: unknown) => logger.error("failed_to_refresh_models", { error: String(err) }));
+    };
+
+    startDownloads();
+  }, [autoDownloadStarted, language]);
+
+  useEffect(() => {
+    onSelectModel(recommendedModelName);
+  }, [recommendedModelName, onSelectModel]);
+
+  // Only allow next step when the currently selected model is downloaded
+  useEffect(() => {
+    if (selectedModel) {
+      const model = models.find((m) => m.model_name === selectedModel);
+      const progress = progressMap[selectedModel] || 0;
+      onModelReadyChange(!!model?.downloaded || progress === 100);
+    } else {
+      onModelReadyChange(false);
     }
-  };
+  }, [selectedModel, models, progressMap, onModelReadyChange]);
 
-  const downloadedModels = models.filter((m) => m.downloaded);
-  const recommendedModel = models.find((m) => m.name === "base") || models[0];
-
-  if (downloadedModels.length > 0) {
-    return (
-      <div className="flex flex-col items-center gap-3 text-center">
-        <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-          <Check className="w-10 h-10 text-green-500" />
-        </div>
-        <p className="mt-2 text-sm">
-          {t("onboarding.model.downloaded", {
-            model: downloadedModels[0].display_name,
-          })}
-        </p>
-      </div>
-    );
-  }
+  const recommendedModel = models.find(
+    (m) => m.model_name === recommendedModelName,
+  );
 
   return (
-    <div className="space-y-3 w-full">
-      <p className="text-sm text-muted-foreground text-center mb-2">
-        {t("onboarding.model.selectHint")}
-      </p>
-      {models.slice(0, 3).map((model) => {
-        const isRecommended = model.name === recommendedModel?.name;
-        return (
-          <div
-            key={model.name}
-            className={cn(
-              "flex items-center justify-between p-3 rounded-lg border bg-card",
-              isRecommended
-                ? "border-primary/50 bg-primary/5"
-                : "border-border",
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium">{model.display_name}</p>
-                  {isRecommended && (
-                    <div className="flex items-center gap-1 text-xs text-primary">
-                      <Check className="w-3 h-3" />
-                      <span>Recommended</span>
-                    </div>
-                  )}
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+      <img src={modelSvg} alt="Model" className="w-full max-w-[200px] max-h-[100px] object-contain" />
+      <div className="space-y-3 w-full">
+        {DEFAULT_MODELS.map((modelName) => {
+          const modelInfo = models.find((m) => m.model_name === modelName);
+          const isRecommended = recommendedModel?.model_name === modelName;
+          const isSelected = selectedModel === modelName;
+          const progress = progressMap[modelName] || 0;
+          const isDownloaded = modelInfo?.downloaded ?? false;
+
+          const displayName =
+            modelName === "base"
+              ? "Whisper Base (74M)"
+              : "SenseVoice Small Q4 (244M)";
+          const accuracyScore = modelName === "base" ? 7 : 9;
+
+          return (
+            <div
+              key={modelName}
+              className={cn(
+                "flex items-center justify-between p-4 rounded-2xl border bg-card cursor-pointer transition-all",
+                isSelected
+                  ? "border-primary shadow-sm ring-1 ring-primary"
+                  : isRecommended && isDownloaded
+                    ? "border-primary/30 hover:bg-secondary/50"
+                    : "border-border hover:bg-secondary/50",
+              )}
+              onClick={() => onSelectModel(modelName)}
+            >
+              <div className="flex items-center gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">{displayName}</p>
+                    {isRecommended && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 rounded">
+                        <Star className="w-2.5 h-2.5 fill-current" />
+                        {t("onboarding.model.recommended")}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {modelName === "base" ? "74MB" : "244MB"} ·{" "}
+                    {t("model.available.accuracy")}: {accuracyScore}/10
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {model.size_mb}MB · {t("model.available.accuracy")}:{" "}
-                  {model.accuracy_score}/10
-                </p>
+              </div>
+              <div className="flex items-center">
+                {isDownloaded || progress === 100 ? null : (
+                  <CircularProgress
+                    progress={progress}
+                    size={18}
+                    strokeWidth={2}
+                  />
+                )}
               </div>
             </div>
-            {downloading === model.name ? (
-              <div className="flex items-center gap-2 w-24">
-                <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <span className="text-xs text-muted-foreground w-8">
-                  {progress}%
-                </span>
-              </div>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleDownload(model.name)}
-                disabled={downloading !== null}
-              >
-                {t("model.available.download")}
-              </Button>
-            )}
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -339,29 +460,29 @@ function LanguageStep() {
   };
 
   return (
-    <div className="space-y-4 w-3/4">
-      <div className="flex items-center justify-center gap-2 mb-4">
-        <Languages className="w-5 h-5 text-primary" />
-        <span className="text-sm font-medium">
-          {t("onboarding.language.current")}
-        </span>
-      </div>
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+      <img
+        src={languageSvg}
+        alt="Language"
+        className="w-full max-w-[160px] max-h-[120px] object-contain"
+      />
+      <div className="space-y-4 w-full">
+        <div className="space-y-2">
+          <Select
+            value={settings.stt_engine_language ?? "auto"}
+            onChange={(e) => handleLanguageChange(e.target.value)}
+            options={COMMON_LANGUAGES.map((lang) => ({
+              value: lang.code,
+              label: lang.label,
+            }))}
+            className="w-full"
+          />
+        </div>
 
-      <div className="space-y-2">
-        <Select
-          value={settings.stt_engine_language ?? "auto"}
-          onChange={(e) => handleLanguageChange(e.target.value)}
-          options={COMMON_LANGUAGES.map((lang) => ({
-            value: lang.code,
-            label: lang.label,
-          }))}
-          className="w-full"
-        />
+        <p className="text-xs text-muted-foreground text-center">
+          {t("onboarding.language.hint")}
+        </p>
       </div>
-
-      <p className="text-xs text-muted-foreground text-center">
-        {t("onboarding.language.hint")}
-      </p>
     </div>
   );
 }
@@ -381,26 +502,26 @@ function HotkeyStep() {
   };
 
   return (
-    <div className="space-y-4 w-full">
-      <div className="flex items-center justify-center gap-2">
-        <Keyboard className="w-5 h-5 text-primary" />
-        <span className="text-sm font-medium">
-          {t("onboarding.hotkey.current")}
-        </span>
-      </div>
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+      <img
+        src={hotkeySvg}
+        alt="Hotkey"
+        className="w-full max-w-[160px] max-h-[120px] object-contain"
+      />
+      <div className="space-y-4 w-full">
+        <div className="flex justify-center">
+          <HotkeyInput
+            value={settings.hotkey}
+            onChange={saveHotkey}
+            placeholder={t("hotkey.recording.pressKeys")}
+            className="w-48 px-4 py-3 text-center text-lg rounded-2xl border bg-background"
+          />
+        </div>
 
-      <div className="flex justify-center">
-        <HotkeyInput
-          value={settings.hotkey}
-          onChange={saveHotkey}
-          placeholder={t("hotkey.recording.pressKeys")}
-          className="w-48 px-4 py-3 text-center text-lg rounded-lg border bg-background"
-        />
+        <p className="text-xs text-muted-foreground text-center">
+          {t("onboarding.hotkey.hint")}
+        </p>
       </div>
-
-      <p className="text-xs text-muted-foreground text-center">
-        {t("onboarding.hotkey.hint")}
-      </p>
     </div>
   );
 }
@@ -409,7 +530,7 @@ function PracticeStep({ hotkey }: { hotkey: string }) {
   const { t } = useTranslation();
   const formattedHotkey = formatHotkey(hotkey).replace(/\+/g, " + ");
   const [isRecording, setIsRecording] = useState(false);
-  const [audioLevel, setAudioLevel] = useState(0);
+  const [, setAudioLevel] = useState(0);
   const [transcript, setTranscript] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
@@ -424,7 +545,11 @@ function PracticeStep({ hotkey }: { hotkey: string }) {
         if (event.status === "recording") {
           setIsRecording(true);
           setIsTranscribing(false);
-        } else if (event.status === "transcribing") {
+        } else if (
+          event.status === "transcribing" ||
+          event.status === "processing" ||
+          event.status === "polishing"
+        ) {
           setIsRecording(false);
           setIsTranscribing(true);
         } else if (event.status === "idle" || event.status === "error") {
@@ -443,7 +568,7 @@ function PracticeStep({ hotkey }: { hotkey: string }) {
       });
 
       unlistenError = await events.onTranscriptionError((error) => {
-        console.error("Transcription error:", error);
+        logger.error("transcription_error", { error });
         setIsTranscribing(false);
       });
     };
@@ -459,8 +584,24 @@ function PracticeStep({ hotkey }: { hotkey: string }) {
   }, []);
 
   const handleKeyDown = async (e: React.KeyboardEvent) => {
+    const modifierCodes = new Set([
+      "MetaLeft",
+      "MetaRight",
+      "ControlLeft",
+      "ControlRight",
+      "AltLeft",
+      "AltRight",
+      "ShiftLeft",
+      "ShiftRight",
+    ]);
+
+    if (modifierCodes.has(e.code)) {
+      return;
+    }
+
     const expectedParts = hotkey.toLowerCase().split("+").sort();
     const actualParts: string[] = [];
+
     if (e.metaKey) actualParts.push("cmd");
     if (e.ctrlKey) actualParts.push("ctrl");
     if (e.altKey) actualParts.push("alt");
@@ -471,20 +612,9 @@ function PracticeStep({ hotkey }: { hotkey: string }) {
       : e.code.startsWith("Digit")
         ? e.code.slice(5)
         : e.code.toLowerCase();
-    if (
-      ![
-        "MetaLeft",
-        "MetaRight",
-        "ControlLeft",
-        "ControlRight",
-        "AltLeft",
-        "AltRight",
-        "ShiftLeft",
-        "ShiftRight",
-      ].includes(e.code)
-    ) {
-      actualParts.push(keyName);
-    }
+    actualParts.push(keyName);
+
+    actualParts.sort();
 
     const isMatch =
       expectedParts.length === actualParts.length &&
@@ -505,39 +635,31 @@ function PracticeStep({ hotkey }: { hotkey: string }) {
 
   return (
     <div
-      className="flex flex-col items-center gap-6 w-full"
+      className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
     >
-      <div
-        className={cn(
-          "w-14 h-14 rounded-full flex items-center justify-center border transition-colors duration-100",
-          isRecording ? "border-green-500/50" : "border-border",
-        )}
-        style={
-          isRecording
-            ? {
-                borderColor: `rgba(34, 197, 94, ${0.3 + audioLevel * 0.7})`,
-              }
-            : undefined
-        }
-      >
-        <Mic
-          className={cn(
-            "w-6 h-6 transition-colors duration-100",
-            isRecording ? "text-green-500" : "text-muted-foreground",
-          )}
-        />
+      <div className="relative flex justify-center items-center w-full max-w-[160px]">
+        <div className="relative z-10 w-full max-h-[120px] flex justify-center items-center">
+          <img
+            src={practiceSvg}
+            alt="Practice"
+            className={cn(
+              "w-full h-full object-contain transition-all duration-300",
+              isRecording ? "scale-110 drop-shadow-[0_0_15px_rgba(34,197,94,0.5)]" : "",
+            )}
+          />
+        </div>
       </div>
 
-      <p className="text-sm text-muted-foreground text-center">
+      <p className="text-sm text-muted-foreground text-center mt-2">
         {isTranscribing
           ? t("onboarding.practice.transcribing")
           : t("onboarding.practice.instruction", { hotkey: formattedHotkey })}
       </p>
 
-      <div className="w-full h-[100px] p-3 rounded-lg bg-card border border-border">
+      <div className="w-full h-[100px] p-4 rounded-2xl bg-card border border-border">
         {transcript ? (
           <div className="h-full overflow-auto">
             <p className="text-xs text-muted-foreground mb-2">
@@ -579,11 +701,9 @@ function DoneStep() {
   ];
 
   return (
-    <div className="flex flex-col items-center gap-8 text-center w-full max-w-sm">
-      <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-        <Check className="w-10 h-10 text-green-500" />
-      </div>
-      <div>
+    <div className="flex flex-col items-center gap-2 text-center w-full max-w-lg mx-auto h-full justify-center">
+      <img src={doneSvg} alt="Done" className="w-full max-w-[140px] max-h-[100px] object-contain mb-2" />
+      <div className="mb-2">
         <h3 className="text-xl font-medium mb-1">
           {t("onboarding.done.congrats")}
         </h3>
@@ -592,16 +712,16 @@ function DoneStep() {
         </p>
       </div>
 
-      <div className="w-full space-y-3">
+      <div className="w-full grid grid-cols-3 gap-3">
         {features.map((feature, index) => (
           <div
             key={index}
-            className="flex items-center justify-center gap-3 p-3 rounded-lg bg-muted/50 border border-border bg-card"
+            className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border border-border bg-card"
           >
             <feature.icon className="w-5 h-5 text-muted-foreground shrink-0" />
             <div className="text-center">
-              <span className="text-sm font-medium">{feature.label}</span>
-              <span className="text-sm text-muted-foreground ml-1">
+              <span className="text-sm font-medium block leading-tight">{feature.label}</span>
+              <span className="text-xs text-muted-foreground block leading-tight mt-0.5">
                 {feature.highlight}
               </span>
             </div>
@@ -619,19 +739,16 @@ interface OnboardingGuideProps {
 
 export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   const { t } = useTranslation();
-  const { settings } = useSettingsContext();
+  const { settings, updateSetting } = useSettingsContext();
   const [currentStep, setCurrentStep] = useState(0);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [isModelReady, setIsModelReady] = useState(false);
 
   const steps: Step[] = [
     {
       id: "permissions",
       title: t("onboarding.permissions.title"),
       description: t("onboarding.permissions.description"),
-    },
-    {
-      id: "model",
-      title: t("onboarding.model.title"),
-      description: t("onboarding.model.description"),
     },
     {
       id: "language",
@@ -642,6 +759,11 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
       id: "hotkey",
       title: t("onboarding.hotkey.title"),
       description: t("onboarding.hotkey.description"),
+    },
+    {
+      id: "model",
+      title: t("onboarding.model.title"),
+      description: t("onboarding.model.description"),
     },
     {
       id: "practice",
@@ -655,13 +777,25 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
     },
   ];
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    if (current.id === "model" && selectedModel) {
+      const engineType = selectedModel.includes("sense-voice")
+        ? "sensevoice"
+        : "whisper";
+      await updateSetting("model", selectedModel);
+      await updateSetting("stt_engine", engineType);
+    }
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
       analytics.track(AnalyticsEvents.ONBOARDING_COMPLETED);
       onClose();
     }
+  };
+
+  const canProceed = () => {
+    if (current.id === "model") return !!selectedModel && isModelReady;
+    return true;
   };
 
   const handlePrev = () => {
@@ -700,12 +834,19 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
     switch (current.id) {
       case "permissions":
         return <PermissionStep />;
-      case "model":
-        return <ModelStep />;
       case "language":
         return <LanguageStep />;
       case "hotkey":
         return <HotkeyStep />;
+      case "model":
+        return (
+          <ModelStep
+            language={settings?.stt_engine_language || "auto"}
+            selectedModel={selectedModel}
+            onSelectModel={setSelectedModel}
+            onModelReadyChange={setIsModelReady}
+          />
+        );
       case "practice":
         return (
           <PracticeStep
@@ -726,25 +867,23 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
         onClick={handleSkip}
       />
 
-      <div className="relative z-10 w-[560px] min-h-[520px] mx-4 bg-background rounded-xl border border-border shadow-2xl overflow-hidden flex flex-col">
+      <div className="relative z-10 w-[560px] h-[520px] mx-4 bg-background rounded-3xl border border-border shadow-2xl flex flex-col">
         <div className="flex flex-col items-center gap-3 pt-6 shrink-0">
-          <img src={logoLight} alt="AriaType" className="h-7 dark:hidden" />
-          <img src={logoDark} alt="AriaType" className="h-7 hidden dark:block" />
           <div className="flex justify-center gap-2">
             {steps.map((_, index) => (
-            <button
-              key={index}
-              onClick={() => setCurrentStep(index)}
-              className={cn(
-                "h-1.5 rounded-full transition-all duration-300 cursor-pointer",
-                index === currentStep
-                  ? "w-6 bg-primary"
-                  : index < currentStep
-                    ? "w-1.5 bg-primary"
-                    : "w-1.5 bg-muted",
-              )}
-            />
-          ))}
+              <button
+                key={index}
+                onClick={() => setCurrentStep(index)}
+                className={cn(
+                  "h-1.5 rounded-full transition-all duration-300 cursor-pointer",
+                  index === currentStep
+                    ? "w-6 bg-primary"
+                    : index < currentStep
+                      ? "w-1.5 bg-primary"
+                      : "w-1.5 bg-input",
+                )}
+              />
+            ))}
           </div>
         </div>
 
@@ -765,7 +904,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between space-x-4 p-4 border-t border-border bg-muted/30 shrink-0">
+        <div className="flex items-center justify-between space-x-4 p-4 border-t border-border shrink-0 rounded-b-xl">
           {currentStep > 0 ? (
             <Button
               variant="ghost"
@@ -786,7 +925,12 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
               {t("onboarding.skip")}
             </Button>
           )}
-          <Button size="sm" onClick={handleNext} className="gap-2">
+          <Button
+            size="sm"
+            onClick={handleNext}
+            disabled={!canProceed()}
+            className="gap-2"
+          >
             {isLastStep ? t("onboarding.finish") : t("onboarding.next")}
             {!isLastStep && <ChevronRight className="w-4 h-4" />}
           </Button>

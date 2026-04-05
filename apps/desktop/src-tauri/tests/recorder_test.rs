@@ -50,10 +50,10 @@ fn test_recorder_double_start() {
     let recorder = ariatype_lib::audio::recorder::AudioRecorder::new();
     let output_path = temp_dir().join("test.wav");
 
-    let result1 = recorder.start(output_path.clone(), None);
+    let result1 = recorder.start(output_path.clone(), None, None::<fn(std::path::PathBuf)>);
 
     if result1.is_ok() {
-        let result2 = recorder.start(output_path, None);
+        let result2 = recorder.start(output_path, None, None::<fn(std::path::PathBuf)>);
         assert!(result2.is_err(), "Should not be able to start twice");
 
         let _ = recorder.stop();
@@ -65,7 +65,11 @@ fn test_recorder_invalid_device() {
     let recorder = ariatype_lib::audio::recorder::AudioRecorder::new();
     let output_path = temp_dir().join("test.wav");
 
-    let result = recorder.start(output_path, Some("nonexistent device name xyz".to_string()));
+    let result = recorder.start(
+        output_path,
+        Some("nonexistent device name xyz".to_string()),
+        None::<fn(std::path::PathBuf)>,
+    );
 
     if result.is_err() {
         let err = result.unwrap_err();

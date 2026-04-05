@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+:root {
+  --background: #ff0000;
+}
+.test {
+  width: 100px;
+  height: 100px;
+  background-color: color-mix(in srgb, var(--background) calc(0.5 * 100%), transparent);
+}
+</style>
+</head>
+<body>
+<div class="test"></div>
+</body>
+</html>

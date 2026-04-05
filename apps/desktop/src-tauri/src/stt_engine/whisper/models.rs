@@ -15,7 +15,7 @@ pub const TINY: ModelDefinition = ModelDefinition {
     size_mb: 39,
     speed_score: 10,
     accuracy_score: 6,
-    prefer_lang: &["en"],
+    prefer_lang: &["en-US"],
     filename: "ggml-tiny.bin",
 };
 
@@ -25,7 +25,7 @@ pub const BASE: ModelDefinition = ModelDefinition {
     size_mb: 74,
     speed_score: 9,
     accuracy_score: 7,
-    prefer_lang: &["en"],
+    prefer_lang: &["en-US"],
     filename: "ggml-base.bin",
 };
 
@@ -35,7 +35,7 @@ pub const SMALL_Q8_0: ModelDefinition = ModelDefinition {
     size_mb: 252,
     speed_score: 7,
     accuracy_score: 8,
-    prefer_lang: &["en", "zh", "ja", "ko"],
+    prefer_lang: &["en-US", "zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR"],
     filename: "ggml-small-q8_0.bin",
 };
 
@@ -45,7 +45,9 @@ pub const MEDIUM_Q5_0: ModelDefinition = ModelDefinition {
     size_mb: 515,
     speed_score: 5,
     accuracy_score: 9,
-    prefer_lang: &["en", "zh", "ja", "ko", "es", "fr", "de"],
+    prefer_lang: &[
+        "en-US", "zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR", "es-ES", "fr-FR", "de-DE",
+    ],
     filename: "ggml-medium-q5_0.bin",
 };
 
@@ -55,7 +57,10 @@ pub const LARGE_V3_TURBO_Q8_0: ModelDefinition = ModelDefinition {
     size_mb: 800,
     speed_score: 3,
     accuracy_score: 10,
-    prefer_lang: &["en", "zh", "ja", "ko", "es", "fr", "de", "ru", "ar"],
+    prefer_lang: &[
+        "en-US", "zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR", "es-ES", "fr-FR", "de-DE", "ru-RU",
+        "ar-SA", "pt-BR", "hi-IN", "it-IT", "nl-NL", "pl-PL", "tr-TR", "vi-VN", "th-TH",
+    ],
     filename: "ggml-large-v3-turbo-q8_0.bin",
 };
 
@@ -75,15 +80,23 @@ pub fn find_by_name(name: &str) -> Option<&'static ModelDefinition> {
 }
 
 pub fn recommend_by_language(lang: &str) -> Vec<&'static ModelDefinition> {
+    let base_lang = lang.split('-').next().unwrap_or(lang);
     let mut models: Vec<_> = ALL
         .iter()
-        .filter(|m| m.prefer_lang.contains(&lang))
+        .filter(|m| {
+            lang == "auto"
+                || m.prefer_lang.contains(&lang)
+                || m.prefer_lang
+                    .iter()
+                    .any(|p| p.split('-').next().unwrap_or(*p) == base_lang)
+        })
         .copied()
         .collect();
     models.sort_by(|a, b| b.accuracy_score.cmp(&a.accuracy_score));
     models
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn recommend_by_speed(min_speed: u8) -> Vec<&'static ModelDefinition> {
     let mut models: Vec<_> = ALL
         .iter()

@@ -3,10 +3,11 @@ import { systemCommands } from "@/lib/tauri";
 import { getVersion } from "@tauri-apps/api/app";
 import { UPDATE_CHECK_URL } from "@ariatype/shared";
 import { compareVersions, validate } from "compare-versions";
+import { logger } from "@/lib/logger";
 
 function isNewerVersion(latest: string, current: string): boolean {
   if (!validate(latest) || !validate(current)) {
-    console.warn("Invalid version format", { latest, current });
+    logger.warn("invalid_version_format", { latest, current });
     return false;
   }
   return compareVersions(latest, current) > 0;

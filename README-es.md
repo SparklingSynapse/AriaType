@@ -1,12 +1,10 @@
 <div align="center">
-<img src="https://github.com/user-attachments/assets/d2e99fe1-8516-41a8-b184-6a385c66d152" alt="Demostración de AriaType" width="100%"/>
+<img src="./assets/showcase.png" alt="Demostración de AriaType" width="100%"/>
 
 <br/><br/>
 
-<img src="./assets/ariatype.png" alt="Logo de AriaType"  height="128" />
 
-
-### Tu teclado de voz privado y local
+### AriaType - Tu teclado de voz privado y local
 
 **Mantén pulsado para hablar. Suelta para escribir. Local primero. Privacidad primero.**
 

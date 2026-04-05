@@ -15,7 +15,7 @@ doctest = false
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2", features = ["devtools", "tray-icon"] }
 tauri-plugin-aptabase = "1.0.0"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-store = "2"
@@ -31,8 +31,8 @@ rubato = "0.15"
 nnnoiseless = "0.5"
 webrtc-vad = "0.1"
 whisper-rs = "0.15.1"
-reqwest = { version = "0.12", features = ["json", "stream"] }
-futures-util = "0.3"
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+futures-util = { version = "0.3", features = ["sink"] }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
@@ -45,16 +45,28 @@ uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 thiserror = "2"
 llama-cpp-2 = "0.1.138"
+llama-cpp-sys-2 = "0.1.138"
 async-trait = "0.1.89"
+tokio-tungstenite = { version = "0.29.0", features = ["native-tls"] }
+base64 = "0.22"
+rusqlite = { version = "0.34", features = ["bundled"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 enigo = { version = "0.6", default-features = false }
 block = "0.1"
 whisper-rs = { version = "0.15.1", features = ["metal"] }
-tauri = { version = "2", features = ["devtools", "macos-private-api"] }
+tauri = { version = "2", features = ["devtools", "macos-private-api", "tray-icon"] }
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2" }
 cocoa = "0.26"
 objc = "0.2"
+unicode-segmentation = "1"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+enigo = { version = "0.6", default-features = false }
 
 [profile.release]
 panic = "unwind"

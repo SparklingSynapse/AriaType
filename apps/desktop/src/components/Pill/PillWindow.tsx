@@ -2,13 +2,16 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 import { AudioDots } from "./AudioDots";
 import { SettingsButton } from "./SettingsButton";
 import type { RecordingStatus } from "@/types";
+import { logger } from "@/lib/logger";
 import { settingsCommands, windowCommands, events, type AppSettings } from "@/lib/tauri";
 import type { RecordingStateEvent } from "@/lib/tauri";
 
 export function PillWindow() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
   const [hasAudioActivity, setHasAudioActivity] = useState(false);
@@ -39,11 +42,9 @@ export function PillWindow() {
         (event: { payload: RecordingStateEvent }) => {
           const { status, task_id } = event.payload;
           if (task_id < latestTaskId.current) {
-            console.log(`[PillWindow] Ignoring stale event (task_id=${task_id}, latest=${latestTaskId.current})`);
             return;
           }
           latestTaskId.current = task_id;
-          console.log(`[PillWindow] Received status: ${status} (task_id=${task_id})`);
           const next = status as RecordingStatus;
           if (next === "recording") {
             setHasAudioActivity(false);
@@ -86,7 +87,7 @@ export function PillWindow() {
     try {
       await getCurrentWindow().startDragging();
     } catch (e) {
-      console.error("Failed to start dragging:", e);
+      logger.error("failed_to_start_dragging", { error: String(e) });
     }
   }, []);
 
@@ -98,9 +99,18 @@ export function PillWindow() {
     }
   }, [indicatorMode]);
 
+  const statusTooltipKey =
+    status === "recording"
+      ? "pill.status.recording"
+      : status === "transcribing" || status === "processing"
+        ? "pill.status.transcribing"
+        : status === "polishing"
+          ? "pill.status.polishing"
+          : null;
+
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center select-none bg-transparent"
+      className="fixed inset-0 flex items-start justify-center pt-1.5 select-none bg-transparent"
       onMouseDown={handleDrag}
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
@@ -112,17 +122,35 @@ export function PillWindow() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16, ease: "easeOut" }}
-            className="relative flex items-center justify-center rounded-full bg-white dark:bg-zinc-900 shadow-[0_2px_4px_rgba(0,0,0,0.18)] ring-1 ring-black/10 dark:ring-white/20"
-            style={{
-              paddingLeft: isActive ? 16 : 12,
-              paddingRight: isActive ? 16 : 12,
-              paddingTop: isActive ? 9 : 7,
-              paddingBottom: isActive ? 9 : 7,
-              WebkitAppRegion: "no-drag",
-            } as React.CSSProperties}
+            className="flex flex-col items-center"
           >
-            <AudioDots status={status} audioLevel={audioLevel} hasAudioActivity={hasAudioActivity} />
-            <SettingsButton />
+            <div
+              className="relative flex items-center justify-center rounded-full bg-white dark:bg-zinc-900 shadow-[0_2px_4px_rgba(0,0,0,0.18)] ring-1 ring-black/10 dark:ring-white/20"
+              style={{
+                paddingLeft: isActive ? 16 : 12,
+                paddingRight: isActive ? 16 : 12,
+                paddingTop: isActive ? 9 : 7,
+                paddingBottom: isActive ? 9 : 7,
+                WebkitAppRegion: "no-drag",
+              } as React.CSSProperties}
+            >
+              <AudioDots status={status} audioLevel={audioLevel} hasAudioActivity={hasAudioActivity} />
+              <SettingsButton />
+            </div>
+            <AnimatePresence mode="wait">
+              {statusTooltipKey && (
+                <motion.div
+                  key={statusTooltipKey}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
+                  className="pointer-events-none mt-2 rounded-full bg-black/60 px-2 py-0.5 text-[9.5px] font-medium text-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-white/10 backdrop-blur-md whitespace-nowrap"
+                >
+                  {t(statusTooltipKey)}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>

@@ -10,11 +10,11 @@ pub const POLISH_TEMPLATES: &[PolishTemplate] = &[
         id: "filler",
         name: "Remove Fillers",
         description: "Remove filler words and fix grammar while preserving meaning",
-        system_prompt:
-            r#"Remove filler words. Keep the same language as input.
+        system_prompt: r#"Remove filler words. Keep the same language as input.
 
 Remove: um, uh, like, you know, 嗯, 那个, 就是说
-Fix typos only if obvious.
+Fix context-inconsistent homophones and phonetic errors caused by Speech-to-Text misrecognition.
+Fix obvious typos and grammar.
 Keep meaning exactly the same.
 
 Examples:
@@ -24,8 +24,8 @@ Output: "I think we should go"
 Input: "嗯，我觉得这个，那个，挺好的"
 Output: "我觉得这个挺好的"
 
-Input: "It works fine"
-Output: "It works fine"
+Input: "这个分析错误可能是由于标点引起的"
+Output: "这个分词错误可能是由于标点引起的"
 
 Output only the result."#,
     },
@@ -36,6 +36,7 @@ Output only the result."#,
         system_prompt: "Make text formal. Keep the same language as input.
 
 Use formal grammar. Remove slang.
+Fix context-inconsistent homophones and phonetic errors caused by Speech-to-Text misrecognition.
 Keep meaning the same.
 
 Examples:
@@ -44,9 +45,6 @@ Output: \"Could you please review this?\"
 
 Input: \"嘿，帮我看看这个呗\"
 Output: \"请帮我审阅一下这个\"
-
-Input: \"I wanna eat\"
-Output: \"I would like to eat\"
 
 Output only the result.",
     },
@@ -57,6 +55,7 @@ Output only the result.",
         system_prompt: "Make text shorter. Keep the same language as input.
 
 Remove unnecessary words.
+Fix context-inconsistent homophones and phonetic errors caused by Speech-to-Text misrecognition.
 Keep all key information and meaning.
 
 Examples:
@@ -65,9 +64,6 @@ Output: \"We should go there\"
 
 Input: \"我觉得我们应该可能需要去那里\"
 Output: \"我们应该去那里\"
-
-Input: \"This is very important\"
-Output: \"This is important\"
 
 Output only the result.",
     },
@@ -150,7 +146,10 @@ mod tests {
         let template = template.unwrap();
         assert_eq!(template.id, "concise");
         assert_eq!(template.name, "Make Concise");
-        assert!(template.system_prompt.contains("shorter") || template.system_prompt.contains("concise"));
+        assert!(
+            template.system_prompt.contains("shorter")
+                || template.system_prompt.contains("concise")
+        );
     }
 
     #[test]
@@ -199,9 +198,9 @@ mod tests {
 
             // System prompt should contain language preservation instruction
             assert!(
-                template.system_prompt.contains("Keep language unchanged") ||
-                template.system_prompt.contains("SAME LANGUAGE") ||
-                template.system_prompt.contains("same language"),
+                template.system_prompt.contains("Keep language unchanged")
+                    || template.system_prompt.contains("SAME LANGUAGE")
+                    || template.system_prompt.contains("same language"),
                 "Template '{}' missing language preservation instruction",
                 template.id
             );

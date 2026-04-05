@@ -55,20 +55,24 @@ impl LfmModelDef {
     }
 
     pub fn urls(&self) -> Vec<String> {
-        HuggingFaceSource::new(self.repo, self.filename).into_source().urls()
+        HuggingFaceSource::new(self.repo, self.filename)
+            .into_source()
+            .urls()
     }
 }
 
 pub fn get_all_models() -> Vec<LfmModelDef> {
     LFM_MODELS
         .iter()
-        .map(|(id, repo, filename, display_name, size_display)| LfmModelDef {
-            id,
-            repo,
-            filename,
-            display_name,
-            size_display,
-        })
+        .map(
+            |(id, repo, filename, display_name, size_display)| LfmModelDef {
+                id,
+                repo,
+                filename,
+                display_name,
+                size_display,
+            },
+        )
         .collect()
 }
 
@@ -119,7 +123,9 @@ mod tests {
         let urls = model.urls();
         assert!(!urls.is_empty());
         // URLs should contain the filename
-        assert!(urls.iter().any(|url| url.contains("LFM2.5-1.2B-Instruct-Q4_K_M.gguf")));
+        assert!(urls
+            .iter()
+            .any(|url| url.contains("LFM2.5-1.2B-Instruct-Q4_K_M.gguf")));
     }
 
     #[test]

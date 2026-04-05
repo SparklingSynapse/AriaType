@@ -62,20 +62,24 @@ impl QwenModelDef {
     }
 
     pub fn urls(&self) -> Vec<String> {
-        HuggingFaceSource::new(self.repo, self.filename).into_source().urls()
+        HuggingFaceSource::new(self.repo, self.filename)
+            .into_source()
+            .urls()
     }
 }
 
 pub fn get_all_models() -> Vec<QwenModelDef> {
     QWEN_MODELS
         .iter()
-        .map(|(id, repo, filename, display_name, size_display)| QwenModelDef {
-            id,
-            repo,
-            filename,
-            display_name,
-            size_display,
-        })
+        .map(
+            |(id, repo, filename, display_name, size_display)| QwenModelDef {
+                id,
+                repo,
+                filename,
+                display_name,
+                size_display,
+            },
+        )
         .collect()
 }
 
@@ -126,7 +130,9 @@ mod tests {
         let urls = model.urls();
         assert!(!urls.is_empty());
         // URLs should contain the filename
-        assert!(urls.iter().any(|url| url.contains("Qwen3.5-0.8B-Q5_K_M.gguf")));
+        assert!(urls
+            .iter()
+            .any(|url| url.contains("Qwen3.5-0.8B-Q5_K_M.gguf")));
     }
 
     #[test]

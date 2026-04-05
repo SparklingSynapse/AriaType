@@ -1,5 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
+import { logger } from "./logger";
+
+/** Wrapped invoke that logs command name, params (debug), timing (debug), and errors (error) */
+function invokeWithLogging<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const start = performance.now();
+  logger.debug(`ipc_request`, { command, args });
+
+  return invoke<T>(command, args)
+    .then((result) => {
+      const duration_ms = Math.round(performance.now() - start);
+      logger.debug(`ipc_response`, { command, duration_ms });
+      return result;
+    })
+    .catch((error: unknown) => {
+      const duration_ms = Math.round(performance.now() - start);
+      logger.error(`ipc_error`, { command, duration_ms, error: String(error) });
+      throw error;
+    });
+}
 
 export interface Position {
   x: number;
@@ -32,8 +51,19 @@ export interface CloudProviderConfig {
   enable_thinking: boolean;
 }
 
+export interface CloudSttConfig {
+  enabled: boolean;
+  provider_type: string;
+  api_key: string;
+  app_id: string;
+  base_url: string;
+  model: string;
+  language: string;
+}
+
 export interface AppSettings {
   hotkey: string;
+  recording_mode: "hold" | "toggle";
   model: string;
   stt_engine: string;
   pill_position: string;
@@ -57,7 +87,14 @@ export interface AppSettings {
   stt_engine_work_subdomain: string;
   stt_engine_user_glossary: string;
   analytics_opt_in: boolean;
-  cloud_polish: CloudProviderConfig;
+  cloud_stt_enabled: boolean;
+  active_cloud_stt_provider: string;
+  cloud_stt_configs: Record<string, CloudSttConfig>;
+  cloud_polish_enabled: boolean;
+  active_cloud_polish_provider: string;
+  cloud_polish_configs: Record<string, CloudProviderConfig>;
+  vad_enabled: boolean;
+  stay_in_tray: boolean;
 }
 
 export interface ModelInfo {
@@ -77,91 +114,104 @@ export interface PolishModelInfo {
   downloaded: boolean;
 }
 
+export interface RecommendedModel {
+  engine_type: string;
+  model_name: string;
+  display_name: string;
+  size_mb: number;
+  speed_score: number;
+  accuracy_score: number;
+  downloaded: boolean;
+}
+
 export const windowCommands = {
-  showMain: () => invoke("show_main_window"),
-  hideMain: () => invoke("hide_main_window"),
-  showPill: () => invoke("show_pill_window"),
-  hidePill: () => invoke("hide_pill_window"),
-  showToast: (message: string) => invoke("show_toast", { message }),
-  hideToast: () => invoke("hide_toast"),
+  showMain: () => invokeWithLogging("show_main_window"),
+  hideMain: () => invokeWithLogging("hide_main_window"),
+  showPill: () => invokeWithLogging("show_pill_window"),
+  hidePill: () => invokeWithLogging("hide_pill_window"),
+  showToast: (message: string) => invokeWithLogging("show_toast", { message }),
+  hideToast: () => invokeWithLogging("hide_toast"),
   updatePillPosition: (x: number, y: number) =>
-    invoke("update_pill_position", { x, y }),
-  getPillPosition: () => invoke<Position | null>("get_pill_position"),
+    invokeWithLogging("update_pill_position", { x, y }),
+  getPillPosition: () => invokeWithLogging<Position | null>("get_pill_position"),
 };
 
 export const audioCommands = {
-  startRecording: () => invoke<string>("start_recording"),
-  stopRecording: () => invoke<string | null>("stop_recording"),
-  getAudioLevel: () => invoke<number>("get_audio_level"),
-  getRecordingState: () => invoke<RecordingState>("get_recording_state"),
+  startRecording: () => invokeWithLogging<string>("start_recording"),
+  stopRecording: () => invokeWithLogging<string | null>("stop_recording"),
+  getAudioLevel: () => invokeWithLogging<number>("get_audio_level"),
+  getRecordingState: () => invokeWithLogging<RecordingState>("get_recording_state"),
 };
 
 export const textCommands = {
-  insertText: (text: string) => invoke("insert_text", { text }),
-  copyToClipboard: (text: string) => invoke("copy_to_clipboard", { text }),
-  restoreClipboard: (text: string) => invoke("restore_clipboard", { text }),
+  insertText: (text: string) => invokeWithLogging("insert_text", { text }),
+  copyToClipboard: (text: string) => invokeWithLogging("copy_to_clipboard", { text }),
+  restoreClipboard: (text: string) => invokeWithLogging("restore_clipboard", { text }),
 };
 
 export const settingsCommands = {
-  getSettings: () => invoke<AppSettings>("get_settings"),
+  getSettings: () => invokeWithLogging<AppSettings>("get_settings"),
   updateSettings: (key: string, value: unknown) =>
-    invoke("update_settings", { key, value }),
+    invokeWithLogging("update_settings", { key, value }),
   setHotkeyCaptureMode: (enabled: boolean) =>
-    invoke("set_hotkey_capture_mode", { enabled }),
+    invokeWithLogging("set_hotkey_capture_mode", { enabled }),
   getGlossaryContent: (subdomain: string) =>
-    invoke<string>("get_glossary_content", { subdomain }),
+    invokeWithLogging<string>("get_glossary_content", { subdomain }),
   getAvailableSubdomains: (domain: string) =>
-    invoke<string[]>("get_available_subdomains", { domain }),
+    invokeWithLogging<string[]>("get_available_subdomains", { domain }),
 };
 
 export const systemCommands = {
-  getAudioDevices: () => invoke<string[]>("get_audio_devices"),
+  getAudioDevices: () => invokeWithLogging<string[]>("get_audio_devices"),
   checkPermission: (kind: "accessibility" | "input_monitoring" | "microphone") =>
-    invoke<string>("check_permission", { kind }),
+    invokeWithLogging<string>("check_permission", { kind }),
   applyPermission: (kind: "accessibility" | "input_monitoring" | "microphone") =>
-    invoke<void>("apply_permission", { kind }),
-  getLogContent: (lines: number) => invoke<string>("get_log_content", { lines }),
-  openLogFolder: () => invoke("open_log_folder"),
+    invokeWithLogging<void>("apply_permission", { kind }),
+  getLogContent: (lines: number) => invokeWithLogging<string>("get_log_content", { lines }),
+  openLogFolder: () => invokeWithLogging("open_log_folder"),
+  getPlatform: () => invokeWithLogging<"macos" | "windows" | "linux" | "unknown">("get_platform"),
 };
 
 export const transcribeCommands = {
   transcribeAudio: (audioPath: string) =>
-    invoke<string>("transcribe_audio", { audioPath }),
-  getSTTEngines: () => invoke<string[]>("get_stt_engines"),
+    invokeWithLogging<string>("transcribe_audio", { audioPath }),
+  getSTTEngines: () => invokeWithLogging<string[]>("get_stt_engines"),
 };
 
 export const modelCommands = {
-  getModels: () => invoke<ModelInfo[]>("get_models"),
+  getModels: () => invokeWithLogging<ModelInfo[]>("get_models"),
   isModelDownloaded: (modelName: string) =>
-    invoke<boolean>("is_model_downloaded", { modelName }),
+    invokeWithLogging<boolean>("is_model_downloaded", { modelName }),
   downloadModel: (modelName: string) =>
-    invoke<void>("download_model", { modelName }),
+    invokeWithLogging<void>("download_model", { modelName }),
   cancelDownload: (modelName: string) =>
-    invoke<void>("cancel_download", { modelName }),
+    invokeWithLogging<void>("cancel_download", { modelName }),
   deleteModel: (modelName: string) =>
-    invoke<void>("delete_model", { modelName }),
+    invokeWithLogging<void>("delete_model", { modelName }),
+  recommendModelsByLanguage: (language: string) =>
+    invokeWithLogging<RecommendedModel[]>("recommend_models_by_language", { language }),
   getPolishModels: () =>
-    invoke<PolishModelInfo[]>("get_polish_models"),
+    invokeWithLogging<PolishModelInfo[]>("get_polish_models"),
   getCurrentPolishModel: () =>
-    invoke<string>("get_current_polish_model"),
+    invokeWithLogging<string>("get_current_polish_model"),
   isPolishModelDownloaded: () =>
-    invoke<boolean>("is_polish_model_downloaded"),
+    invokeWithLogging<boolean>("is_polish_model_downloaded"),
   isPolishModelDownloadedForModel: (modelId: string) =>
-    invoke<boolean>("is_polish_model_downloaded_for_model", { modelId }),
+    invokeWithLogging<boolean>("is_polish_model_downloaded_for_model", { modelId }),
   downloadPolishModel: () =>
-    invoke<void>("download_polish_model"),
+    invokeWithLogging<void>("download_polish_model"),
   downloadPolishModelById: (modelId: string) =>
-    invoke<void>("download_polish_model_by_id", { modelId }),
+    invokeWithLogging<void>("download_polish_model_by_id", { modelId }),
   cancelPolishDownload: (modelId: string) =>
-    invoke<void>("cancel_polish_download", { modelId }),
+    invokeWithLogging<void>("cancel_polish_download", { modelId }),
   deletePolishModel: () =>
-    invoke<void>("delete_polish_model"),
+    invokeWithLogging<void>("delete_polish_model"),
   deletePolishModelById: (modelId: string) =>
-    invoke<void>("delete_polish_model_by_id", { modelId }),
+    invokeWithLogging<void>("delete_polish_model_by_id", { modelId }),
   getPolishTemplates: () =>
-    invoke<PolishTemplate[]>("get_polish_templates"),
+    invokeWithLogging<PolishTemplate[]>("get_polish_templates"),
   getPolishTemplatePrompt: (templateId: string) =>
-    invoke<string>("get_polish_template_prompt", { templateId }),
+    invokeWithLogging<string>("get_polish_template_prompt", { templateId }),
 };
 
 export interface PolishTemplate {
@@ -170,24 +220,106 @@ export interface PolishTemplate {
   description: string;
 }
 
+export interface TranscriptionEntry {
+  id: string;
+  created_at: number;
+  raw_text: string;
+  final_text: string;
+  stt_engine: string;
+  stt_model: string | null;
+  language: string | null;
+  audio_duration_ms: number | null;
+  stt_duration_ms: number | null;
+  polish_duration_ms: number | null;
+  total_duration_ms: number | null;
+  polish_applied: boolean;
+  polish_engine: string | null;
+  is_cloud: boolean;
+}
+
+export interface DashboardStats {
+  total_count: number;
+  today_count: number;
+  total_chars: number;
+  total_output_units: number;
+  total_audio_ms: number;
+  avg_stt_ms: number | null;
+  avg_audio_ms: number | null;
+  avg_output_units: number | null;
+  local_count: number;
+  cloud_count: number;
+  polish_count: number;
+  active_days: number;
+  current_streak_days: number;
+  longest_streak_days: number;
+  last_7_days_count: number;
+  last_7_days_audio_ms: number;
+  last_7_days_output_units: number;
+}
+
+export interface DailyUsage {
+  date: string;
+  count: number;
+  audio_ms: number;
+  output_units: number;
+}
+
+export interface EngineUsage {
+  engine: string;
+  count: number;
+  avg_stt_ms: number | null;
+}
+
+export interface HistoryFilter {
+  search?: string;
+  engine?: string;
+  date_from?: number;
+  date_to?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export const historyCommands = {
+  getHistory: (filter: HistoryFilter) =>
+    invokeWithLogging<TranscriptionEntry[]>("get_transcription_history", { filter }),
+  getDashboardStats: () =>
+    invokeWithLogging<DashboardStats>("get_dashboard_stats"),
+  getDailyUsage: (days: number) =>
+    invokeWithLogging<DailyUsage[]>("get_daily_usage", { days }),
+  getEngineUsage: () =>
+    invokeWithLogging<EngineUsage[]>("get_engine_usage"),
+  deleteEntry: (id: string) =>
+    invokeWithLogging<void>("delete_transcription_entry", { id }),
+  clearAll: () =>
+    invokeWithLogging<void>("clear_transcription_history"),
+};
+
 export const events = {
   onRecordingStateChanged: (callback: (event: RecordingStateEvent) => void) => {
     return listen<RecordingStateEvent>("recording-state-changed", (event) => {
+      const { task_id, status } = event.payload;
+      logger.info("event_received-recording_state_changed", { task_id, status });
       callback(event.payload);
     });
   },
   onAudioLevel: (callback: (level: number) => void) => {
     return listen<number>("audio-level", (event) => {
+      const level = event.payload;
+      logger.debug("event_received-audio_level", { level });
       callback(event.payload);
     });
   },
   onTranscriptionComplete: (callback: (event: TranscriptionCompleteEvent) => void) => {
     return listen<TranscriptionCompleteEvent>("transcription-complete", (event) => {
+      const { task_id, text } = event.payload;
+      logger.info("event_received-transcription_complete", { task_id, text_len: text.length });
       callback(event.payload);
     });
   },
   onTranscriptionError: (callback: (error: string) => void) => {
     return listen<string>("transcription-error", (event) => {
+      const error = event.payload;
+      logger.error("event_received-transcription_error", { error });
       callback(event.payload);
     });
   },
@@ -205,21 +337,29 @@ export const events = {
       total: number;
       progress: number;
     }>("model-download-progress", (event) => {
+      const { model, downloaded, total, progress } = event.payload;
+      logger.debug("event_received-model_download_progress", { model, downloaded, total, progress });
       callback(event.payload);
     });
   },
   onModelDownloadComplete: (callback: (model: string) => void) => {
     return listen<{ model: string }>("model-download-complete", (event) => {
+      const model = event.payload.model;
+      logger.info("event_received-model_download_complete", { model });
       callback(event.payload.model);
     });
   },
   onModelDownloadCancelled: (callback: (model: string) => void) => {
     return listen<{ model: string }>("model-download-cancelled", (event) => {
+      const model = event.payload.model;
+      logger.info("event_received-model_download_cancelled", { model });
       callback(event.payload.model);
     });
   },
   onModelDeleted: (callback: (model: string) => void) => {
     return listen<{ model: string }>("model-deleted", (event) => {
+      const model = event.payload.model;
+      logger.info("event_received-model_deleted", { model });
       callback(event.payload.model);
     });
   },
@@ -228,34 +368,49 @@ export const events = {
   ) => {
     return listen<{ model_id: string; downloaded: number; total: number; progress: number }>(
       "polish-model-download-progress",
-      (event) => callback(event.payload)
+      (event) => {
+        const { model_id, downloaded, total, progress } = event.payload;
+        logger.debug("event_received-polish_model_download_progress", { model_id, downloaded, total, progress });
+        callback(event.payload);
+      }
     );
   },
   onPolishModelDownloadComplete: (callback: (model_id: string) => void) => {
-    return listen<{ model_id: string }>("polish-model-download-complete", (event) =>
-      callback(event.payload.model_id)
-    );
+    return listen<{ model_id: string }>("polish-model-download-complete", (event) => {
+      const model_id = event.payload.model_id;
+      logger.info("event_received-polish_model_download_complete", { model_id });
+      callback(event.payload.model_id);
+    });
   },
   onPolishModelDownloadCancelled: (callback: (model_id: string) => void) => {
-    return listen<{ model_id: string }>("polish-model-download-cancelled", (event) =>
-      callback(event.payload.model_id)
-    );
+    return listen<{ model_id: string }>("polish-model-download-cancelled", (event) => {
+      const model_id = event.payload.model_id;
+      logger.info("event_received-polish_model_download_cancelled", { model_id });
+      callback(event.payload.model_id);
+    });
   },
   onPolishModelDeleted: (callback: () => void) => {
-    return listen("polish-model-deleted", () => callback());
+    return listen("polish-model-deleted", () => {
+      logger.info("event_received-polish_model_deleted");
+      callback();
+    });
   },
   onToastMessage: (callback: (message: string) => void) => {
     return listen<string>("toast-message", (event) => {
+      logger.debug("event_received-toast_message", { message: event.payload });
       callback(event.payload);
     });
   },
   onShortcutRegistrationFailed: (callback: (error: string) => void) => {
     return listen<string>("shortcut-registration-failed", (event) => {
+      const error = event.payload;
+      logger.error("event_received-shortcut_registration_failed", { error });
       callback(event.payload);
     });
   },
   onSettingsChanged: (callback: (settings: AppSettings) => void) => {
     return listen<AppSettings>("settings-changed", (event) => {
+      logger.info("event_received-settings_changed");
       callback(event.payload);
     });
   },

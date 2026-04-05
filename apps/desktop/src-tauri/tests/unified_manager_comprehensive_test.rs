@@ -9,16 +9,20 @@
 // F. Language recommendations
 // G. Edge cases and error handling
 
-use ariatype_lib::stt_engine::{UnifiedEngineManager, EngineType};
-use std::path::PathBuf;
+use ariatype_lib::stt_engine::{EngineType, UnifiedEngineManager};
 use std::fs::File;
 use std::io::Write;
+use std::path::PathBuf;
 
 // ==================== Test helper functions ====================
 
 /// Create temporary test directory
 fn create_test_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("unified_manager_test_{}_{}", name, uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "unified_manager_test_{}_{}",
+        name,
+        uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).expect("Failed to create test directory");
     dir
 }
@@ -28,7 +32,8 @@ fn create_fake_model(dir: &PathBuf, filename: &str, size: usize) -> PathBuf {
     let path = dir.join(filename);
     let mut file = File::create(&path).expect("Failed to create fake model file");
     let data = vec![0u8; size];
-    file.write_all(&data).expect("Failed to write fake model data");
+    file.write_all(&data)
+        .expect("Failed to write fake model data");
     path
 }
 
@@ -50,7 +55,10 @@ fn test_new_manager() {
     assert!(!models.is_empty(), "Should have SenseVoice models");
 
     // Verify at least 2 models (Q4 and Q8)
-    assert!(models.len() >= 2, "Should have at least 2 SenseVoice models");
+    assert!(
+        models.len() >= 2,
+        "Should have at least 2 SenseVoice models"
+    );
 
     cleanup_test_dir(&test_dir);
 }
@@ -96,7 +104,9 @@ fn test_get_model_path() {
 
     // SenseVoice model paths
     let path = manager.get_model_path(EngineType::SenseVoice, "sense-voice-small-q4_k");
-    assert!(path.to_string_lossy().contains("sense-voice-small-q4_k.gguf"));
+    assert!(path
+        .to_string_lossy()
+        .contains("sense-voice-small-q4_k.gguf"));
 
     cleanup_test_dir(&test_dir);
 }
@@ -198,7 +208,9 @@ fn test_delete_model_multiple_types() {
     assert!(sensevoice_path.exists());
 
     // Delete SenseVoice model
-    assert!(manager.delete_model(EngineType::SenseVoice, "sense-voice-small-q4_k").is_ok());
+    assert!(manager
+        .delete_model(EngineType::SenseVoice, "sense-voice-small-q4_k")
+        .is_ok());
     assert!(!sensevoice_path.exists());
 
     cleanup_test_dir(&test_dir);
@@ -214,10 +226,15 @@ fn test_recommend_by_language_zh() {
     let recommendations = manager.recommend_by_language("zh");
 
     // Should have recommendations
-    assert!(!recommendations.is_empty(), "Should have recommendations for Chinese");
+    assert!(
+        !recommendations.is_empty(),
+        "Should have recommendations for Chinese"
+    );
 
     // Should include SenseVoice model (optimized for Chinese)
-    let has_sensevoice = recommendations.iter().any(|r| r.engine_type == EngineType::SenseVoice);
+    let has_sensevoice = recommendations
+        .iter()
+        .any(|r| r.engine_type == EngineType::SenseVoice);
     assert!(has_sensevoice, "Should recommend SenseVoice for Chinese");
 
     // Verify sorted by accuracy descending
@@ -241,7 +258,10 @@ fn test_recommend_by_language_en() {
     let recommendations = manager.recommend_by_language("en");
 
     // Should have recommendations
-    assert!(!recommendations.is_empty(), "Should have recommendations for English");
+    assert!(
+        !recommendations.is_empty(),
+        "Should have recommendations for English"
+    );
 
     // All recommended models should have complete info
     for rec in &recommendations {
@@ -263,7 +283,10 @@ fn test_recommend_by_language_ja() {
     let recommendations = manager.recommend_by_language("ja");
 
     // Japanese should have recommendations (SenseVoice and some Whisper models support it)
-    assert!(!recommendations.is_empty(), "Should have recommendations for Japanese");
+    assert!(
+        !recommendations.is_empty(),
+        "Should have recommendations for Japanese"
+    );
 
     cleanup_test_dir(&test_dir);
 }
@@ -276,7 +299,10 @@ fn test_recommend_by_language_ko() {
     let recommendations = manager.recommend_by_language("ko");
 
     // Korean should have recommendations
-    assert!(!recommendations.is_empty(), "Should have recommendations for Korean");
+    assert!(
+        !recommendations.is_empty(),
+        "Should have recommendations for Korean"
+    );
 
     cleanup_test_dir(&test_dir);
 }
@@ -290,7 +316,10 @@ fn test_recommend_by_language_unsupported() {
     let recommendations = manager.recommend_by_language("xyz");
 
     // Should return empty list
-    assert!(recommendations.is_empty(), "Should return empty list for unsupported language");
+    assert!(
+        recommendations.is_empty(),
+        "Should return empty list for unsupported language"
+    );
 
     cleanup_test_dir(&test_dir);
 }
@@ -306,14 +335,19 @@ fn test_recommend_includes_download_status() {
     let recommendations = manager.recommend_by_language("zh");
 
     // Find SenseVoice Small Q4 model
-    let sensevoice_q4 = recommendations.iter()
+    let sensevoice_q4 = recommendations
+        .iter()
         .find(|r| r.model_name == "sense-voice-small-q4_k");
 
     assert!(sensevoice_q4.is_some());
-    assert!(sensevoice_q4.unwrap().downloaded, "Should detect downloaded model");
+    assert!(
+        sensevoice_q4.unwrap().downloaded,
+        "Should detect downloaded model"
+    );
 
     // Other models should be undownloaded
-    let other_models: Vec<_> = recommendations.iter()
+    let other_models: Vec<_> = recommendations
+        .iter()
         .filter(|r| r.model_name != "sense-voice-small-q4_k")
         .collect();
 
@@ -387,8 +421,7 @@ fn test_model_info_consistency() {
         let is_downloaded = manager.is_model_downloaded(EngineType::Whisper, &model.name);
 
         assert_eq!(
-            model.downloaded,
-            is_downloaded,
+            model.downloaded, is_downloaded,
             "Model info downloaded status should match is_model_downloaded()"
         );
 
@@ -420,6 +453,196 @@ fn test_multiple_managers_same_directory() {
     cleanup_test_dir(&test_dir);
 }
 
+// ==================== H. Engine switching and management tests ====================
+
+#[test]
+fn test_stt_engine_type_switching() {
+    let test_dir = create_test_dir("engine_switching");
+    let manager = UnifiedEngineManager::new(test_dir.clone());
+
+    assert_eq!(
+        UnifiedEngineManager::get_engine_by_model_name("base"),
+        Some(EngineType::Whisper)
+    );
+    assert_eq!(
+        UnifiedEngineManager::get_engine_by_model_name("sense-voice-small-q4_k"),
+        Some(EngineType::SenseVoice)
+    );
+    assert_eq!(
+        UnifiedEngineManager::get_engine_by_model_name("cloud"),
+        Some(EngineType::Cloud)
+    );
+    assert_eq!(
+        UnifiedEngineManager::get_engine_by_model_name("unknown_model"),
+        None
+    );
+
+    assert!(manager.is_model_downloaded(EngineType::Cloud, "cloud"));
+
+    let engines = UnifiedEngineManager::available_engines();
+    assert_eq!(engines.len(), 3);
+    assert!(engines.contains(&EngineType::Whisper));
+    assert!(engines.contains(&EngineType::SenseVoice));
+    assert!(engines.contains(&EngineType::Cloud));
+
+    cleanup_test_dir(&test_dir);
+}
+
+#[test]
+fn test_model_path_resolution() {
+    let test_dir = create_test_dir("model_path_resolution");
+    let manager = UnifiedEngineManager::new(test_dir.clone());
+
+    let whisper_path = manager.get_model_path(EngineType::Whisper, "tiny");
+    assert!(whisper_path.to_string_lossy().ends_with("ggml-tiny.bin"));
+
+    let whisper_base_path = manager.get_model_path(EngineType::Whisper, "base");
+    assert!(whisper_base_path
+        .to_string_lossy()
+        .ends_with("ggml-base.bin"));
+
+    let sensevoice_path = manager.get_model_path(EngineType::SenseVoice, "sense-voice-small-q4_k");
+    assert!(sensevoice_path
+        .to_string_lossy()
+        .ends_with("sense-voice-small-q4_k.gguf"));
+
+    let sensevoice_q8_path =
+        manager.get_model_path(EngineType::SenseVoice, "sense-voice-small-q8_0");
+    assert!(sensevoice_q8_path
+        .to_string_lossy()
+        .ends_with("sense-voice-small-q8_0.gguf"));
+
+    let unknown_whisper = manager.get_model_path(EngineType::Whisper, "unknown");
+    assert!(unknown_whisper
+        .to_string_lossy()
+        .ends_with("ggml-unknown.bin"));
+
+    let unknown_sensevoice = manager.get_model_path(EngineType::SenseVoice, "unknown");
+    assert!(unknown_sensevoice
+        .to_string_lossy()
+        .ends_with("unknown.gguf"));
+
+    let cloud_path = manager.get_model_path(EngineType::Cloud, "cloud");
+    assert!(cloud_path.as_os_str().is_empty());
+
+    cleanup_test_dir(&test_dir);
+}
+
+#[test]
+fn test_engine_preload_on_startup() {
+    let test_dir = create_test_dir("engine_preload_startup");
+    let manager = UnifiedEngineManager::new(test_dir.clone());
+
+    create_fake_model(&test_dir, "ggml-tiny.bin", 1024);
+    create_fake_model(&test_dir, "sense-voice-small-q4_k.gguf", 2048);
+
+    let whisper_models = manager.get_models(EngineType::Whisper);
+    let sensevoice_models = manager.get_models(EngineType::SenseVoice);
+
+    let whisper_tiny = whisper_models.iter().find(|m| m.name == "tiny").unwrap();
+    assert!(whisper_tiny.downloaded);
+
+    let sensevoice_q4 = sensevoice_models
+        .iter()
+        .find(|m| m.name == "sense-voice-small-q4_k")
+        .unwrap();
+    assert!(sensevoice_q4.downloaded);
+
+    let cloud_models = manager.get_models(EngineType::Cloud);
+    assert!(!cloud_models.is_empty());
+    assert!(cloud_models[0].downloaded);
+
+    cleanup_test_dir(&test_dir);
+}
+
+#[test]
+fn test_concurrent_model_access() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    let test_dir = create_test_dir("concurrent_access");
+    let manager = Arc::new(UnifiedEngineManager::new(test_dir.clone()));
+
+    let barrier = Arc::new(Barrier::new(3));
+    let barrier_clone1 = barrier.clone();
+    let barrier_clone2 = barrier.clone();
+    let manager_clone1 = manager.clone();
+    let manager_clone2 = manager.clone();
+
+    let handle1 = thread::spawn(move || {
+        barrier_clone1.wait();
+        let models = manager_clone1.get_models(EngineType::Whisper);
+        !models.is_empty()
+    });
+
+    let handle2 = thread::spawn(move || {
+        barrier_clone2.wait();
+        let models = manager_clone2.get_models(EngineType::SenseVoice);
+        !models.is_empty()
+    });
+
+    barrier.wait();
+
+    let result1 = handle1.join().unwrap();
+    let result2 = handle2.join().unwrap();
+
+    assert!(result1);
+    assert!(result2);
+
+    let engine1 = UnifiedEngineManager::get_engine_by_model_name("base");
+    let engine2 = UnifiedEngineManager::get_engine_by_model_name("sense-voice-small-q4_k");
+
+    assert_eq!(engine1, Some(EngineType::Whisper));
+    assert_eq!(engine2, Some(EngineType::SenseVoice));
+
+    cleanup_test_dir(&test_dir);
+}
+
+#[test]
+fn test_engine_error_recovery() {
+    let test_dir = create_test_dir("engine_error_recovery");
+    let manager = UnifiedEngineManager::new(test_dir.clone());
+
+    let is_downloaded = manager.is_model_downloaded(EngineType::Whisper, "tiny");
+    assert!(!is_downloaded);
+
+    create_fake_model(&test_dir, "ggml-tiny.bin", 1024);
+
+    let is_downloaded_after = manager.is_model_downloaded(EngineType::Whisper, "tiny");
+    assert!(is_downloaded_after);
+
+    assert_eq!(
+        UnifiedEngineManager::get_engine_by_model_name("tiny"),
+        Some(EngineType::Whisper)
+    );
+
+    let cloud_models = manager.get_models(EngineType::Cloud);
+    assert!(!cloud_models.is_empty());
+    assert!(cloud_models[0].downloaded);
+
+    cleanup_test_dir(&test_dir);
+}
+
+#[test]
+fn test_model_preload_cancellation() {
+    let test_dir = create_test_dir("preload_cancellation");
+    let manager = UnifiedEngineManager::new(test_dir.clone());
+
+    create_fake_model(&test_dir, "ggml-base.bin", 1024);
+
+    assert!(manager.is_model_downloaded(EngineType::Whisper, "base"));
+
+    assert_eq!(
+        UnifiedEngineManager::get_engine_by_model_name("base"),
+        Some(EngineType::Whisper)
+    );
+
+    let result = manager.is_model_downloaded(EngineType::Whisper, "medium");
+    assert!(!result);
+
+    cleanup_test_dir(&test_dir);
+}
+
 // ==================== Integration tests (marked as ignore) ====================
 
 #[test]
@@ -436,19 +659,24 @@ fn test_real_download_whisper_tiny() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let result = rt.block_on(async {
-        manager.download_model(
-            EngineType::Whisper,
-            "tiny",
-            cancel_flag,
-            move |downloaded, total| {
-                println!("Progress: {}/{} bytes", downloaded, total);
-                progress_called_clone.store(true, std::sync::atomic::Ordering::SeqCst);
-            }
-        ).await
+        manager
+            .download_model(
+                EngineType::Whisper,
+                "tiny",
+                cancel_flag,
+                move |downloaded, total| {
+                    println!("Progress: {}/{} bytes", downloaded, total);
+                    progress_called_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+                },
+            )
+            .await
     });
 
     assert!(result.is_ok(), "Download should succeed");
-    assert!(progress_called.load(std::sync::atomic::Ordering::SeqCst), "Progress callback should be called");
+    assert!(
+        progress_called.load(std::sync::atomic::Ordering::SeqCst),
+        "Progress callback should be called"
+    );
 
     // Verify file is downloaded
     assert!(manager.is_model_downloaded(EngineType::Whisper, "tiny"));

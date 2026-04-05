@@ -1,9 +1,9 @@
 use crate::polish_engine::traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
-use crate::polish_engine::{qwen, lfm, cloud::CloudPolishEngine};
+use crate::polish_engine::{cloud::CloudPolishEngine, lfm, qwen};
 use crate::utils::AppPaths;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 type EngineCacheKey = (PolishEngineType, String);
 
@@ -25,12 +25,9 @@ impl UnifiedPolishManager {
         );
 
         // Register LFM engine
-        engines.insert(
-            PolishEngineType::Lfm,
-            Arc::new(lfm::LfmPolishEngine::new()),
-        );
+        engines.insert(PolishEngineType::Lfm, Arc::new(lfm::LfmPolishEngine::new()));
 
-        info!("UnifiedPolishManager initialized with {} engines", engines.len());
+        info!(engine_count = engines.len(), "polish_manager_initialized");
         Self {
             engines,
             engine_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -59,17 +56,17 @@ impl UnifiedPolishManager {
 
         if let Some(cached_instance) = cache.get(&cache_key) {
             info!(
-                engine_type = ?engine_type,
-                model = model_filename,
-                "using cached polish engine instance"
+                engine = ?engine_type,
+                model = %model_filename,
+                "polish_engine_cache_hit"
             );
             return Ok(Arc::clone(cached_instance));
         }
 
         info!(
-            engine_type = ?engine_type,
-            model = model_filename,
-            "creating new polish engine instance"
+            engine = ?engine_type,
+            model = %model_filename,
+            "polish_engine_cache_miss"
         );
         let instance = Arc::new(PolishEngineInstance::new(engine_type, model_filename)?);
         cache.insert(cache_key, Arc::clone(&instance));
@@ -80,7 +77,7 @@ impl UnifiedPolishManager {
     pub fn clear_cache(&self) {
         let mut cache = self.engine_cache.lock().unwrap();
         cache.clear();
-        info!("polish engine cache cleared");
+        info!("polish_engine_cache_cleared");
     }
 
     /// Clear specific engine cache
@@ -92,9 +89,9 @@ impl UnifiedPolishManager {
             let cache_key = (engine_type, filename.to_string());
             if cache.remove(&cache_key).is_some() {
                 info!(
-                    engine_type = ?engine_type,
-                    model = filename,
-                    "polish engine cache cleared"
+                    engine = ?engine_type,
+                    model = %filename,
+                    "polish_engine_cache_entry_cleared"
                 );
             }
         } else {
@@ -110,15 +107,16 @@ impl UnifiedPolishManager {
             }
 
             info!(
-                engine_type = ?engine_type,
-                "all polish engine instances cleared for engine type"
+                engine = ?engine_type,
+                "polish_engine_cache_type_cleared"
             );
         }
     }
 
     /// Load model into cache (for preloading)
     pub fn load_model(&self, engine_type: PolishEngineType, model_id: &str) -> Result<(), String> {
-        let model_filename = self.get_model_filename(engine_type, model_id)
+        let model_filename = self
+            .get_model_filename(engine_type, model_id)
             .ok_or_else(|| format!("Model not found: {}", model_id))?;
 
         // Check if model file exists
@@ -130,9 +128,9 @@ impl UnifiedPolishManager {
         // Create instance (will be cached)
         self.get_or_create_engine_instance(engine_type, &model_filename)?;
         info!(
-            engine_type = ?engine_type,
-            model_id = model_id,
-            "polish model preloaded into cache"
+            engine = ?engine_type,
+            model = %model_id,
+            "polish_model_preloaded"
         );
         Ok(())
     }
@@ -142,14 +140,15 @@ impl UnifiedPolishManager {
         if let Some(model_filename) = self.get_model_filename(engine_type, model_id) {
             self.clear_engine_cache(engine_type, Some(&model_filename));
             info!(
-                engine_type = ?engine_type,
-                model_id = model_id,
-                "polish model unloaded from cache"
+                engine = ?engine_type,
+                model = %model_id,
+                "polish_model_unloaded"
             );
         }
     }
 
     /// Polish text using specified engine with caching support
+    #[instrument(skip(self, request), fields(engine = ?engine_type))]
     pub async fn polish(
         &self,
         engine_type: PolishEngineType,
@@ -160,7 +159,7 @@ impl UnifiedPolishManager {
             .get(&engine_type)
             .ok_or_else(|| format!("Engine not found: {:?}", engine_type))?;
 
-        debug!("Polishing with engine: {:?}", engine_type);
+        debug!(engine = ?engine_type, "polish_operation_start");
 
         // If model_name is provided, use cached instance
         if let Some(ref model_filename) = request.model_name {
@@ -198,7 +197,11 @@ impl UnifiedPolishManager {
     }
 
     /// Get model filename for a specific engine and model ID
-    pub fn get_model_filename(&self, engine_type: PolishEngineType, model_id: &str) -> Option<String> {
+    pub fn get_model_filename(
+        &self,
+        engine_type: PolishEngineType,
+        model_id: &str,
+    ) -> Option<String> {
         match engine_type {
             PolishEngineType::Qwen => {
                 qwen::QwenModelDef::from_id(model_id).map(|m| m.filename.to_string())
@@ -219,6 +222,7 @@ impl UnifiedPolishManager {
     }
 
     /// Polish using cloud provider
+    #[instrument(skip(self, request, api_key), fields(provider = %provider_type, model = %model))]
     pub async fn polish_cloud(
         &self,
         request: PolishRequest,
@@ -248,23 +252,17 @@ impl Default for UnifiedPolishManager {
 
 /// Polish engine instance wrapper for caching
 #[derive(Debug)]
-pub(crate) struct PolishEngineInstance {
-    engine_type: PolishEngineType,
-    model_filename: String,
-}
+pub(crate) struct PolishEngineInstance {}
 
 impl PolishEngineInstance {
-    fn new(engine_type: PolishEngineType, model_filename: &str) -> Result<Self, String> {
+    fn new(_engine_type: PolishEngineType, model_filename: &str) -> Result<Self, String> {
         // Verify model file exists
         let model_path = AppPaths::models_dir().join(model_filename);
         if !model_path.exists() {
             return Err(format!("Model file not found: {}", model_filename));
         }
 
-        Ok(Self {
-            engine_type,
-            model_filename: model_filename.to_string(),
-        })
+        Ok(Self {})
     }
 }
 
@@ -370,7 +368,10 @@ mod tests {
     fn test_get_model_filename_lfm() {
         let manager = UnifiedPolishManager::new();
         let filename = manager.get_model_filename(PolishEngineType::Lfm, "lfm2.5-1.2b");
-        assert_eq!(filename, Some("LFM2.5-1.2B-Instruct-Q4_K_M.gguf".to_string()));
+        assert_eq!(
+            filename,
+            Some("LFM2.5-1.2B-Instruct-Q4_K_M.gguf".to_string())
+        );
     }
 
     #[test]
@@ -417,8 +418,12 @@ mod tests {
         assert!(models.len() >= 5); // At least 3 Qwen + 2 LFM models
 
         // Check that we have both engine types
-        let has_qwen = models.iter().any(|m| m.engine_type == PolishEngineType::Qwen);
-        let has_lfm = models.iter().any(|m| m.engine_type == PolishEngineType::Lfm);
+        let has_qwen = models
+            .iter()
+            .any(|m| m.engine_type == PolishEngineType::Qwen);
+        let has_lfm = models
+            .iter()
+            .any(|m| m.engine_type == PolishEngineType::Lfm);
         assert!(has_qwen);
         assert!(has_lfm);
 
@@ -432,10 +437,7 @@ mod tests {
 
     #[test]
     fn test_polish_engine_instance_new_invalid_path() {
-        let result = PolishEngineInstance::new(
-            PolishEngineType::Qwen,
-            "nonexistent-model.gguf"
-        );
+        let result = PolishEngineInstance::new(PolishEngineType::Qwen, "nonexistent-model.gguf");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Model file not found"));
     }

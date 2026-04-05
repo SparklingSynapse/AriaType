@@ -1,6 +1,16 @@
 use std::num::NonZeroU32;
 use std::path::Path;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
+
+fn build_polish_context_params() -> llama_cpp_2::context::params::LlamaContextParams {
+    use llama_cpp_2::context::params::LlamaContextParams;
+
+    // Flash attention auto-selection crashes on some Metal-backed local polish runs
+    // before generation begins, so force it off for the shared local polish runtime.
+    LlamaContextParams::default()
+        .with_n_ctx(Some(NonZeroU32::new(2048).unwrap()))
+        .with_flash_attention_policy(llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_DISABLED)
+}
 
 /// Configuration for engine-specific behavior
 pub struct EngineConfig {
@@ -64,6 +74,15 @@ pub fn language_name(code: &str) -> &str {
 
 /// Run text polishing using GGUF model via llama-cpp-2.
 /// This is a blocking call — run it inside `spawn_blocking`.
+#[instrument(
+    skip(text, model_path, config),
+    fields(
+        language = %language,
+        engine = config.log_prefix,
+    ),
+    ret,
+    err
+)]
 pub fn polish_text_blocking(
     text: &str,
     system_prompt: &str,
@@ -73,48 +92,45 @@ pub fn polish_text_blocking(
     config: &EngineConfig,
 ) -> Result<String, String> {
     use llama_cpp_2::{
-        context::params::LlamaContextParams,
         llama_backend::LlamaBackend,
         llama_batch::LlamaBatch,
         model::{params::LlamaModelParams, AddBos, LlamaModel},
         token::data_array::LlamaTokenDataArray,
     };
 
-    let prefix = config.log_prefix;
+    let engine = config.log_prefix;
 
-    info!("[{}] ====== POLISH CONFIG ======", prefix);
-    info!("[{}] language: {}", prefix, language);
-    info!("[{}] system_prompt: {}", prefix, system_prompt);
-    info!("[{}] =============================", prefix);
+    info!(engine = %engine, language = %language, "polish_config");
+    debug!(engine = %engine, system_prompt = %system_prompt, "polish_system_prompt_configured");
 
-    info!("[{}] ========== INPUT START ==========", prefix);
-    info!("[{}] {}", prefix, text);
-    info!("[{}] ========== INPUT END ({} chars) ==========", prefix, text.len());
+    info!(engine = %engine, text_len = text.len(), "polish_input_start");
+    debug!(engine = %engine, input = %text, "polish_input_text");
 
     if !model_path.exists() {
-        error!("[{}] model not found at {:?}", prefix, model_path);
+        error!(engine = %engine, path = ?model_path, "polish_model_not_found");
         return Err("Polish model not downloaded".to_string());
     }
 
     let t0 = std::time::Instant::now();
 
-    info!("[{}] initializing llama backend", prefix);
+    info!(engine = %engine, "polish_backend_init_start");
     let backend = LlamaBackend::init().map_err(|e| {
-        error!("[{}] backend init failed: {e}", prefix);
+        error!(engine = %engine, error = %e, "polish_backend_init_failed");
         format!("Backend init: {e}")
     })?;
 
-    info!("[{}] loading model from {:?}", prefix, model_path);
+    info!(engine = %engine, path = ?model_path, "polish_model_load_start");
     let model_params = LlamaModelParams::default();
-    let model = LlamaModel::load_from_file(&backend, &model_path, &model_params).map_err(|e| {
-        error!("[{}] model load failed: {e}", prefix);
+    let model = LlamaModel::load_from_file(&backend, model_path, &model_params).map_err(|e| {
+        error!(engine = %engine, error = %e, "polish_model_load_failed");
         format!("Model load: {e}")
     })?;
-    info!("[{}] model loaded in {:.2}s", prefix, t0.elapsed().as_secs_f32());
+    let model_load_ms = t0.elapsed().as_millis() as u64;
+    info!(engine = %engine, duration_ms = model_load_ms, "polish_model_loaded");
 
-    let ctx_params = LlamaContextParams::default().with_n_ctx(Some(NonZeroU32::new(2048).unwrap()));
+    let ctx_params = build_polish_context_params();
     let mut ctx = model.new_context(&backend, ctx_params).map_err(|e| {
-        error!("[{}] context creation failed: {e}", prefix);
+        error!(engine = %engine, error = %e, "polish_context_creation_failed");
         format!("Context: {e}")
     })?;
 
@@ -137,13 +153,13 @@ pub fn polish_text_blocking(
     let prompt = format!(
         "<|im_start|>system\n{system_prompt}{extra_instruction}<|im_end|>\n<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"
     );
-    info!("[{}] full input prompt: {}", prefix, prompt);
+    debug!(engine = %engine, prompt_len = prompt.len(), "polish_full_prompt_constructed");
 
     let tokens = model.str_to_token(&prompt, AddBos::Always).map_err(|e| {
-        error!("[{}] tokenization failed: {e}", prefix);
+        error!(engine = %engine, error = %e, "polish_tokenization_failed");
         format!("Tokenize: {e}")
     })?;
-    info!("[{}] prompt tokenized: {} tokens", prefix, tokens.len());
+    info!(engine = %engine, token_count = tokens.len(), "polish_tokenization_complete");
 
     let mut batch = LlamaBatch::new(tokens.len(), 1);
     let last_idx = (tokens.len() - 1) as i32;
@@ -155,10 +171,11 @@ pub fn polish_text_blocking(
 
     let t_decode = std::time::Instant::now();
     ctx.decode(&mut batch).map_err(|e| {
-        error!("[{}] prefill decode failed: {e}", prefix);
+        error!(engine = %engine, error = %e, "polish_prefill_decode_failed");
         format!("Decode: {e}")
     })?;
-    info!("[{}] prefill done in {:.2}s", prefix, t_decode.elapsed().as_secs_f32());
+    let prefill_ms = t_decode.elapsed().as_millis() as u64;
+    info!(engine = %engine, duration_ms = prefill_ms, "polish_prefill_complete");
 
     let n_prompt = tokens.len() as i32;
     let max_new_tokens = 512_i32;
@@ -172,11 +189,19 @@ pub fn polish_text_blocking(
         let new_token = candidates_p.sample_token_greedy();
 
         if new_token == model.token_eos() {
-            info!("[{}] EOS reached after {} new tokens", prefix, n_cur - n_prompt);
+            info!(
+                engine = %engine,
+                new_tokens = n_cur - n_prompt,
+                "polish_generation_eos"
+            );
             break;
         }
         if (n_cur - n_prompt) >= max_new_tokens {
-            warn!("[{}] max_new_tokens ({}) reached, truncating", prefix, max_new_tokens);
+            warn!(
+                engine = %engine,
+                max_new_tokens = max_new_tokens,
+                "polish_max_tokens_reached"
+            );
             break;
         }
 
@@ -190,7 +215,12 @@ pub fn polish_text_blocking(
             .add(new_token, n_cur, &[0], true)
             .map_err(|e| format!("Batch add: {e}"))?;
         ctx.decode(&mut batch).map_err(|e| {
-            error!("[{}] generation decode failed at token {}: {e}", prefix, n_cur);
+            error!(
+                engine = %engine,
+                token_index = n_cur,
+                error = %e,
+                "polish_generation_decode_failed"
+            );
             format!("Decode: {e}")
         })?;
         n_cur += 1;
@@ -199,28 +229,33 @@ pub fn polish_text_blocking(
     let output = String::from_utf8_lossy(&output_bytes).to_string();
 
     let n_new = n_cur - n_prompt;
-    let gen_secs = t_gen.elapsed().as_secs_f32();
-    let total_secs = t0.elapsed().as_secs_f32();
+    let gen_ms = t_gen.elapsed().as_millis() as u64;
+    let total_ms = t0.elapsed().as_millis() as u64;
+    let tok_per_sec = if gen_ms > 0 {
+        (n_new as f64 * 1000.0 / gen_ms as f64) as f64
+    } else {
+        0.0
+    };
     info!(
-        "[{}] done — {} new tokens in {:.2}s ({:.1} tok/s), total {:.2}s",
-        prefix,
-        n_new,
-        gen_secs,
-        n_new as f32 / gen_secs.max(0.001),
-        total_secs
+        engine = %engine,
+        new_tokens = n_new,
+        generation_ms = gen_ms,
+        tok_per_sec = tok_per_sec,
+        total_ms = total_ms,
+        "polish_generation_complete"
     );
 
     let result = output.trim().to_string();
-    info!("[{}] raw full output: {}", prefix, result);
+    debug!(engine = %engine, output_len = result.len(), "polish_raw_output");
 
-    // Strip <think>...</think> block if configured (Qwen3 chain-of-thought)
+    // Strip ... block if configured (Qwen3 chain-of-thought)
     let final_result = if config.strip_think_tags {
-        if let Some(end_idx) = result.find("</think>") {
+        if let Some(end_idx) = result.find("") {
             // Complete think block found, extract content after it
-            result[end_idx + "</think>".len()..].trim().to_string()
-        } else if result.contains("<think>") {
+            result[end_idx + "".len()..].trim().to_string()
+        } else if result.contains("") {
             // Incomplete think block (truncated) - return empty or error
-            warn!("[{}] incomplete <think> block detected (likely truncated), returning empty result", prefix);
+            warn!(engine = %engine, "polish_incomplete_think_block");
             String::new()
         } else {
             // No think tags at all, return as-is
@@ -230,9 +265,7 @@ pub fn polish_text_blocking(
         result
     };
 
-    info!("[{}] ========== OUTPUT START ==========", prefix);
-    info!("[{}] {}", prefix, final_result);
-    info!("[{}] ========== OUTPUT END ({} chars) ==========", prefix, final_result.len());
+    info!(engine = %engine, output_len = final_result.len(), "polish_output_end");
     Ok(final_result)
 }
 
@@ -321,5 +354,15 @@ mod tests {
         };
         assert_eq!(config2.log_prefix, "another");
         assert!(!config2.strip_think_tags);
+    }
+
+    #[test]
+    fn test_polish_context_params_disable_flash_attention() {
+        let params = build_polish_context_params();
+        assert_eq!(params.n_ctx(), NonZeroU32::new(2048));
+        assert_eq!(
+            params.flash_attention_policy(),
+            llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_DISABLED
+        );
     }
 }

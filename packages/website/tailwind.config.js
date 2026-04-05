@@ -1,4 +1,13 @@
 /** @type {import('tailwindcss').Config} */
+function withOpacity(variableName) {
+  return ({ opacityValue }) => {
+    if (opacityValue !== undefined) {
+      return `color-mix(in srgb, var(${variableName}) calc(${opacityValue} * 100%), transparent)`;
+    }
+    return `var(${variableName})`;
+  };
+}
+
 module.exports = {
   content: [
     "./src/**/*.{ts,tsx}",
@@ -7,32 +16,35 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
-        accent: "var(--accent)",
+        background: withOpacity("--background"),
+        "background-hover": withOpacity("--background-hover"),
+        foreground: withOpacity("--foreground"),
+        accent: {
+          DEFAULT: withOpacity("--accent-amber"),
+          green: withOpacity("--accent-green"),
+          blue: withOpacity("--accent-blue"),
+          amber: withOpacity("--accent-amber"),
+          purple: withOpacity("--accent-purple"),
+        },
         muted: {
-          DEFAULT: "var(--muted)",
-          foreground: "var(--muted-foreground)",
-          light: "var(--muted-light)"
+          DEFAULT: withOpacity("--muted"),
+          foreground: withOpacity("--muted-foreground"),
         },
         card: {
-          DEFAULT: "var(--card)",
-          foreground: "var(--card-foreground)",
-          hover: "var(--card-hover)"
+          DEFAULT: withOpacity("--card"),
+          foreground: withOpacity("--card-foreground"),
         },
         primary: {
-          DEFAULT: "var(--primary)",
-          foreground: "var(--primary-foreground)"
+          DEFAULT: withOpacity("--primary"),
+          foreground: withOpacity("--primary-foreground"),
         },
         secondary: {
-          DEFAULT: "var(--secondary)",
-          foreground: "var(--secondary-foreground)"
+          DEFAULT: withOpacity("--secondary"),
+          foreground: withOpacity("--secondary-foreground"),
         },
-        border: "var(--border)",
-        "border-subtle": "var(--border-subtle)",
-        input: "var(--input)",
-        ring: "var(--ring)",
-        black: "var(--black)"
+        border: withOpacity("--border"),
+        input: withOpacity("--input"),
+        ring: withOpacity("--ring"),
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 /// Polish engine type enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -20,7 +20,11 @@ impl PolishEngineType {
     }
 
     pub fn all() -> Vec<PolishEngineType> {
-        vec![PolishEngineType::Qwen, PolishEngineType::Lfm, PolishEngineType::Cloud]
+        vec![
+            PolishEngineType::Qwen,
+            PolishEngineType::Lfm,
+            PolishEngineType::Cloud,
+        ]
     }
 }
 
@@ -53,7 +57,11 @@ pub struct PolishRequest {
 }
 
 impl PolishRequest {
-    pub fn new(text: impl Into<String>, system_prompt: impl Into<String>, language: impl Into<String>) -> Self {
+    pub fn new(
+        text: impl Into<String>,
+        system_prompt: impl Into<String>,
+        language: impl Into<String>,
+    ) -> Self {
         Self {
             text: text.into(),
             system_prompt: system_prompt.into(),
@@ -134,17 +142,30 @@ mod tests {
     #[test]
     fn test_polish_engine_type_all() {
         let all = PolishEngineType::all();
-        assert_eq!(all.len(), 2);
+        assert_eq!(all.len(), 3);
         assert!(all.contains(&PolishEngineType::Qwen));
         assert!(all.contains(&PolishEngineType::Lfm));
+        assert!(all.contains(&PolishEngineType::Cloud));
     }
 
     #[test]
     fn test_polish_engine_type_from_str() {
-        assert_eq!("qwen".parse::<PolishEngineType>().unwrap(), PolishEngineType::Qwen);
-        assert_eq!("lfm".parse::<PolishEngineType>().unwrap(), PolishEngineType::Lfm);
-        assert_eq!("QWEN".parse::<PolishEngineType>().unwrap(), PolishEngineType::Qwen);
-        assert_eq!("LFM".parse::<PolishEngineType>().unwrap(), PolishEngineType::Lfm);
+        assert_eq!(
+            "qwen".parse::<PolishEngineType>().unwrap(),
+            PolishEngineType::Qwen
+        );
+        assert_eq!(
+            "lfm".parse::<PolishEngineType>().unwrap(),
+            PolishEngineType::Lfm
+        );
+        assert_eq!(
+            "QWEN".parse::<PolishEngineType>().unwrap(),
+            PolishEngineType::Qwen
+        );
+        assert_eq!(
+            "LFM".parse::<PolishEngineType>().unwrap(),
+            PolishEngineType::Lfm
+        );
     }
 
     #[test]
@@ -190,19 +211,14 @@ mod tests {
 
     #[test]
     fn test_polish_request_with_model() {
-        let request = PolishRequest::new("test", "prompt", "zh")
-            .with_model("model.gguf");
+        let request = PolishRequest::new("test", "prompt", "zh").with_model("model.gguf");
         assert_eq!(request.text, "test");
         assert_eq!(request.model_name, Some("model.gguf".to_string()));
     }
 
     #[test]
     fn test_polish_result_new() {
-        let result = PolishResult::new(
-            "polished text".to_string(),
-            PolishEngineType::Qwen,
-            1500,
-        );
+        let result = PolishResult::new("polished text".to_string(), PolishEngineType::Qwen, 1500);
         assert_eq!(result.text, "polished text");
         assert_eq!(result.engine, PolishEngineType::Qwen);
         assert_eq!(result.total_ms, 1500);

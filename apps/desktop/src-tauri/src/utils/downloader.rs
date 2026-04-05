@@ -1,9 +1,12 @@
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use std::time::Instant;
 use futures_util::StreamExt;
 use std::io::Write;
-use tracing::{info, warn, error};
+use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Instant;
+use tracing::{debug, error, info, warn};
 
 const PROGRESS_LOG_THRESHOLD_PERCENT: u32 = 10;
 
@@ -80,7 +83,8 @@ pub async fn download(options: DownloadOptions) -> Result<PathBuf, String> {
     }
 
     let model_name = options.model_name.as_deref().unwrap_or("unknown");
-    let filename = options.output_path
+    let filename = options
+        .output_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
@@ -90,7 +94,7 @@ pub async fn download(options: DownloadOptions) -> Result<PathBuf, String> {
         filename = %filename,
         output_path = ?options.output_path,
         source_count = options.urls.len(),
-        "Starting download"
+        "download_started"
     );
 
     let mut last_error = String::new();
@@ -99,7 +103,7 @@ pub async fn download(options: DownloadOptions) -> Result<PathBuf, String> {
         let attempt_num = attempt + 1;
 
         if options.is_cancelled() {
-            info!(model = model_name, "Download cancelled before attempting next source");
+            info!(model = model_name, "download_cancelled_before_source");
             return Err("cancelled".to_string());
         }
 
@@ -108,7 +112,7 @@ pub async fn download(options: DownloadOptions) -> Result<PathBuf, String> {
             attempt = attempt_num,
             total_sources = options.urls.len(),
             url = url,
-            "Trying download source"
+            "download_source_attempt"
         );
 
         match download_single(
@@ -125,7 +129,7 @@ pub async fn download(options: DownloadOptions) -> Result<PathBuf, String> {
                     model = model_name,
                     attempt = attempt_num,
                     output_path = ?path,
-                    "Download completed"
+                    "download_completed"
                 );
                 return Ok(path);
             }
@@ -138,7 +142,7 @@ pub async fn download(options: DownloadOptions) -> Result<PathBuf, String> {
                     attempt = attempt_num,
                     url = url,
                     error = %e,
-                    "Download source failed"
+                    "download_source_failed"
                 );
                 last_error = e;
                 cleanup_partial_download(&options.output_path);
@@ -150,9 +154,12 @@ pub async fn download(options: DownloadOptions) -> Result<PathBuf, String> {
         model = model_name,
         attempts = options.urls.len(),
         last_error = %last_error,
-        "All download sources failed"
+        "download_all_sources_failed"
     );
-    Err(format!("All download sources failed. Last error: {}", last_error))
+    Err(format!(
+        "All download sources failed. Last error: {}",
+        last_error
+    ))
 }
 
 /// Download from a single URL
@@ -171,7 +178,7 @@ async fn download_single(
 
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
-            error!(path = ?parent, error = %e, "Failed to create download directory");
+            error!(path = ?parent, error = %e, "download_directory_creation_failed");
             format!("Failed to create directory: {}", e)
         })?;
     }
@@ -182,28 +189,29 @@ async fn download_single(
         .ok_or_else(|| "Invalid output path: no parent directory".to_string())?;
 
     if tmp_path.exists() {
-        info!(tmp_path = ?tmp_path, "Removing existing temp file");
-        let _ = std::fs::remove_file(&tmp_path);
+        info!(tmp_path = ?tmp_path, "temp_file_removing");
+        if let Err(e) = std::fs::remove_file(&tmp_path) {
+            debug!(error = %e, path = ?tmp_path, "temp_file_removal_failed");
+        }
     }
 
     let client = reqwest::Client::new();
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| {
-            warn!(url = url, error = %e, "Download request failed");
-            format!("Download request failed: {}", e)
-        })?;
+    let response = client.get(url).send().await.map_err(|e| {
+        warn!(url = url, error = %e, "download_request_failed");
+        format!("Download request failed: {}", e)
+    })?;
 
     if !response.status().is_success() {
         warn!(
             url = url,
             status = %response.status(),
             status_code = response.status().as_u16(),
-            "Download failed with non-success status"
+            "download_failed_http_error"
         );
-        return Err(format!("Download failed with status: {}", response.status()));
+        return Err(format!(
+            "Download failed with status: {}",
+            response.status()
+        ));
     }
 
     let total_size = response.content_length().unwrap_or(0);
@@ -214,11 +222,11 @@ async fn download_single(
         filename = %filename,
         total_bytes = total_size,
         total_mb = format!("{:.2}", total_size_mb),
-        "Download response received"
+        "download_response_received"
     );
 
     let mut file = std::fs::File::create(&tmp_path).map_err(|e| {
-        error!(tmp_path = ?tmp_path, error = %e, "Failed to create temp file");
+        error!(tmp_path = ?tmp_path, error = %e, "temp_file_creation_failed");
         format!("Failed to create temp file: {}", e)
     })?;
 
@@ -232,18 +240,18 @@ async fn download_single(
                 info!(
                     filename = %filename,
                     downloaded_mb = format!("{:.2}", downloaded as f64 / 1_048_576.0),
-                    "Download cancelled by user"
+                    "download_cancelled_by_user"
                 );
                 return Err("cancelled".to_string());
             }
 
             let chunk = chunk.map_err(|e| {
-                warn!(url = url, downloaded_bytes = downloaded, error = %e, "Download stream error");
+                warn!(url = url, downloaded_bytes = downloaded, error = %e, "download_stream_error");
                 format!("Download error: {}", e)
             })?;
 
             file.write_all(&chunk).map_err(|e| {
-                error!(tmp_path = ?tmp_path, error = %e, "Write error");
+                error!(tmp_path = ?tmp_path, error = %e, "download_write_error");
                 format!("Write error: {}", e)
             })?;
 
@@ -271,7 +279,7 @@ async fn download_single(
                         total_mb = format!("{:.2}", total_size_mb),
                         elapsed_secs = elapsed.as_secs(),
                         speed_mbps = format!("{:.2}", speed_mbps),
-                        "Download progress"
+                        "download_progress"
                     );
                 }
             }
@@ -281,7 +289,9 @@ async fn download_single(
     .await;
 
     if let Err(e) = result {
-        let _ = std::fs::remove_file(&tmp_path);
+        if let Err(e) = std::fs::remove_file(&tmp_path) {
+            debug!(error = %e, path = ?tmp_path, "temp_file_cleanup_failed");
+        }
         return Err(e);
     }
 
@@ -290,7 +300,7 @@ async fn download_single(
             tmp_path = ?tmp_path,
             output_path = ?output_path,
             error = %e,
-            "Failed to finalize download file"
+            "download_finalize_failed"
         );
         format!("Failed to finalize file: {}", e)
     })?;
@@ -310,18 +320,25 @@ async fn download_single(
         elapsed_ms = elapsed.as_millis(),
         avg_speed_mbps = format!("{:.2}", avg_speed_mbps),
         output_path = ?output_path,
-        "Download completed successfully"
+        "download_completed_successfully"
     );
 
     Ok(output_path.to_path_buf())
 }
 
 fn cleanup_partial_download(output_path: &Path) {
-    let _ = std::fs::remove_file(output_path);
+    if let Err(e) = std::fs::remove_file(output_path) {
+        debug!(error = %e, path = ?output_path, "partial_download_cleanup_failed");
+    }
     if let Some(parent) = output_path.parent() {
-        let filename = output_path.file_name().unwrap_or_default().to_string_lossy();
+        let filename = output_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
         let tmp_path = parent.join(format!("{}.tmp", filename));
-        let _ = std::fs::remove_file(&tmp_path);
+        if let Err(e) = std::fs::remove_file(&tmp_path) {
+            debug!(error = %e, path = ?tmp_path, "temp_file_cleanup_failed");
+        }
     }
 }
 

@@ -4,10 +4,12 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "AriaType - Voice to Text Application Monorepo",
-  "scripts": {
+"scripts": {
     "check:i18n": "node scripts/check-i18n.mjs",
     "dev": "npm run tauri:dev",
     "build": "npm run tauri:build:mac",
+    "build:all": "pnpm --filter @ariatype/desktop build:all",
+    "build:all:unsigned": "pnpm --filter @ariatype/desktop build:all:unsigned",
     "tauri:dev": "pnpm --filter @ariatype/desktop tauri:dev",
     "tauri:build:mac": "pnpm --filter @ariatype/desktop tauri:build:mac",
     "tauri:build:mac-arm": "pnpm --filter @ariatype/desktop tauri:build:mac-arm",

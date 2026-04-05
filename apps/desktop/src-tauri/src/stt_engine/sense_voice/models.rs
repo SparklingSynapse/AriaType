@@ -6,7 +6,7 @@ pub const SMALL_Q4_K: ModelDefinition = ModelDefinition {
     size_mb: 244,
     speed_score: 8,
     accuracy_score: 9,
-    prefer_lang: &["zh", "ja", "ko", "en"],
+    prefer_lang: &["zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR", "en-US"],
     filename: "sense-voice-small-q4_k.gguf",
 };
 
@@ -16,7 +16,7 @@ pub const SMALL_Q8_0: ModelDefinition = ModelDefinition {
     size_mb: 488,
     speed_score: 6,
     accuracy_score: 10,
-    prefer_lang: &["zh", "ja", "ko", "en"],
+    prefer_lang: &["zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR", "en-US"],
     filename: "sense-voice-small-q8_0.gguf",
 };
 
@@ -30,9 +30,16 @@ pub fn find_by_name(name: &str) -> Option<&'static ModelDefinition> {
 }
 
 pub fn recommend_by_language(lang: &str) -> Vec<&'static ModelDefinition> {
+    let base_lang = lang.split('-').next().unwrap_or(lang);
     let mut models: Vec<_> = ALL
         .iter()
-        .filter(|m| m.prefer_lang.contains(&lang))
+        .filter(|m| {
+            lang == "auto"
+                || m.prefer_lang.contains(&lang)
+                || m.prefer_lang
+                    .iter()
+                    .any(|p| p.split('-').next().unwrap_or(*p) == base_lang)
+        })
         .copied()
         .collect();
     models.sort_by(|a, b| b.accuracy_score.cmp(&a.accuracy_score));
