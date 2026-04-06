@@ -168,6 +168,26 @@ pub fn run() {
         .setup(|app| {
             info!("setup_completed");
 
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Manager;
+                // Use Tauri's PathResolver to locate the resource dynamically
+                // This correctly maps to the physical path whether in dev or build mode
+                if let Ok(metal_path) = app
+                    .path()
+                    .resolve("bin/apple-silicon", tauri::path::BaseDirectory::Resource)
+                {
+                    if metal_path.exists() {
+                        std::env::set_var("GGML_METAL_PATH_RESOURCES", &metal_path);
+                        tracing::info!(path = ?metal_path, "ggml_metal_path_resources_set");
+                    } else {
+                        tracing::warn!(path = ?metal_path, "ggml_metal_path_resources_not_found");
+                    }
+                } else {
+                    tracing::warn!("ggml_metal_path_resolve_failed");
+                }
+            }
+
             {
                 let state = app.state::<AppState>();
                 let store = state.history_store.lock();

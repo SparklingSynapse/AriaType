@@ -1,6 +1,6 @@
 {
   "version": "0.1.1",
-  "pub_date": "2026-04-06T04:21:37.763Z",
+  "pub_date": "2026-04-06T08:21:25.437Z",
   "notes": "",
   "url": "https://ariatype.com/release/AriaType_0.1.1_aarch64.dmg",
   "platforms": {
@@ -16,14 +16,14 @@
   },
   "files": [
     {
-      "file": "AriaType_0.1.1_x64.dmg",
-      "channel": "mac-intel",
-      "url": "https://ariatype.com/release/AriaType_0.1.1_x64.dmg"
-    },
-    {
       "file": "AriaType_0.1.1_aarch64.dmg",
       "channel": "mac-aarch",
       "url": "https://ariatype.com/release/AriaType_0.1.1_aarch64.dmg"
+    },
+    {
+      "file": "AriaType_0.1.1_x64.dmg",
+      "channel": "mac-intel",
+      "url": "https://ariatype.com/release/AriaType_0.1.1_x64.dmg"
     }
   ]
 }
