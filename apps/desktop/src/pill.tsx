@@ -2,23 +2,15 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { PillWindow } from "./components/Pill/PillWindow";
 import { settingsCommands, events } from "./lib/tauri";
+import { applyInitialTheme, applyTheme, type ThemeMode } from "./lib/theme";
 import "./index.css";
 import "./i18n";
 
-type ThemeMode = "system" | "light" | "dark";
-
-function getSystemTheme(): "light" | "dark" {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function applyTheme(mode: ThemeMode) {
-  const isDark = mode === "system" ? getSystemTheme() === "dark" : mode === "dark";
-  document.documentElement.classList.toggle("dark", isDark);
-}
-
 let currentMode: ThemeMode = "system";
 
-// Apply initial theme from settings, fall back to system preference
+applyInitialTheme();
+
+// Apply initial theme from settings, fall back to the primed local or system theme
 settingsCommands.getSettings().then((settings) => {
   currentMode = (settings.theme_mode as ThemeMode) || "system";
   applyTheme(currentMode);

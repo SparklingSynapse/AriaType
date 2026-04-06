@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>AriaType</title>
+    <script>
+      (function () {
+        var t = localStorage.getItem("ariatype-theme");
+        var isDark = t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", isDark);
+      })();
+    </script>
     <style>
       #splash {
         position: fixed;
@@ -45,8 +52,7 @@
     </div>
     <script>
       (function () {
-        var t = localStorage.getItem("ariatype-theme");
-        var isDark = t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        var isDark = document.documentElement.classList.contains("dark");
         if (isDark) document.getElementById("splash").classList.add("dark");
       })();
     </script>

@@ -30,6 +30,19 @@ const HEADER_IMAGES = {
   dark: [headerDark1, headerDark2],
 };
 
+function preloadHeaderImages() {
+  if (typeof Image === "undefined") {
+    return;
+  }
+
+  Object.values(HEADER_IMAGES).flat().forEach((src) => {
+    const image = new Image();
+    image.src = src;
+  });
+}
+
+preloadHeaderImages();
+
 type TrendPoint = DailyUsage & {
   short_date: string;
   avg_audio_seconds: number;
@@ -101,6 +114,14 @@ function useDashboardPalette() {
         panelStrong: "rgba(17,17,17,0.045)",
         border: "rgba(17,17,17,0.07)",
       };
+}
+
+function buildHeroFallbackBackground(palette: ChartPalette) {
+  return [
+    `radial-gradient(circle at 18% 22%, ${palette.panelStrong} 0%, transparent 34%)`,
+    `radial-gradient(circle at 82% 18%, ${palette.panel} 0%, transparent 30%)`,
+    `linear-gradient(180deg, ${palette.panelStrong} 0%, transparent 52%)`,
+  ].join(", ");
 }
 
 function ActivityRow({ label, value }: ActivityRowProps) {
@@ -311,12 +332,7 @@ export function Dashboard() {
   const [engineUsage, setEngineUsage] = useState<EngineUsage[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
-  const [randomImageIndex, setRandomImageIndex] = useState(0);
-
-  useEffect(() => {
-    // Only randomize once when the dashboard mounts to avoid flickering
-    setRandomImageIndex(Math.floor(Math.random() * 2));
-  }, []);
+  const [randomImageIndex] = useState(() => Math.floor(Math.random() * 2));
 
   useEffect(() => {
     const fetchData = async () => {
@@ -383,9 +399,14 @@ export function Dashboard() {
           className="relative overflow-hidden rounded-[2.5rem] border border-border/60 bg-card px-6 py-10 md:px-10 md:py-12 xl:px-12 xl:py-14"
           style={{
             borderColor: palette.border,
+            backgroundImage: buildHeroFallbackBackground(palette),
           }}
         >
           {/* Header Background Images */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ backgroundImage: buildHeroFallbackBackground(palette) }}
+          />
           <div className="pointer-events-none absolute inset-0 bg-secondary/5 dark:bg-black/10" />
           <img 
             src={HEADER_IMAGES.light[randomImageIndex]} 
@@ -414,7 +435,7 @@ export function Dashboard() {
 
             <div className="mt-8 md:mt-12 grid w-full max-w-4xl mx-auto gap-3 md:gap-5 grid-cols-4">
               {/* Stat Card 1 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl will-change-transform shadow-sm transition-all hover:bg-background/50">
+              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
                 <div className="text-2xl md:text-3xl">📝</div>
                 <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
                   {formatCompactNumber(displayStats.today_count)}
@@ -425,7 +446,7 @@ export function Dashboard() {
               </div>
 
               {/* Stat Card 2 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl will-change-transform shadow-sm transition-all hover:bg-background/50">
+              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
                 <div className="text-2xl md:text-3xl">🔥</div>
                 <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
                   {formatDayCount(t, displayStats.current_streak_days)}
@@ -436,7 +457,7 @@ export function Dashboard() {
               </div>
 
               {/* Stat Card 3 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl will-change-transform shadow-sm transition-all hover:bg-background/50">
+              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
                 <div className="text-2xl md:text-3xl">✨</div>
                 <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
                   {formatCompactNumber(displayStats.total_count)}
@@ -447,7 +468,7 @@ export function Dashboard() {
               </div>
 
               {/* Stat Card 4 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl will-change-transform shadow-sm transition-all hover:bg-background/50">
+              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
                 <div className="text-2xl md:text-3xl">⏱️</div>
                 <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
                   {formatLongDuration(t, displayStats.total_audio_ms)}

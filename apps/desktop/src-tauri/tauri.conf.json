@@ -45,7 +45,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "app"],
+    "targets": [
+      "dmg",
+      "app"
+    ],
     "icon": [
       "../assets/icons/icon.png",
       "../assets/icons/icon.icns",

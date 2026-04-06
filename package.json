@@ -7,6 +7,9 @@
   "scripts": {
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:md-links": "node scripts/check-md-links.mjs",
+    "version:patch": "pnpm --filter @ariatype/desktop version:patch",
+    "version:minor": "pnpm --filter @ariatype/desktop version:minor",
+    "version:major": "pnpm --filter @ariatype/desktop version:major",
     "prepare": "simple-git-hooks",
     "dev": "npm run tauri:dev",
     "build": "npm run tauri:build:mac",

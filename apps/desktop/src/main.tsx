@@ -5,6 +5,7 @@ import App from "./App";
 import { events, windowCommands, systemCommands } from "./lib/tauri";
 import { logger } from "./lib/logger";
 import { initAnalytics } from "./lib/analytics";
+import { applyInitialTheme, applyTheme, type ThemeMode } from "./lib/theme";
 import { SettingsProvider, useSettingsContext } from "./contexts/SettingsContext";
 import { ConfirmProvider, setGlobalConfirm, useConfirm } from "./components/ui/confirm";
 import "./index.css";
@@ -12,18 +13,6 @@ import "./i18n";
 import { useTranslation } from "react-i18next";
 
 initAnalytics();
-
-type ThemeMode = "system" | "light" | "dark";
-
-function getSystemTheme(): "light" | "dark" {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function applyTheme(mode: ThemeMode) {
-  const isDark = mode === "system" ? getSystemTheme() === "dark" : mode === "dark";
-  document.documentElement.classList.toggle("dark", isDark);
-  try { localStorage.setItem("ariatype-theme", isDark ? "dark" : "light"); } catch {}
-}
 
 function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { settings } = useSettingsContext();
@@ -102,6 +91,10 @@ function PermissionNotice() {
     </div>
   );
 }
+
+// Prime the initial theme before the first React paint to avoid a flash of opaque
+// light surfaces before the cached or persisted theme is restored.
+applyInitialTheme();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
