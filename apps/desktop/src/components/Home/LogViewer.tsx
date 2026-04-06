@@ -96,10 +96,13 @@ export function LogViewer() {
         defer
         className="flex-1 rounded-2xl border border-border bg-zinc-900 dark:bg-zinc-950 text-zinc-300 dark:text-zinc-400 font-mono text-xs p-4 min-h-0 max-h-[calc(100vh-220px)]"
         options={{
+          showNativeOverlaidScrollbars: false,
           scrollbars: {
             theme: "os-theme-dark",
+            visibility: "auto",
             autoHide: "scroll",
             autoHideDelay: 300,
+            autoHideSuspend: false,
           },
         }}
       >

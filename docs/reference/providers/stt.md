@@ -135,7 +135,7 @@ wss://api.openai.com/v1/realtime
 
 ### Configuration Required
 - **API Key**: OpenAI API key with Realtime API access
-- **Model**: `gpt-4o-realtime-preview-2024-12-17`
+- **Model**: `gpt-4o-realtime-preview-2026-12-17`
 
 ### Official Documentation
 - [OpenAI Realtime API](https://platform.openai.com/docs/api-reference/realtime)

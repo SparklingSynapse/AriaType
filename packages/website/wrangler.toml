@@ -3,7 +3,7 @@
 # Or from packages/website/: wrangler pages deploy out --project-name aria-type
 name = "aria-type"
 pages_build_output_dir = "out"
-compatibility_date = "2024-09-23"
+compatibility_date = "2026-09-23"
 
 # Required secret — set in Cloudflare Pages dashboard (Settings → Environment variables):
 #   RELEASES_REPO = ariatype/releases   (the public releases-only repo)

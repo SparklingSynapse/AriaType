@@ -157,10 +157,13 @@ export function HomeLayout() {
             defer
             className="h-full"
             options={{
+              showNativeOverlaidScrollbars: false,
               scrollbars: {
                 theme: "os-theme-dark",
+                visibility: "auto",
                 autoHide: "scroll",
                 autoHideDelay: 300,
+                autoHideSuspend: false,
               },
             }}
           >
