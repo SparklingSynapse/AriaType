@@ -1,5 +1,12 @@
 # Debugging Guide
 
+## When to Read This
+
+- Read [`../../AGENTS.md`](../../AGENTS.md) for execution constraints, recovery protocol, and the default iteration loop
+- Read [`../spec/logs.md`](../spec/logs.md) for logging requirements and structured field conventions
+- Read this guide for concrete investigation workflow, log locations, and root-cause analysis steps
+- Read [`../architecture/data-flow.md`](../architecture/data-flow.md) when debugging depends on pipeline stages, state transitions, or IPC boundaries
+
 ## 1. Log Investigation Workflow
 
 When asked to "check and fix" or "investigate":

@@ -7,6 +7,13 @@ Feature specs are versioned delivery contracts. Each spec at `docs/feat/[name]/[
 - BDD scenarios
 - Verification requirements
 
+## When to Read This
+
+- Read [`../README.md`](../README.md) for document routing and canonical sources
+- Read [`../../AGENTS.md`](../../AGENTS.md) for the spec-first rule and execution constraints
+- Read this directory when the question is "what exactly are we building and how do we prove it?"
+- Do not use feature specs to explain architecture rationale after the fact; capture durable cross-cutting decisions in ADRs
+
 ## Active Features
 
 | Feature | Version | Status | Spec |

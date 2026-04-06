@@ -4,8 +4,10 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "AriaType - Voice to Text Application Monorepo",
-"scripts": {
+  "scripts": {
     "check:i18n": "node scripts/check-i18n.mjs",
+    "check:md-links": "node scripts/check-md-links.mjs",
+    "prepare": "simple-git-hooks",
     "dev": "npm run tauri:dev",
     "build": "npm run tauri:build:mac",
     "build:all": "pnpm --filter @ariatype/desktop build:all",
@@ -21,7 +23,11 @@
     "dev:website": "pnpm --filter @ariatype/website dev",
     "build:website": "pnpm --filter @ariatype/website build"
   },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm check:md-links"
+  },
   "devDependencies": {
+    "simple-git-hooks": "^2.13.1",
     "typescript": "^5.7.3"
   },
   "engines": {

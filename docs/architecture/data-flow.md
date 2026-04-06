@@ -108,6 +108,8 @@ listen<T>(event: string, handler: (event: T) => void): Promise<UnlistenFn>
 
 ## Data Contracts
 
+Language fields use full IETF BCP 47 tags. Use `language-REGION` values such as `en-US`, `zh-CN`, `ja-JP`, and `ko-KR`, not bare language codes like `en` or `zh`.
+
 ### TranscriptionRequest
 
 ```typescript

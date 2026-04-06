@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum PolishEngineType {
     Qwen,
     Lfm,
+    Gemma,
     Cloud,
 }
 
@@ -15,6 +16,7 @@ impl PolishEngineType {
         match self {
             PolishEngineType::Qwen => "qwen",
             PolishEngineType::Lfm => "lfm",
+            PolishEngineType::Gemma => "gemma",
             PolishEngineType::Cloud => "cloud",
         }
     }
@@ -23,6 +25,7 @@ impl PolishEngineType {
         vec![
             PolishEngineType::Qwen,
             PolishEngineType::Lfm,
+            PolishEngineType::Gemma,
             PolishEngineType::Cloud,
         ]
     }
@@ -35,6 +38,7 @@ impl std::str::FromStr for PolishEngineType {
         match s.to_lowercase().as_str() {
             "qwen" => Ok(PolishEngineType::Qwen),
             "lfm" => Ok(PolishEngineType::Lfm),
+            "gemma" => Ok(PolishEngineType::Gemma),
             "cloud" => Ok(PolishEngineType::Cloud),
             _ => Err(format!("Unknown polish engine type: {}", s)),
         }
@@ -142,9 +146,10 @@ mod tests {
     #[test]
     fn test_polish_engine_type_all() {
         let all = PolishEngineType::all();
-        assert_eq!(all.len(), 3);
+        assert_eq!(all.len(), 4);
         assert!(all.contains(&PolishEngineType::Qwen));
         assert!(all.contains(&PolishEngineType::Lfm));
+        assert!(all.contains(&PolishEngineType::Gemma));
         assert!(all.contains(&PolishEngineType::Cloud));
     }
 

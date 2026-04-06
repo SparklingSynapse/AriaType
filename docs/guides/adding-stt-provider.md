@@ -2,6 +2,13 @@
 
 This guide walks through adding a new cloud speech-to-text provider to the streaming engine framework.
 
+## When to Read This
+
+- Read [`../../AGENTS.md`](../../AGENTS.md) for execution constraints, verification expectations, and the default iteration loop
+- Read [`../reference/providers/stt.md`](../reference/providers/stt.md) for provider-specific API details and existing conventions
+- Read [`../architecture/data-flow.md`](../architecture/data-flow.md) when provider behavior affects pipeline contracts or state transitions
+- Read this guide for the concrete integration steps inside the current STT engine architecture
+
 ## Overview
 
 The streaming engine uses a trait-based architecture. Each provider implements `StreamingSttEngine` and integrates into `CloudSttEngine` through `StreamingSttClient` enum.

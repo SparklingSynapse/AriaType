@@ -414,7 +414,7 @@ export function Dashboard() {
 
             <div className="mt-8 md:mt-12 grid w-full max-w-4xl mx-auto gap-3 md:gap-5 grid-cols-4">
               {/* Stat Card 1 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
+              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl will-change-transform shadow-sm transition-all hover:bg-background/50">
                 <div className="text-2xl md:text-3xl">📝</div>
                 <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
                   {formatCompactNumber(displayStats.today_count)}
@@ -425,7 +425,7 @@ export function Dashboard() {
               </div>
 
               {/* Stat Card 2 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
+              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl will-change-transform shadow-sm transition-all hover:bg-background/50">
                 <div className="text-2xl md:text-3xl">🔥</div>
                 <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
                   {formatDayCount(t, displayStats.current_streak_days)}
@@ -436,7 +436,7 @@ export function Dashboard() {
               </div>
 
               {/* Stat Card 3 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
+              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl will-change-transform shadow-sm transition-all hover:bg-background/50">
                 <div className="text-2xl md:text-3xl">✨</div>
                 <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
                   {formatCompactNumber(displayStats.total_count)}
@@ -447,7 +447,7 @@ export function Dashboard() {
               </div>
 
               {/* Stat Card 4 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
+              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl will-change-transform shadow-sm transition-all hover:bg-background/50">
                 <div className="text-2xl md:text-3xl">⏱️</div>
                 <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
                   {formatLongDuration(t, displayStats.total_audio_ms)}

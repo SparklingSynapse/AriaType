@@ -1,4 +1,4 @@
-use crate::polish_engine::common::{polish_text_blocking, EngineConfig};
+use crate::polish_engine::common::{polish_text_blocking, EngineConfig, PromptFormat};
 use crate::polish_engine::traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
 use crate::utils::AppPaths;
 use async_trait::async_trait;
@@ -43,7 +43,8 @@ impl PolishEngine for QwenPolishEngine {
 
         let config = EngineConfig {
             log_prefix: "polish:qwen",
-            strip_think_tags: true, // Qwen uses <think> tags
+            strip_think_tags: true,
+            prompt_format: PromptFormat::ChatMl,
         };
 
         let t0 = std::time::Instant::now();

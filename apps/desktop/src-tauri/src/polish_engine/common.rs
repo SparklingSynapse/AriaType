@@ -12,10 +12,20 @@ fn build_polish_context_params() -> llama_cpp_2::context::params::LlamaContextPa
         .with_flash_attention_policy(llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_DISABLED)
 }
 
+/// Prompt template format used by different model families
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptFormat {
+    /// ChatML format: `<|im_start|>role\n...<|im_end|>` (Qwen, LFM)
+    ChatMl,
+    /// Gemma format: `<start_of_turn>role\n...<end_of_turn>` (Gemma)
+    Gemma,
+}
+
 /// Configuration for engine-specific behavior
 pub struct EngineConfig {
     pub log_prefix: &'static str,
     pub strip_think_tags: bool,
+    pub prompt_format: PromptFormat,
 }
 
 /// Shared language detection logic
@@ -149,10 +159,14 @@ pub fn polish_text_blocking(
         String::new()
     };
 
-    // Both Qwen and LFM use ChatML format
-    let prompt = format!(
-        "<|im_start|>system\n{system_prompt}{extra_instruction}<|im_end|>\n<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"
-    );
+    let prompt = match config.prompt_format {
+        PromptFormat::ChatMl => format!(
+            "<|im_start|>system\n{system_prompt}{extra_instruction}<|im_end|>\n<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"
+        ),
+        PromptFormat::Gemma => format!(
+            "<start_of_turn>user\n{system_prompt}{extra_instruction}\n\n{text}<end_of_turn>\n<start_of_turn>model\n"
+        ),
+    };
     debug!(engine = %engine, prompt_len = prompt.len(), "polish_full_prompt_constructed");
 
     let tokens = model.str_to_token(&prompt, AddBos::Always).map_err(|e| {
@@ -344,16 +358,20 @@ mod tests {
         let config = EngineConfig {
             log_prefix: "test",
             strip_think_tags: true,
+            prompt_format: PromptFormat::ChatMl,
         };
         assert_eq!(config.log_prefix, "test");
         assert!(config.strip_think_tags);
+        assert_eq!(config.prompt_format, PromptFormat::ChatMl);
 
         let config2 = EngineConfig {
             log_prefix: "another",
             strip_think_tags: false,
+            prompt_format: PromptFormat::Gemma,
         };
         assert_eq!(config2.log_prefix, "another");
         assert!(!config2.strip_think_tags);
+        assert_eq!(config2.prompt_format, PromptFormat::Gemma);
     }
 
     #[test]

@@ -1,0 +1,14 @@
+   Compiling ariatype v1.0.0 (/Users/bytedance/git/notype/apps/desktop/src-tauri)
+   Compiling ariatype v1.0.0 (/Users/bytedance/git/notype/apps/desktop/src-tauri)
+error: Unrecognized option: 'lib'
+error: Unrecognized option: 'lib'
+
+
+error: could not compile `ariatype` (build script)
+
+Caused by:
+error: could not compile `ariatype` (build script)
+
+Caused by:
+  process didn't exit successfully: `/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/clippy-driver /Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name build_script_build --edition=2021 build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=3e7e238c4084cd3b -C extra-filename=-1294bbf29c2c517a --out-dir /Users/bytedance/git/notype/apps/desktop/src-tauri/target/debug/build/ariatype-1294bbf29c2c517a -C incremental=/Users/bytedance/git/notype/apps/desktop/src-tauri/target/debug/incremental -L dependency=/Users/bytedance/git/notype/apps/desktop/src-tauri/target/debug/deps --extern tauri_build=/Users/bytedance/git/notype/apps/desktop/src-tauri/target/debug/deps/libtauri_build-9a654ae0276feb0b.rlib` (exit status: 1)
+  process didn't exit successfully: `/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/clippy-driver /Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name build_script_build --edition=2021 build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=3e7e238c4084cd3b -C extra-filename=-1294bbf29c2c517a --out-dir /Users/bytedance/git/notype/apps/desktop/src-tauri/target/debug/build/ariatype-1294bbf29c2c517a -C incremental=/Users/bytedance/git/notype/apps/desktop/src-tauri/target/debug/incremental -L dependency=/Users/bytedance/git/notype/apps/desktop/src-tauri/target/debug/deps --extern tauri_build=/Users/bytedance/git/notype/apps/desktop/src-tauri/target/debug/deps/libtauri_build-9a654ae0276feb0b.rlib` (exit status: 1)

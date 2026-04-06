@@ -26,7 +26,7 @@ import { useNavBadges } from "@/hooks/useNavBadges";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import "overlayscrollbars/overlayscrollbars.css";
 
-const FEEDBACK_URL = "https://admitted-wave-091.notion.site/312c21a6f899804093ddf0f8db898318?pvs=105";
+const FEEDBACK_URL = "https://github.com/SparklingSynapse/AriaType/issues/new";
 
 export function HomeLayout() {
   const { t } = useTranslation();

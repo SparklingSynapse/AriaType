@@ -2,6 +2,13 @@
 
 Quality index tracking grades across all product domains. Grades are updated per sprint or after significant changes.
 
+## When to Read This
+
+- Read [`../README.md`](../README.md) for document routing and canonical sources
+- Read [`../spec/testing.md`](../spec/testing.md) for mandatory coverage gates and testing policy
+- Read this document for the current verification posture by domain, known gaps, and quality priorities
+- Do not use quality grades as a substitute for task-level verification evidence
+
 ## Grade Scale
 
 | Grade | Meaning | Requirements |

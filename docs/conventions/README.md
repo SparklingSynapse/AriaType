@@ -1,5 +1,12 @@
 # Conventions
 
+## When to Read This
+
+- Read [`../README.md`](../README.md) for document routing and canonical sources
+- Read [`../../AGENTS.md`](../../AGENTS.md) only for execution constraints and verification rules
+- Read this directory for coding style, design system rules, and repeatable project conventions
+- Do not treat conventions as feature intent or architecture rationale; use specs and ADRs for those questions
+
 ## Purpose
 
 This directory consolidates all coding conventions, design system rules, and style guides.
@@ -10,26 +17,17 @@ Conventions that aren't mechanically enforced will drift. If it matters, encode 
 
 ## Index
 
-- `design-system.md` — Desktop UI design tokens, components, patterns (canonical source)
-- `website-design-system.md` — Website design tokens, components, patterns
-- Rust conventions enforced by: `cargo clippy --all-features -- -D warnings` + `cargo fmt`
-- TypeScript conventions enforced by: TypeScript strict mode + oxlint
+| Document | Description |
+|----------|-------------|
+| [`rust-style.md`](./rust-style.md) | Rust coding style — error handling, logging, types, async, tests |
+| [`typescript-style.md`](./typescript-style.md) | TypeScript/React style — strict mode, hooks, IPC, i18n, Tailwind |
+| [`design-system.md`](./design-system.md) | Desktop UI design tokens, components, patterns (canonical source) |
+| [`website-design-system.md`](./website-design-system.md) | Website UI design tokens, components, patterns |
 
-## Rust Conventions
+## Enforcement
 
-Key rules (not duplicating clippy):
-
-- All identifiers, comments, doc strings in English
-- `thiserror` for library errors, `anyhow` for application errors
-- `tracing` for logging (never `println!`/`eprintln!`)
-- Prefer `for` loops with mutable accumulators over complex iterator chains
-- Newtypes over primitives (`UserId(u64)` not `u64`)
-- Enums for state machines, not boolean flags
-
-## TypeScript/React Conventions
-
-- React 19 functional components with hooks
-- All user-facing text → i18n keys
-- `@/` path alias for imports
-- Prefer stable UI state over aggressive fast updates
-- Never call raw `invoke()` — always through `src/lib/tauri.ts`
+| Layer | Tool | Scope |
+|-------|------|-------|
+| Rust | `cargo clippy --all-features -- -D warnings` + `cargo fmt` | All Rust code |
+| TypeScript | TypeScript strict mode + oxlint | All TS/TSX code |
+| i18n | `pnpm check:i18n` | All locale files (10 locales) |

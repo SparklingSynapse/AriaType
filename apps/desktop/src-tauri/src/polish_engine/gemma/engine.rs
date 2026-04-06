@@ -4,9 +4,9 @@ use crate::utils::AppPaths;
 use async_trait::async_trait;
 use std::path::PathBuf;
 
-pub struct LfmPolishEngine;
+pub struct GemmaPolishEngine;
 
-impl LfmPolishEngine {
+impl GemmaPolishEngine {
     pub fn new() -> Self {
         Self
     }
@@ -16,16 +16,16 @@ impl LfmPolishEngine {
     }
 }
 
-impl Default for LfmPolishEngine {
+impl Default for GemmaPolishEngine {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl PolishEngine for LfmPolishEngine {
+impl PolishEngine for GemmaPolishEngine {
     fn engine_type(&self) -> PolishEngineType {
-        PolishEngineType::Lfm
+        PolishEngineType::Gemma
     }
 
     async fn polish(&self, request: PolishRequest) -> Result<PolishResult, String> {
@@ -42,14 +42,13 @@ impl PolishEngine for LfmPolishEngine {
         let default_prompt = super::DEFAULT_POLISH_PROMPT.to_string();
 
         let config = EngineConfig {
-            log_prefix: "polish:lfm",
+            log_prefix: "polish:gemma",
             strip_think_tags: false,
-            prompt_format: PromptFormat::ChatMl,
+            prompt_format: PromptFormat::Gemma,
         };
 
         let t0 = std::time::Instant::now();
 
-        // Run blocking polish in a separate thread
         let result = tokio::task::spawn_blocking(move || {
             polish_text_blocking(
                 &text,
@@ -65,6 +64,6 @@ impl PolishEngine for LfmPolishEngine {
 
         let total_ms = t0.elapsed().as_millis() as u64;
 
-        Ok(PolishResult::new(result, PolishEngineType::Lfm, total_ms))
+        Ok(PolishResult::new(result, PolishEngineType::Gemma, total_ms))
     }
 }

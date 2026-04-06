@@ -2,6 +2,13 @@
 
 This document describes the high-level architecture of AriaType, a Tauri v2 desktop voice keyboard application.
 
+## When to Read This
+
+- Read [`../README.md`](../README.md) for document routing and canonical sources
+- Read [`decisions/README.md`](./decisions/README.md) for why major architectural choices were made
+- Read [`data-flow.md`](./data-flow.md) for workflow contracts, state transitions, and IPC boundaries
+- Read this document for the system map, domain decomposition, and package boundaries
+
 ## Domain Map
 
 | Domain | Packages | Responsibility |

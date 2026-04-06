@@ -1,5 +1,6 @@
 mod cloud;
 mod common;
+pub mod gemma;
 pub mod lfm;
 pub mod qwen;
 mod templates;
@@ -7,6 +8,7 @@ mod traits;
 mod unified_manager;
 
 pub use cloud::{CloudPolishEngine, CloudProviderConfig};
+pub use gemma::{GemmaModelDef, DEFAULT_POLISH_PROMPT as GEMMA_DEFAULT_PROMPT};
 pub use lfm::{LfmModelDef, DEFAULT_POLISH_PROMPT as LFM_DEFAULT_PROMPT};
 pub use qwen::{QwenModelDef, DEFAULT_POLISH_PROMPT as QWEN_DEFAULT_PROMPT};
 pub use templates::{get_all_templates, get_template_by_id, PolishTemplate, POLISH_TEMPLATES};
@@ -18,12 +20,14 @@ pub const DEFAULT_POLISH_PROMPT: &str = QWEN_DEFAULT_PROMPT;
 
 /// Legacy PolishModel enum for backward compatibility
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
 pub enum PolishModel {
     Qwen3_5_0_8B,
     LFM2_5_1_2B,
     Qwen3_5_2B,
     LFM2_2_6B,
     Qwen3_4B,
+    Gemma2B_IT,
 }
 
 impl PolishModel {
@@ -34,6 +38,7 @@ impl PolishModel {
             "qwen3.5-2b" => Some(Self::Qwen3_5_2B),
             "lfm2-2.6b" => Some(Self::LFM2_2_6B),
             "qwen3-4b" => Some(Self::Qwen3_4B),
+            "gemma-2b-it" | "gemma-4-e2b" => Some(Self::Gemma2B_IT),
             _ => None,
         }
     }
@@ -45,6 +50,7 @@ impl PolishModel {
             Self::Qwen3_5_2B => "qwen3.5-2b",
             Self::LFM2_2_6B => "lfm2-2.6b",
             Self::Qwen3_4B => "qwen3-4b",
+            Self::Gemma2B_IT => "gemma-2b-it",
         }
     }
 
@@ -65,6 +71,9 @@ impl PolishModel {
             Self::Qwen3_4B => QwenModelDef::from_id("qwen3-4b")
                 .map(|m| m.filename)
                 .unwrap_or(""),
+            Self::Gemma2B_IT => gemma::GemmaModelDef::from_id("gemma-2b-it")
+                .map(|m| m.filename)
+                .unwrap_or(""),
         }
     }
 
@@ -83,6 +92,9 @@ impl PolishModel {
                 .map(|m| m.urls())
                 .unwrap_or_default(),
             Self::Qwen3_4B => QwenModelDef::from_id("qwen3-4b")
+                .map(|m| m.urls())
+                .unwrap_or_default(),
+            Self::Gemma2B_IT => gemma::GemmaModelDef::from_id("gemma-2b-it")
                 .map(|m| m.urls())
                 .unwrap_or_default(),
         }
