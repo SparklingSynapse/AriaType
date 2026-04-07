@@ -21,6 +21,8 @@ import { useSettingsContext } from "@/contexts/SettingsContext";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 import langCodes from "@/lib/lang-codes.json";
 import { cn } from "@/lib/utils";
+import { TemplateSelector } from "./TemplateSelector";
+import type { CustomPolishTemplate } from "@/lib/tauri";
 
 function getLanguageLabel(code: string): string {
   return (langCodes as Record<string, string>)[code] || code;
@@ -33,7 +35,8 @@ export function GeneralSettings() {
   const [isMacOS, setIsMacOS] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "transcription" | "polish">("general");
   const [availableSubdomains, setAvailableSubdomains] = useState<string[]>([]);
-  const [polishTemplate, setPolishTemplate] = useState<string>("filler");
+  const [polishSelectedTemplate, setPolishSelectedTemplate] = useState<string>("filler");
+  const [polishCustomTemplates, setPolishCustomTemplates] = useState<CustomPolishTemplate[]>([]);
 
   useEffect(() => {
     systemCommands.getAudioDevices().then(setAudioDevices).catch((err: unknown) => logger.error("failed_to_get_audio_devices", { error: String(err) }));
@@ -50,6 +53,12 @@ export function GeneralSettings() {
         .catch((err: unknown) => logger.error("failed_to_get_available_subdomains", { error: String(err) }));
     }
   }, [settings?.stt_engine_work_domain]);
+
+  useEffect(() => {
+    if (!settings) return;
+    setPolishSelectedTemplate(settings.polish_selected_template || "filler");
+    setPolishCustomTemplates(settings.polish_custom_templates || []);
+  }, [settings?.polish_selected_template, settings?.polish_custom_templates]);
 
   if (!settings) return null;
 
@@ -153,22 +162,23 @@ export function GeneralSettings() {
     await updateSetting("stt_engine_user_glossary", value);
   };
 
-  const handlePolishTemplateChange = async (template: string) => {
-    setPolishTemplate(template as "filler" | "formal" | "concise" | "agent" | "custom");
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "polish_template", value: template });
-    if (template !== "custom") {
-      try {
-        const prompt = await modelCommands.getPolishTemplatePrompt(template);
-        await updateSetting("polish_system_prompt", prompt);
-      } catch (err) {
-        logger.error("failed_to_get_template_prompt", { error: String(err) });
-      }
+  const handlePolishTemplateChange = async (templateId: string) => {
+    setPolishSelectedTemplate(templateId);
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "polish_template", value: templateId });
+    try {
+      await modelCommands.selectPolishTemplate(templateId);
+    } catch (err) {
+      logger.error("failed_to_select_template", { error: String(err) });
     }
   };
 
-  const handlePolishSystemPromptChange = async (value: string) => {
-    setPolishTemplate("custom");
-    await updateSetting("polish_system_prompt", value);
+  const handlePolishTemplatesChange = async () => {
+    try {
+      const templates = await modelCommands.getPolishCustomTemplates();
+      setPolishCustomTemplates(templates);
+    } catch (err) {
+      logger.error("failed_to_get_custom_templates", { error: String(err) });
+    }
   };
 
   return (
@@ -502,45 +512,21 @@ export function GeneralSettings() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>{t("model.polish.template")}</Label>
-                <Select
-                  value={polishTemplate}
-                  onChange={(e) => handlePolishTemplateChange(e.target.value)}
-                  options={[
-                    { value: "filler", label: t("model.polish.templateFiller") },
-                    { value: "formal", label: t("model.polish.templateFormal") },
-                    { value: "concise", label: t("model.polish.templateConcise") },
-                    { value: "agent", label: t("model.polish.templateAgent") },
-                    { value: "custom", label: t("model.polish.templateCustom") },
-                  ]}
+                <TemplateSelector
+                  selectedTemplate={polishSelectedTemplate}
+                  customTemplates={polishCustomTemplates}
+                  onSelect={handlePolishTemplateChange}
+                  onTemplatesChange={handlePolishTemplatesChange}
                 />
-                <p className="text-xs text-muted-foreground">
-                  {polishTemplate === "filler" && t("model.polish.templateFillerDesc")}
-                  {polishTemplate === "formal" && t("model.polish.templateFormalDesc")}
-                  {polishTemplate === "concise" && t("model.polish.templateConciseDesc")}
-                  {polishTemplate === "agent" && t("model.polish.templateAgentDesc")}
-                  {polishTemplate === "custom" && t("model.polish.templateCustomDesc")}
-                </p>
               </div>
-
-              {polishTemplate === "custom" && (
-                <div className="space-y-2">
-                  <Label htmlFor="polish-system-prompt">
-                    {t("model.polish.prompt")}
-                  </Label>
-                  <textarea
-                    id="polish-system-prompt"
-                    className="flex min-h-[120px] w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 scrollbar-overlay"
-                    value={settings.polish_system_prompt}
-                    onChange={(e) =>
-                      handlePolishSystemPromptChange(e.target.value)
-                    }
-                    placeholder={t("model.polish.promptPlaceholder")}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {t("model.polish.promptDesc")}
-                  </p>
-                </div>
-              )}
+              <div className="pt-2">
+                <a
+                  href="/polish-templates"
+                  className="text-sm text-primary hover:underline"
+                >
+                  {t("polishTemplates.manageTemplates")} →
+                </a>
+              </div>
             </CardContent>
           </Card>
         </>

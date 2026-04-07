@@ -11,6 +11,7 @@ import {
   ArrowUpCircle,
   LayoutDashboard,
   History,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
@@ -47,6 +48,7 @@ export function HomeLayout() {
     { to: "/hotkey", icon: Keyboard, label: t("nav.hotkey") },
     { to: "/private-ai", icon: Brain, label: t("nav.privateAi"), badge: !hasModel },
     { to: "/cloud", icon: CloudCog, label: t("cloud.title") },
+    { to: "/polish-templates", icon: Sparkles, label: t("nav.polishTemplates") },
     { to: "/permission", icon: Shield, label: t("nav.permission"), badge: badges.permission },
     { to: "/history", icon: History, label: t("nav.history") },
     { to: "/about", icon: Info, label: t("nav.about"), badge: badges.about },

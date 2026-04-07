@@ -327,10 +327,13 @@ impl PolishEngine for CloudPolishEngine {
         info!(
             provider = %self.config.provider_type,
             model = %self.config.model,
+            base_url = %self.config.base_url,
             enable_thinking = self.config.enable_thinking,
             timeout_secs = CLOUD_POLISH_TIMEOUT.as_secs(),
+            system_prompt = %system_prompt,
+            input_text = %input_text,
             input_len = input_chars,
-            "cloud_polish_start"
+            "cloud_polish_request"
         );
 
         let result = match self.config.provider_type.as_str() {
@@ -345,8 +348,8 @@ impl PolishEngine for CloudPolishEngine {
         info!(
             provider = %self.config.provider_type,
             model = %self.config.model,
-            enable_thinking = self.config.enable_thinking,
             input_len = input_chars,
+            output_text = %result,
             output_len = output_chars,
             duration_ms = total_ms,
             "cloud_polish_complete"

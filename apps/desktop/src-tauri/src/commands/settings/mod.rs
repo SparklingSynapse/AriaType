@@ -38,6 +38,14 @@ pub struct CloudSttConfig {
     pub language: String,
 }
 
+/// User-defined custom polish template
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomPolishTemplate {
+    pub id: String,
+    pub name: String,
+    pub system_prompt: String,
+}
+
 // Legacy config structs for migration from old format
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -112,6 +120,10 @@ pub struct AppSettings {
     pub vad_enabled: bool,
     /// Whether app should stay in system tray when hidden (macOS only)
     pub stay_in_tray: bool,
+    /// Currently selected polish template ID (built-in or user-defined)
+    pub polish_selected_template: String,
+    /// User-defined custom polish templates
+    pub polish_custom_templates: Vec<CustomPolishTemplate>,
 }
 
 impl Default for AppSettings {
@@ -150,6 +162,8 @@ impl Default for AppSettings {
             cloud_polish_configs: HashMap::new(),
             vad_enabled: false,
             stay_in_tray: false,
+            polish_selected_template: "filler".to_string(),
+            polish_custom_templates: Vec::new(),
         }
     }
 }

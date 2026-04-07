@@ -95,6 +95,8 @@ export interface AppSettings {
   cloud_polish_configs: Record<string, CloudProviderConfig>;
   vad_enabled: boolean;
   stay_in_tray: boolean;
+  polish_selected_template: string;
+  polish_custom_templates: CustomPolishTemplate[];
 }
 
 export interface ModelInfo {
@@ -212,12 +214,30 @@ export const modelCommands = {
     invokeWithLogging<PolishTemplate[]>("get_polish_templates"),
   getPolishTemplatePrompt: (templateId: string) =>
     invokeWithLogging<string>("get_polish_template_prompt", { templateId }),
+  createPolishCustomTemplate: (name: string, systemPrompt: string) =>
+    invokeWithLogging<CustomPolishTemplate>("create_polish_custom_template", { name, systemPrompt }),
+  updatePolishCustomTemplate: (id: string, name: string, systemPrompt: string) =>
+    invokeWithLogging<void>("update_polish_custom_template", { id, name, systemPrompt }),
+  deletePolishCustomTemplate: (id: string) =>
+    invokeWithLogging<void>("delete_polish_custom_template", { id }),
+  selectPolishTemplate: (templateId: string) =>
+    invokeWithLogging<void>("select_polish_template", { templateId }),
+  getPolishSelectedTemplate: () =>
+    invokeWithLogging<string>("get_polish_selected_template"),
+  getPolishCustomTemplates: () =>
+    invokeWithLogging<CustomPolishTemplate[]>("get_polish_custom_templates"),
 };
 
 export interface PolishTemplate {
   id: string;
   name: string;
   description: string;
+}
+
+export interface CustomPolishTemplate {
+  id: string;
+  name: string;
+  system_prompt: string;
 }
 
 export interface TranscriptionEntry {

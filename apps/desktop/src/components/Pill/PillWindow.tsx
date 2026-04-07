@@ -129,8 +129,8 @@ export function PillWindow() {
               style={{
                 paddingLeft: isActive ? 16 : 12,
                 paddingRight: isActive ? 16 : 12,
-                paddingTop: isActive ? 9 : 7,
-                paddingBottom: isActive ? 9 : 7,
+                paddingTop: isActive ? 7 : 5,
+                paddingBottom: isActive ? 7 : 5,
                 WebkitAppRegion: "no-drag",
               } as React.CSSProperties}
             >

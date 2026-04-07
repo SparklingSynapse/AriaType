@@ -9,6 +9,7 @@ import { CloudService } from "./components/Home/CloudService";
 import { PermissionSettings } from "./components/Home/PermissionSettings";
 import { About } from "./components/Home/About";
 import { LogViewer } from "./components/Home/LogViewer";
+import { PolishTemplatesPage } from "./components/Home/PolishTemplatesPage";
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
         <Route path="hotkey" element={<HotkeySettings />} />
         <Route path="private-ai" element={<ModelSettings />} />
         <Route path="cloud" element={<CloudService />} />
+        <Route path="polish-templates" element={<PolishTemplatesPage />} />
         <Route path="permission" element={<PermissionSettings />} />
         <Route path="logs" element={<LogViewer />} />
         <Route path="about" element={<About />} />
