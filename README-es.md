@@ -3,10 +3,9 @@
 
 <br/><br/>
 
+### AriaType
 
-### AriaType - Tu teclado de voz privado y local
-
-**Mantén pulsado para hablar. Suelta para escribir. Local primero. Privacidad primero.**
+Escritura por voz en macOS. Mantén pulsada una hotkey, habla, suelta y el texto entra en la app actual.
 
 [English](README.md) | [简体中文](README-cn.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | Español
 
@@ -14,183 +13,83 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/SparklingSynapse/AriaType/releases)
 [![Version](https://img.shields.io/badge/version-0.1.0--beta.8-orange)](https://github.com/SparklingSynapse/AriaType/releases)
 
-[Descargar](https://github.com/SparklingSynapse/AriaType/releases) • [Documentación](#inicio-rápido) • [Comunidad](https://github.com/SparklingSynapse/AriaType/discussions) • [Sitio web](https://ariatype.com)
+[Descargar](https://github.com/SparklingSynapse/AriaType/releases) • [Docs](docs/README.md) • [Discusiones](https://github.com/SparklingSynapse/AriaType/discussions) • [Web](https://ariatype.com)
 
 </div>
 
 ---
 
-## ✨ ¿Qué es AriaType?
+## Qué es
 
-AriaType es un **teclado de voz local-first** que se ejecuta silenciosamente en segundo plano. Cuando quieras escribir, mantén pulsada una tecla de acceso rápido (por defecto `Shift+Space`), habla con naturalidad y suelta. AriaType transcribe al instante y escribe el texto en cualquier aplicación activa—ya sea VS Code, Slack, Notion o el navegador.
+AriaType es una app de escritorio para escribir con la voz.
 
-Está impulsado por **modelos de IA locales cuidadosamente seleccionados y optimizados** para reconocimiento de voz y pulido de texto—sin elecciones aleatorias de modelos: solo las mejores herramientas para el trabajo.
+Se queda en segundo plano y solo aparece cuando la necesitas. Mantén pulsada una tecla rápida, habla con naturalidad y suelta. AriaType transcribe tu voz y escribe en la app activa, como VS Code, Slack, Notion o el navegador.
 
-**Tus datos de voz nunca salen del dispositivo. 100% privado. 100% local.**
+## Por qué usarlo
 
----
+- Local-first: el reconocimiento de voz y la limpieza del texto se ejecutan en tu equipo por defecto.
+- Privado: tus datos de voz no tienen que salir del ordenador.
+- Simple: mantén `Shift+Space`, habla y suelta.
+- Útil: funciona en distintas apps y soporta más de 100 idiomas.
+- Flexible: puedes ajustar velocidad o precisión, cambiar hotkeys y reescribir texto cuando haga falta.
 
-## 🚀 Inicio rápido
+## Inicio rápido
 
-### Instalación
+### Instalar
 
-**macOS (Apple Silicon)**
+- macOS (Apple Silicon): descarga el último [.dmg](https://github.com/SparklingSynapse/AriaType/releases), arrastra AriaType a Applications y ábrelo.
+- Windows: el soporte sigue en desarrollo.
 
-1. Descarga el último [archivo .dmg](https://github.com/SparklingSynapse/AriaType/releases)
-2. Abre el .dmg y arrastra AriaType a Applications
-3. Inicia AriaType desde Applications
+### Primer uso
 
-**Windows** 🚧 En progreso
+1. Concede permisos de micrófono y Accesibilidad.
+2. Descarga un modelo de voz. `Base` es un buen punto de partida.
+3. Elige un idioma o deja activada la detección automática.
+4. Abre cualquier editor y pruébalo.
 
-La compatibilidad con Windows está en desarrollo. [Sigue este repositorio](https://github.com/SparklingSynapse/AriaType) o [únete a las discusiones](https://github.com/SparklingSynapse/AriaType/discussions) para novedades.
+## Cómo funciona
 
-### Configuración inicial
+1. Mantén pulsada tu hotkey. Por defecto es `Shift+Space`.
+2. Habla.
+3. Suelta para insertar el texto.
 
-1. **Concede permisos**: permite acceso al micrófono y a Accesibilidad cuando se solicite
-2. **Descarga un modelo**: elige el modelo **Base** para un equilibrio entre velocidad y precisión
-3. **Configura tu idioma**: la detección automática funciona muy bien, o selecciona tu idioma principal
-4. **Pruébalo**: abre cualquier editor, mantén `Shift+Space` y di “Hello world”
+Si quieres, AriaType también puede limpiar muletillas, puntuación y gramática antes de escribir.
 
-### Uso básico
+## Requisitos del sistema
 
+- macOS 12 o posterior
+- Mac con Apple Silicon
+- 8 GB de RAM como mínimo, 16 GB recomendados
+- 2-5 GB libres para los modelos
+
+## Para desarrolladores
+
+Este repo es un monorepo:
+
+- `apps/desktop`: la app de escritorio con Tauri
+- `packages/website`: el sitio web
+- `packages/shared`: tipos y constantes compartidos en TypeScript
+
+### Puesta en marcha
+
+```bash
+pnpm install
+pnpm tauri:dev
+pnpm --filter @ariatype/website dev
 ```
-1. Mantén → Shift+Space (o tu hotkey personalizada)
-2. Habla → Di lo que quieras escribir
-3. Suelta → El texto aparece al instante
-```
 
----
+### Empieza aquí
 
-## 🎯 Funciones clave
+- [`AGENTS.md`](AGENTS.md): flujo de trabajo, comandos de verificación y reglas del repo
+- [`docs/README.md`](docs/README.md): índice de documentación
+- [`apps/desktop/CONTRIBUTING.md`](apps/desktop/CONTRIBUTING.md): guía de la app de escritorio
+- [`packages/website/CONTRIBUTING.md`](packages/website/CONTRIBUTING.md): guía del sitio web
 
-### 🔒 Privacidad primero
+## Comunidad
 
-Tus datos de voz **nunca salen del ordenador**. Todo el procesamiento sucede localmente usando **modelos cuidadosamente seleccionados y optimizados** para reconocimiento de voz y pulido de texto. Sin nube. Sin servidores. Sin recolección de datos (a menos que actives analíticas anónimas).
+- Bugs y peticiones de funciones: [GitHub Issues](https://github.com/SparklingSynapse/AriaType/issues)
+- Preguntas y discusión: [GitHub Discussions](https://github.com/SparklingSynapse/AriaType/discussions)
 
-### 🎙️ Reducción inteligente de ruido
+## Licencia
 
-Filtra automáticamente el ruido de fondo con tres modos:
-
-- **Auto**: detecta y se adapta al nivel de ruido
-- **Always On**: máxima supresión de ruido
-- **Off**: entrada de audio sin procesar
-
-### ✨ Pulido con IA
-
-Limpia automáticamente tu discurso con **modelos de IA locales curados**:
-
-- elimina muletillas (“um”, “uh”, “like”)
-- corrige gramática y puntuación
-- formatea el texto de manera natural
-- todo el procesamiento es en el dispositivo para máxima privacidad
-
-### 🌍 100+ idiomas
-
-Compatibilidad completa con:
-
-- inglés, chino (simplificado/tradicional)
-- japonés, coreano, español, francés
-- alemán, italiano, portugués, ruso
-- y 90+ más
-
-### ⚡ Funciones inteligentes
-
-- **Hotkey global**: funciona en cualquier aplicación
-- **Smart Pill**: indicador flotante mínimo con niveles de audio
-- **Modos velocidad/precisión**: optimiza según lo que más te importe
-- **Reescritura en un toque**: Formal, Concise o Fix Grammar al instante
-- **Personalizable**: ajusta hotkeys, idiomas y comportamiento
-
----
-
-## 📋 Requisitos del sistema
-
-- **OS**: macOS 12.0 (Monterey) o posterior
-- **Chip**: Apple Silicon (M1, M2, M3, M4)
-- **RAM**: mínimo 8GB (recomendado 16GB)
-- **Almacenamiento**: 2-5GB para modelos
-
----
-
-## 🛠️ Configuración avanzada
-
-### Hotkeys personalizadas
-
-Ve a Settings → Hotkeys para personalizar tu combinación de teclas.
-
-### Selección de modelos
-
-AriaType utiliza **modelos cuidadosamente seleccionados y optimizados** tanto para voz a texto como para el pulido con IA:
-
-**Modelos de reconocimiento de voz (basados en Whisper)**:
-
-- **Tiny**: el más rápido, menor precisión (~75MB)
-- **Base**: equilibrio (recomendado) (~150MB)
-- **Small**: mayor precisión (~500MB)
-- **Medium**: máxima precisión (~1.5GB)
-
-**Pulido de texto**: impulsado por un LLM local optimizado para corrección gramatical y formato natural.
-
-Todos los modelos se ejecutan completamente en tu dispositivo—no se requiere internet después de la descarga.
-
-### Ajustes de idioma
-
-- **Auto-detect**: identifica automáticamente el idioma que hablas
-- **Idioma fijo**: fija un idioma específico para mejorar la precisión
-
----
-
-## 💬 Comunidad y soporte
-
-- **Issues**: reporta errores o solicita funciones en [GitHub Issues](https://github.com/SparklingSynapse/AriaType/issues)
-- **Discussions**: únete a la comunidad en [GitHub Discussions](https://github.com/SparklingSynapse/AriaType/discussions)
-- **Sitio web**: visita [ariatype.com](https://ariatype.com) para más información
-
----
-
-## 🤝 Contribuir
-
-¡Agradecemos las contribuciones! Por ejemplo:
-
-- 🐛 reportes de bugs
-- 💡 solicitudes de funciones
-- 📝 mejoras de documentación
-- 🔧 contribuciones de código
-
-Abre un issue o pull request en [GitHub](https://github.com/SparklingSynapse/AriaType).
-
----
-
-## 📄 Licencia
-
-Licenciado bajo **GNU Affero General Public License v3.0** (AGPL-3.0).
-
-Esto significa:
-
-- ✅ libre para usar, modificar y distribuir
-- ✅ código abierto para siempre
-- ⚠️ si modificas y distribuyes, debes compartir tus cambios
-- ⚠️ si ejecutas una versión modificada como servicio, debes compartir el código fuente
-
-Consulta [LICENSE](LICENSE) para más detalles.
-
----
-
-## 🌟 Apoya el proyecto
-
-Si AriaType te ayuda a ser más productivo:
-
-- ⭐ dale una estrella al repositorio
-- 🐦 compártelo con otras personas
-- 💬 únete a las discusiones de la comunidad
-- 🐛 reporta bugs para ayudarnos a mejorar
-
----
-
-<div align="center">
-
-**Made with ❤️ for developers, writers, and anyone who thinks faster than they type**
-
-[Descargar ahora](https://github.com/SparklingSynapse/AriaType/releases) • [Empezar](#inicio-rápido) • [Unirse a la comunidad](https://github.com/SparklingSynapse/AriaType/discussions)
-
-</div>
+AriaType se distribuye bajo [AGPL-3.0](LICENSE).
