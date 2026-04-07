@@ -6,7 +6,7 @@ import { I18nProvider } from '@/components/I18nProvider';
 export const metadata: Metadata = {
   title: 'AriaType - Open-Source AI Voice-to-Text Input',
   description:
-    'AriaType is an open-source AI voice-to-text input for macOS and a powerful typeless alternative. Hold a hotkey, speak naturally, and your words appear right where you are already working.',
+    'AriaType is an open-source AI voice-to-text input for macOS and a powerful Typeless alternative. Hold a hotkey, speak naturally, and your words appear right where you are already working.',
   icons: { icon: '/logo.svg' },
 };
 

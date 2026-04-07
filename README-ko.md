@@ -5,7 +5,7 @@
 
 ### AriaType
 
-AriaType - 오픈소스 AI 음성 텍스트 입력 | 타이핑을 대체하는 강력한 선택지
+AriaType - 오픈소스 AI 음성 텍스트 입력 | Typeless의 강력한 대안
 
 [English](README.md) | [简体中文](README-cn.md) | [日本語](README-ja.md) | 한국어 | [Español](README-es.md)
 

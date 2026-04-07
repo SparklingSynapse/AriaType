@@ -5,7 +5,7 @@
 
 ### AriaType
 
-AriaType - 开源 AI 语音转文字输入工具 | 强大的免打字替代方案
+AriaType - 开源 AI 语音转文字输入工具 | 强大的Typeless替代方案
 
 [English](README.md) | 简体中文 | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md)
 

@@ -5,7 +5,7 @@
 
 ### AriaType
 
-AriaType - Entrada por voz con IA y codigo abierto | Una potente alternativa a escribir con teclado
+AriaType - Entrada por voz con IA y codigo abierto | Una potente alternativa a Typeless
 
 [English](README.md) | [简体中文](README-cn.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | Español
 

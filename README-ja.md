@@ -5,7 +5,7 @@
 
 ### AriaType
 
-AriaType - オープンソースの AI 音声入力 | タイピングを置き換えるパワフルな選択肢
+AriaType - オープンソースの AI 音声入力 | Typeless の強力な代替案
 
 [English](README.md) | [简体中文](README-cn.md) | 日本語 | [한국어](README-ko.md) | [Español](README-es.md)
 
