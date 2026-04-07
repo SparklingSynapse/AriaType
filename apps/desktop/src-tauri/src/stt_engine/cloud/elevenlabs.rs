@@ -29,7 +29,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::commands::settings::CloudSttConfig;
 use crate::stt_engine::traits::{
-    EngineType, PartialResult, PartialResultCallback, SttContext, StreamingSttEngine, TranscriptionResult,
+    EngineType, PartialResult, PartialResultCallback, StreamingSttEngine, SttContext,
+    TranscriptionResult,
 };
 
 /// Eleven Labs Scribe v2 Realtime WebSocket endpoint
@@ -693,7 +694,8 @@ pub async fn transcribe_elevenlabs(
         .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
         .collect();
 
-    let mut client = ElevenLabsStreamingClient::new(config.clone(), language, SttContext::default());
+    let mut client =
+        ElevenLabsStreamingClient::new(config.clone(), language, SttContext::default());
 
     let (result_tx, result_rx) = tokio::sync::oneshot::channel::<String>();
     let result_tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(result_tx)));

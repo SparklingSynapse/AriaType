@@ -26,7 +26,9 @@ use uuid::Uuid;
 use async_trait::async_trait;
 
 use crate::commands::settings::CloudSttConfig;
-use crate::stt_engine::traits::{PartialResult, PartialResultCallback, SttContext, StreamingSttEngine};
+use crate::stt_engine::traits::{
+    PartialResult, PartialResultCallback, StreamingSttEngine, SttContext,
+};
 
 // Protocol constants
 const PROTOCOL_VERSION: u8 = 0b0001;
@@ -507,10 +509,14 @@ impl VolcengineStreamingClient {
 
         let mut merged = serde_json::Map::new();
         for part in parts {
-            let serde_json::Value::Object(map) = part else { continue };
+            let serde_json::Value::Object(map) = part else {
+                continue;
+            };
             for (k, v) in map {
-                if let (Some(serde_json::Value::Array(existing)), serde_json::Value::Array(incoming)) =
-                    (merged.get(&k), &v)
+                if let (
+                    Some(serde_json::Value::Array(existing)),
+                    serde_json::Value::Array(incoming),
+                ) = (merged.get(&k), &v)
                 {
                     let mut combined = existing.clone();
                     combined.extend(incoming.iter().cloned());

@@ -215,6 +215,7 @@ const CHUNK_DELAY_MS: u64 = 50;
 fn try_enigo_key_sequence(text: &str) -> bool {
     let grapheme_count = text.graphemes(true).count();
     info!(
+        text = %text,
         text_len = text.len(),
         grapheme_count, "text_injection_enigo_started"
     );
@@ -312,10 +313,22 @@ fn try_clipboard_paste(text: &str) -> bool {
 impl super::TextInjector for MacosInjector {
     fn insert(&self, text: &str, _write_clipboard: &dyn Fn()) {
         let grapheme_count = text.graphemes(true).count();
+        let has_newline = text.contains('\n');
         info!(
+            text = %text,
             text_len = text.len(),
-            grapheme_count, "text_injection_started"
+            grapheme_count,
+            has_newline, "text_injection_started"
         );
+
+        // Use clipboard for multiline text - enigo's \n causes issues in Terminal
+        // where newline is interpreted as "enter/execute" instead of literal text
+        if has_newline {
+            info!("text_injection_clipboard_mode-multiline");
+            let ok = try_clipboard_paste(text);
+            info!(success = ok, "text_injection_completed-clipboard");
+            return;
+        }
 
         if grapheme_count > 400 {
             info!(grapheme_count, "text_injection_clipboard_mode-long_text");

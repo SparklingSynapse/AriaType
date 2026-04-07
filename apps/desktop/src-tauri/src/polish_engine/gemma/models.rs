@@ -130,7 +130,9 @@ mod tests {
         let model = GemmaModelDef::from_id("gemma-2b-it").unwrap();
         let urls = model.urls();
         assert!(!urls.is_empty());
-        assert!(urls.iter().any(|url| url.contains("gemma-2b-it.Q4_K_M.gguf")));
+        assert!(urls
+            .iter()
+            .any(|url| url.contains("gemma-2b-it.Q4_K_M.gguf")));
     }
 
     #[test]

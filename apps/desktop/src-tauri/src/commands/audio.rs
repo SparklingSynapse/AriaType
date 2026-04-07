@@ -130,15 +130,27 @@ fn start_streaming_recording(
         let ctx = crate::stt_engine::traits::SttContext {
             domain: {
                 let d = settings.stt_engine_work_domain.trim().to_string();
-                if d.is_empty() { None } else { Some(d) }
+                if d.is_empty() {
+                    None
+                } else {
+                    Some(d)
+                }
             },
             subdomain: {
                 let s = settings.stt_engine_work_subdomain.trim().to_string();
-                if s.is_empty() { None } else { Some(s) }
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
             },
             glossary: {
                 let g = settings.stt_engine_user_glossary.trim().to_string();
-                if g.is_empty() { None } else { Some(g) }
+                if g.is_empty() {
+                    None
+                } else {
+                    Some(g)
+                }
             },
             ..Default::default()
         };
@@ -229,9 +241,18 @@ fn start_streaming_recording(
     let app_clone = app.clone();
     let handle = tauri::async_runtime::spawn(async move {
         let context_for_log = (
-            stt_context.domain.clone().unwrap_or_else(|| "none".to_owned()),
-            stt_context.subdomain.clone().unwrap_or_else(|| "none".to_owned()),
-            stt_context.glossary.clone().unwrap_or_else(|| "none".to_owned()),
+            stt_context
+                .domain
+                .clone()
+                .unwrap_or_else(|| "none".to_owned()),
+            stt_context
+                .subdomain
+                .clone()
+                .unwrap_or_else(|| "none".to_owned()),
+            stt_context
+                .glossary
+                .clone()
+                .unwrap_or_else(|| "none".to_owned()),
         );
         let mut client = match StreamingSttClient::new(config, Some(&language), stt_context) {
             Ok(c) => c,
@@ -1101,18 +1122,30 @@ async fn run_cloud_transcription_with_streaming(
     let stt_context = {
         let state = app.state::<AppState>();
         let settings = state.settings.lock();
-crate::stt_engine::traits::SttContext {
+        crate::stt_engine::traits::SttContext {
             domain: {
                 let d = settings.stt_engine_work_domain.trim().to_string();
-                if d.is_empty() { None } else { Some(d) }
+                if d.is_empty() {
+                    None
+                } else {
+                    Some(d)
+                }
             },
             subdomain: {
                 let s = settings.stt_engine_work_subdomain.trim().to_string();
-                if s.is_empty() { None } else { Some(s) }
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
             },
             glossary: {
                 let g = settings.stt_engine_user_glossary.trim().to_string();
-                if g.is_empty() { None } else { Some(g) }
+                if g.is_empty() {
+                    None
+                } else {
+                    Some(g)
+                }
             },
             ..Default::default()
         }
@@ -1870,13 +1903,20 @@ mod tests {
     async fn streaming_finalization_honors_cloud_polish_settings() {
         let mock_server = MockServer::start().await;
 
+        let user_prompt = "System instruction here";
+        let expected_system_content = format!(
+            "{}\n\nUSER RULES:\n{}",
+            crate::polish_engine::cloud::engine::CORE_POLISH_CONSTRAINT,
+            user_prompt
+        );
+
         let expected_body = serde_json::json!({
             "model": "gpt-4o-mini",
             "max_tokens": 4096,
             "messages": [
                 {
                     "role": "system",
-                    "content": "System instruction here"
+                    "content": expected_system_content
                 },
                 {
                     "role": "user",
@@ -1911,7 +1951,7 @@ mod tests {
             settings.cloud_polish_enabled = true;
             settings.active_cloud_polish_provider = "openai".to_string();
             settings.stt_engine_language = "en-US".to_string();
-            settings.polish_system_prompt = "System instruction here".to_string();
+            settings.polish_system_prompt = user_prompt.to_string();
             settings.cloud_polish_configs.insert(
                 "openai".to_string(),
                 CloudProviderConfig {

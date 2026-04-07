@@ -537,10 +537,7 @@ pub fn update_polish_custom_template(
 }
 
 #[tauri::command]
-pub fn delete_polish_custom_template(
-    id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub fn delete_polish_custom_template(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let selected_template: String;
     let custom_templates_count: usize;
 
@@ -615,7 +612,10 @@ pub fn get_polish_selected_template(state: State<'_, AppState>) -> Result<String
     let selected = settings.polish_selected_template.clone();
 
     let valid = if selected.starts_with("user_") {
-        settings.polish_custom_templates.iter().any(|t| t.id == selected)
+        settings
+            .polish_custom_templates
+            .iter()
+            .any(|t| t.id == selected)
     } else {
         polish::get_template_by_id(&selected).is_some()
     };
@@ -628,7 +628,9 @@ pub fn get_polish_selected_template(state: State<'_, AppState>) -> Result<String
 }
 
 #[tauri::command]
-pub fn get_polish_custom_templates(state: State<'_, AppState>) -> Vec<crate::commands::settings::CustomPolishTemplate> {
+pub fn get_polish_custom_templates(
+    state: State<'_, AppState>,
+) -> Vec<crate::commands::settings::CustomPolishTemplate> {
     let settings = state.settings.lock();
     settings.polish_custom_templates.clone()
 }

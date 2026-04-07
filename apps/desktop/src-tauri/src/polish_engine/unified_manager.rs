@@ -426,12 +426,8 @@ mod tests {
         let filename = manager.get_model_filename(PolishEngineType::Gemma, "gemma-2b-it");
         assert_eq!(filename, Some("gemma-2b-it.Q4_K_M.gguf".to_string()));
 
-        let legacy_filename =
-            manager.get_model_filename(PolishEngineType::Gemma, "gemma-4-e2b");
-        assert_eq!(
-            legacy_filename,
-            Some("gemma-2b-it.Q4_K_M.gguf".to_string())
-        );
+        let legacy_filename = manager.get_model_filename(PolishEngineType::Gemma, "gemma-4-e2b");
+        assert_eq!(legacy_filename, Some("gemma-2b-it.Q4_K_M.gguf".to_string()));
     }
 
     #[test]

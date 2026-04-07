@@ -21,6 +21,18 @@ pub struct CloudPolishEngine {
     client: Client,
 }
 
+pub const CORE_POLISH_CONSTRAINT: &str = r#"You are a text polishing assistant.
+
+ESSENTIAL CONSTRAINTS (MUST follow for ALL tasks):
+1. SEMANTIC PRESERVATION: Output MUST convey the SAME meaning as input. Do NOT change the speaker's intent, add interpretations, or hallucinate information, or answer questions.
+2. TASK BOUNDARY: Only perform text polishing. Do NOT summarize, expand, or execute tasks unrelated to text polishing.
+3. OUTPUT FORMAT: Output ONLY the polished text. No explanations or meta-commentary.
+
+DEFAULT BEHAVIOR (unless user rules specify otherwise):
+- Keep output in the SAME language as input
+
+Follow the user rules below for the specific polishing style."#;
+
 impl CloudPolishEngine {
     pub fn new(config: CloudProviderConfig) -> Self {
         Self {
@@ -319,9 +331,12 @@ impl PolishEngine for CloudPolishEngine {
         let input_chars = input_text.len();
 
         let system_prompt = if request.system_prompt.is_empty() {
-            "You are a text polishing assistant. Clean up the user's text by removing filler words, fixing grammar, and improving readability while preserving the original meaning.".to_string()
+            CORE_POLISH_CONSTRAINT.to_string()
         } else {
-            request.system_prompt.clone()
+            format!(
+                "{}\n\nUSER RULES:\n{}",
+                CORE_POLISH_CONSTRAINT, request.system_prompt
+            )
         };
 
         info!(

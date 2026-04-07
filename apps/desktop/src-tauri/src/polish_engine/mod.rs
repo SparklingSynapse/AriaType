@@ -1,4 +1,4 @@
-mod cloud;
+pub mod cloud;
 mod common;
 pub mod gemma;
 pub mod lfm;
@@ -7,7 +7,7 @@ mod templates;
 mod traits;
 mod unified_manager;
 
-pub use cloud::{CloudPolishEngine, CloudProviderConfig};
+pub use cloud::{CloudPolishEngine, CloudProviderConfig, CORE_POLISH_CONSTRAINT};
 pub use gemma::{GemmaModelDef, DEFAULT_POLISH_PROMPT as GEMMA_DEFAULT_PROMPT};
 pub use lfm::{LfmModelDef, DEFAULT_POLISH_PROMPT as LFM_DEFAULT_PROMPT};
 pub use qwen::{QwenModelDef, DEFAULT_POLISH_PROMPT as QWEN_DEFAULT_PROMPT};

@@ -31,7 +31,8 @@ use uuid::Uuid;
 
 use crate::commands::settings::CloudSttConfig;
 use crate::stt_engine::traits::{
-    EngineType, PartialResult, PartialResultCallback, SttContext, StreamingSttEngine, TranscriptionResult,
+    EngineType, PartialResult, PartialResultCallback, StreamingSttEngine, SttContext,
+    TranscriptionResult,
 };
 
 const QWEN_OMNI_REALTIME_ENDPOINT: &str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
