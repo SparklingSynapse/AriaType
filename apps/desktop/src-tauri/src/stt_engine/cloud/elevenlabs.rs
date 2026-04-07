@@ -45,11 +45,12 @@ pub struct ElevenLabsStreamingClient {
     tx: Arc<Mutex<Option<BoxSink>>>,
     rx: Arc<Mutex<Option<BoxStream>>>,
     config: CloudSttConfig,
-    _language: String,
+    language: String,
     audio_tx: Arc<Mutex<Option<mpsc::Sender<Vec<i16>>>>>,
     on_partial: Option<PartialResultCallback>,
     audio_sender_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     last_error: Arc<Mutex<Option<String>>>,
+    final_result_rx: Arc<Mutex<Option<tokio::sync::oneshot::Receiver<String>>>>,
 }
 
 // SAFETY: WebSocket types are Send+Sync when used with tokio runtime
@@ -67,7 +68,7 @@ impl ElevenLabsStreamingClient {
     /// A new client instance (not yet connected)
     pub fn new(config: CloudSttConfig, language: Option<&str>) -> Self {
         let lang = match language {
-            Some(l) if l != "auto" => l,
+            Some(l) if l != "auto" => l.split('-').next().unwrap_or(l),
             _ => "",
         };
 
@@ -75,11 +76,12 @@ impl ElevenLabsStreamingClient {
             tx: Arc::new(Mutex::new(None)),
             rx: Arc::new(Mutex::new(None)),
             config,
-            _language: lang.to_string(),
+            language: lang.to_string(),
             audio_tx: Arc::new(Mutex::new(None)),
             on_partial: None,
             audio_sender_task: Arc::new(Mutex::new(None)),
             last_error: Arc::new(Mutex::new(None)),
+            final_result_rx: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -124,17 +126,25 @@ impl ElevenLabsStreamingClient {
             );
         }
 
-        let endpoint = if self.config.base_url.is_empty() {
+        let base_endpoint = if self.config.base_url.is_empty() {
             ELEVENLABS_REALTIME_ENDPOINT
         } else {
             &self.config.base_url
         };
 
+        let mut endpoint = format!("{}?audio_format=pcm_16000", base_endpoint);
+        if !self.language.is_empty() {
+            endpoint = format!("{}&language_code={}", endpoint, self.language);
+        }
+        if !self.config.model.is_empty() {
+            endpoint = format!("{}&model_id={}", endpoint, self.config.model);
+        }
+
         info!("[ElevenLabs] Connecting to {}", endpoint);
 
         let mut request =
             tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
-                endpoint,
+                &endpoint,
             )
             .map_err(|e| format!("Invalid URL: {}", e))?;
 
@@ -216,7 +226,10 @@ impl ElevenLabsStreamingClient {
         let (audio_tx, audio_rx) = mpsc::channel::<Vec<i16>>(50);
         *self.audio_tx.lock().await = Some(audio_tx.clone());
 
-        self.start_result_receiver().await;
+        let (final_tx, final_rx) = tokio::sync::oneshot::channel::<String>();
+        *self.final_result_rx.lock().await = Some(final_rx);
+
+        self.start_result_receiver(final_tx).await;
 
         self.start_audio_sender(audio_rx).await;
 
@@ -229,7 +242,7 @@ impl ElevenLabsStreamingClient {
     /// - `partial_transcript`: Interim transcription (is_definite=false)
     /// - `committed_transcript`: Final transcription after commit (is_definite=true)
     /// - `error`: Error from server
-    async fn start_result_receiver(&self) {
+    async fn start_result_receiver(&self, final_tx: tokio::sync::oneshot::Sender<String>) {
         let rx = self.rx.clone();
         let on_partial = self.on_partial.clone();
         let last_error = self.last_error.clone();
@@ -245,6 +258,7 @@ impl ElevenLabsStreamingClient {
             };
             drop(rx_guard);
 
+            let mut committed_text = String::new();
             let mut stream = rx_stream;
             while let Some(msg) = stream.next().await {
                 match msg {
@@ -283,6 +297,8 @@ impl ElevenLabsStreamingClient {
                                                 transcript
                                             );
 
+                                            committed_text = transcript.to_string();
+
                                             if let Some(ref callback) = on_partial {
                                                 callback(PartialResult {
                                                     text: transcript.to_string(),
@@ -291,6 +307,7 @@ impl ElevenLabsStreamingClient {
                                                 });
                                             }
                                         }
+                                        break;
                                     }
                                     "error" => {
                                         if let Some(error_msg) =
@@ -328,6 +345,12 @@ impl ElevenLabsStreamingClient {
                     _ => {}
                 }
             }
+
+            let _ = final_tx.send(committed_text.clone());
+            debug!(
+                "[ElevenLabs] Result receiver done, sent text_len={}",
+                committed_text.len()
+            );
         });
     }
 
@@ -392,9 +415,6 @@ impl ElevenLabsStreamingClient {
     /// 4. Wait for server response
     /// 5. Close WebSocket connection
     ///
-    /// # Returns
-    /// Empty string on success (actual text comes via callback)
-    /// Error message if commit fails
     pub async fn finish(&self) -> Result<String, String> {
         let start = Instant::now();
 
@@ -424,7 +444,29 @@ impl ElevenLabsStreamingClient {
             debug!("[ElevenLabs] Sent commit message");
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+        let final_rx = self.final_result_rx.lock().await.take();
+        let result = if let Some(rx) = final_rx {
+            match tokio::time::timeout(std::time::Duration::from_secs(10), rx).await {
+                Ok(Ok(text)) => {
+                    info!(
+                        "[ElevenLabs] Final result received, text_len={}",
+                        text.len()
+                    );
+                    Ok(text)
+                }
+                Ok(Err(_)) => {
+                    warn!("[ElevenLabs] Final result channel closed without value");
+                    Err("Final result channel closed".to_string())
+                }
+                Err(_) => {
+                    warn!("[ElevenLabs] Timeout waiting for final result");
+                    Err("Timeout waiting for final result".to_string())
+                }
+            }
+        } else {
+            warn!("[ElevenLabs] No final result receiver available");
+            Err("No final result receiver".to_string())
+        };
 
         if let Some(mut tx) = guard.take() {
             let _ = tx.close().await;
@@ -433,7 +475,7 @@ impl ElevenLabsStreamingClient {
         let total_ms = start.elapsed().as_millis() as u64;
         info!("[ElevenLabs] Finished in {}ms", total_ms);
 
-        Ok(String::new())
+        result
     }
 
     /// Close WebSocket connection
@@ -831,7 +873,7 @@ mod tests {
             language: "".to_string(),
         };
         let client = ElevenLabsStreamingClient::new(config, Some("en"));
-        assert_eq!(client._language, "en");
+        assert_eq!(client.language, "en");
     }
 
     #[test]
@@ -846,7 +888,7 @@ mod tests {
             language: "".to_string(),
         };
         let client = ElevenLabsStreamingClient::new(config, Some("auto"));
-        assert_eq!(client._language, "");
+        assert_eq!(client.language, "");
     }
 
     #[test]
@@ -861,7 +903,22 @@ mod tests {
             language: "".to_string(),
         };
         let client = ElevenLabsStreamingClient::new(config, None);
-        assert_eq!(client._language, "");
+        assert_eq!(client.language, "");
+    }
+
+    #[test]
+    fn test_elevenlabs_client_strips_region_from_language() {
+        let config = CloudSttConfig {
+            enabled: true,
+            provider_type: "elevenlabs".to_string(),
+            api_key: "test-key".to_string(),
+            app_id: "".to_string(),
+            base_url: "".to_string(),
+            model: "".to_string(),
+            language: "".to_string(),
+        };
+        let client = ElevenLabsStreamingClient::new(config, Some("zh-CN"));
+        assert_eq!(client.language, "zh");
     }
 
     #[test]
