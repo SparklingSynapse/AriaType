@@ -4,7 +4,7 @@ pub mod qwen_omni_realtime;
 pub mod volcengine_streaming;
 
 use crate::commands::settings::CloudSttConfig;
-use crate::stt_engine::traits::{PartialResultCallback, StreamingSttEngine};
+use crate::stt_engine::traits::{PartialResultCallback, SttContext, StreamingSttEngine};
 use async_trait::async_trait;
 use elevenlabs::ElevenLabsStreamingClient;
 use qwen_omni_realtime::QwenOmniRealtimeClient;
@@ -25,16 +25,20 @@ pub enum StreamingSttClient {
 }
 
 impl StreamingSttClient {
-    pub fn new(config: CloudSttConfig, language: Option<&str>) -> Result<Self, String> {
+    pub fn new(
+        config: CloudSttConfig,
+        language: Option<&str>,
+        context: SttContext,
+    ) -> Result<Self, String> {
         match config.provider_type.as_str() {
-            "volcengine-streaming" => Ok(Self::Volcengine(VolcengineStreamingClient::new(
-                config, language,
-            ))),
+            "volcengine-streaming" => Ok(Self::Volcengine(
+                VolcengineStreamingClient::new(config, language, context),
+            )),
             "qwen-omni-realtime" => Ok(Self::QwenOmni(QwenOmniRealtimeClient::new(
-                config, language,
+                config, language, context,
             ))),
             "elevenlabs" => Ok(Self::ElevenLabs(ElevenLabsStreamingClient::new(
-                config, language,
+                config, language, context,
             ))),
             _ => Err(format!(
                 "Unsupported streaming STT provider: {}",

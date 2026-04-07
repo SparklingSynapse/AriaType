@@ -124,10 +124,25 @@ fn start_streaming_recording(
         settings.audio_device.clone()
     };
 
-    let (denoise_enabled, vad_enabled) = {
+    let (denoise_enabled, vad_enabled, stt_context) = {
         let settings = state.settings.lock();
         let denoise = matches!(settings.denoise_mode.as_str(), "on" | "auto");
-        (denoise, settings.vad_enabled)
+        let ctx = crate::stt_engine::traits::SttContext {
+            domain: {
+                let d = settings.stt_engine_work_domain.trim().to_string();
+                if d.is_empty() { None } else { Some(d) }
+            },
+            subdomain: {
+                let s = settings.stt_engine_work_subdomain.trim().to_string();
+                if s.is_empty() { None } else { Some(s) }
+            },
+            glossary: {
+                let g = settings.stt_engine_user_glossary.trim().to_string();
+                if g.is_empty() { None } else { Some(g) }
+            },
+            ..Default::default()
+        };
+        (denoise, settings.vad_enabled, ctx)
     };
 
     let (app_tx, mut app_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(100);
@@ -213,7 +228,12 @@ fn start_streaming_recording(
 
     let app_clone = app.clone();
     let handle = tauri::async_runtime::spawn(async move {
-        let mut client = match StreamingSttClient::new(config, Some(&language)) {
+        let context_for_log = (
+            stt_context.domain.clone().unwrap_or_else(|| "none".to_owned()),
+            stt_context.subdomain.clone().unwrap_or_else(|| "none".to_owned()),
+            stt_context.glossary.clone().unwrap_or_else(|| "none".to_owned()),
+        );
+        let mut client = match StreamingSttClient::new(config, Some(&language), stt_context) {
             Ok(c) => c,
             Err(e) => {
                 error!(task_id, error = %e, "streaming_client_create_failed");
@@ -228,6 +248,17 @@ fn start_streaming_recording(
             }
         };
         let provider_name = client.provider_name();
+
+        let (domain, subdomain, glossary) = context_for_log;
+        info!(
+            task_id,
+            provider = %provider_name,
+            domain,
+            subdomain,
+            glossary,
+            "streaming_client_connected"
+        );
+
         let app_event_clone = app_clone.clone();
 
         client.set_partial_callback(Arc::new(move |result| {
@@ -254,7 +285,6 @@ fn start_streaming_recording(
             );
             return;
         }
-        info!(task_id, provider = %provider_name, "streaming_client_connected");
 
         let audio_tx = match client.get_audio_sender().await {
             Some(tx) => tx,
@@ -1068,7 +1098,27 @@ async fn run_cloud_transcription_with_streaming(
     config: crate::commands::settings::CloudSttConfig,
     language: String,
 ) -> Result<String, String> {
-    let mut client = StreamingSttClient::new(config, Some(&language))?;
+    let stt_context = {
+        let state = app.state::<AppState>();
+        let settings = state.settings.lock();
+crate::stt_engine::traits::SttContext {
+            domain: {
+                let d = settings.stt_engine_work_domain.trim().to_string();
+                if d.is_empty() { None } else { Some(d) }
+            },
+            subdomain: {
+                let s = settings.stt_engine_work_subdomain.trim().to_string();
+                if s.is_empty() { None } else { Some(s) }
+            },
+            glossary: {
+                let g = settings.stt_engine_user_glossary.trim().to_string();
+                if g.is_empty() { None } else { Some(g) }
+            },
+            ..Default::default()
+        }
+    };
+
+    let mut client = StreamingSttClient::new(config, Some(&language), stt_context)?;
 
     let app_clone = app.clone();
     client.set_partial_callback(Arc::new(move |result| {

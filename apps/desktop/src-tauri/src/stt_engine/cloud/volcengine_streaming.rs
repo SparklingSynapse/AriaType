@@ -1,3 +1,17 @@
+//! Volcengine (火山引擎) BigModel Streaming STT WebSocket client.
+//!
+//! # Protocol
+//! - WebSocket URL: `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream`
+//! - Binary protocol with JSON payload
+//!
+//! # Timeout
+//! - **Server-side idle timeout: 5 seconds** — connection closes if no audio packet
+//!   is received within 5 seconds. Keepalive packets must be sent during long silences.
+//! - Client-side final result timeout: 10 seconds
+//!
+//! # Reference
+//! - <https://www.volcengine.com/docs/6561/1354869> (BigModel Streaming STT API)
+
 use futures_util::{SinkExt, Stream, StreamExt};
 use serde_json::json;
 use std::pin::Pin;
@@ -12,7 +26,7 @@ use uuid::Uuid;
 use async_trait::async_trait;
 
 use crate::commands::settings::CloudSttConfig;
-use crate::stt_engine::traits::{PartialResult, PartialResultCallback, StreamingSttEngine};
+use crate::stt_engine::traits::{PartialResult, PartialResultCallback, SttContext, StreamingSttEngine};
 
 // Protocol constants
 const PROTOCOL_VERSION: u8 = 0b0001;
@@ -181,6 +195,7 @@ pub struct VolcengineStreamingClient {
     language: String,
     connect_id: String,
     streaming_mode: StreamingMode,
+    stt_context: SttContext,
     /// Channel for sending audio data from recording thread
     audio_tx: Arc<Mutex<Option<mpsc::Sender<Vec<i16>>>>>,
     /// Callback for partial results
@@ -196,12 +211,17 @@ unsafe impl Sync for VolcengineStreamingClient {}
 
 impl VolcengineStreamingClient {
     /// Create a new streaming client (defaults to NoStream for highest accuracy)
-    pub fn new(config: CloudSttConfig, language: Option<&str>) -> Self {
-        Self::with_mode(config, language, StreamingMode::NoStream)
+    pub fn new(config: CloudSttConfig, language: Option<&str>, context: SttContext) -> Self {
+        Self::with_mode(config, language, StreamingMode::NoStream, context)
     }
 
     /// Create a new streaming client with specific mode
-    pub fn with_mode(config: CloudSttConfig, language: Option<&str>, mode: StreamingMode) -> Self {
+    pub fn with_mode(
+        config: CloudSttConfig,
+        language: Option<&str>,
+        mode: StreamingMode,
+        context: SttContext,
+    ) -> Self {
         let lang = match language {
             Some(l) if l != "auto" => l,
             _ => "",
@@ -214,6 +234,7 @@ impl VolcengineStreamingClient {
             language: lang.to_string(),
             connect_id: Uuid::new_v4().to_string(),
             streaming_mode: mode,
+            stt_context: context,
             audio_tx: Arc::new(Mutex::new(None)),
             on_partial: None,
             audio_sender_task: Arc::new(Mutex::new(None)),
@@ -394,6 +415,7 @@ impl VolcengineStreamingClient {
                 "model_name": "bigmodel",
                 "enable_itn": true,
                 "enable_punc": true,
+                "enable_ddc": false,
                 "result_type": "full",
             }
         });
@@ -401,6 +423,11 @@ impl VolcengineStreamingClient {
         // Add language for NoStream mode (supports language specification)
         if !self.language.is_empty() && self.streaming_mode == StreamingMode::NoStream {
             req_json["audio"]["language"] = json!(self.language);
+        }
+
+        let context_json = self.build_corpus_context();
+        if !context_json.is_empty() {
+            req_json["request"]["corpus"]["context"] = json!(context_json);
         }
 
         let req_str = req_json.to_string();
@@ -427,6 +454,74 @@ impl VolcengineStreamingClient {
 
         info!(provider = "volcengine", "client_request_sent");
         Ok(())
+    }
+
+    /// Build the `corpus.context` JSON string from SttContext.
+    ///
+    /// Volcengine expects a JSON-encoded string containing:
+    /// - `hotwords`: array of `{word: string}` from glossary
+    /// - `context_type` + `context_data`: dialog context from domain info
+    fn build_corpus_context(&self) -> String {
+        let mut parts: Vec<serde_json::Value> = Vec::new();
+
+        if let Some(ref glossary) = self.stt_context.glossary {
+            if !glossary.is_empty() {
+                let hotwords: Vec<serde_json::Value> = glossary
+                    .split([',', '、', ';'])
+                    .map(|w| w.trim())
+                    .filter(|w| !w.is_empty())
+                    .map(|w| json!({"word": w}))
+                    .collect();
+                if !hotwords.is_empty() {
+                    parts.push(json!({"hotwords": hotwords}));
+                }
+            }
+        }
+
+        let domain = self.stt_context.domain.as_deref().unwrap_or("");
+        if domain != "general" && !domain.is_empty() {
+            let subdomain = self.stt_context.subdomain.as_deref().unwrap_or("");
+            let domain_desc = if subdomain.is_empty() || subdomain == "general" {
+                format!("{}领域专业术语识别", domain)
+            } else {
+                format!("{}-{}领域专业术语识别", domain, subdomain)
+            };
+            parts.push(json!({
+                "context_type": "dialog_ctx",
+                "context_data": [{"text": domain_desc}]
+            }));
+        }
+
+        if let Some(ref prompt) = self.stt_context.initial_prompt {
+            if !prompt.is_empty() {
+                parts.push(json!({
+                    "context_type": "dialog_ctx",
+                    "context_data": [{"text": prompt}]
+                }));
+            }
+        }
+
+        if parts.is_empty() {
+            return String::new();
+        }
+
+        let mut merged = serde_json::Map::new();
+        for part in parts {
+            let serde_json::Value::Object(map) = part else { continue };
+            for (k, v) in map {
+                if let (Some(serde_json::Value::Array(existing)), serde_json::Value::Array(incoming)) =
+                    (merged.get(&k), &v)
+                {
+                    let mut combined = existing.clone();
+                    combined.extend(incoming.iter().cloned());
+                    merged.insert(k, serde_json::Value::Array(combined));
+                } else {
+                    merged.insert(k, v);
+                }
+            }
+        }
+
+        serde_json::Value::Object(merged).to_string()
     }
 
     /// Start background task to receive and process results

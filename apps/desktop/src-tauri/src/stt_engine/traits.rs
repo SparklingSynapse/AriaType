@@ -4,6 +4,21 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+/// Structured STT context passed to each engine.
+///
+/// Each cloud engine interprets these fields differently based on its API capabilities:
+/// - **Volcengine**: glossary → `context.hotwords[]`, domain → `context.context_data[]`
+/// - **ElevenLabs**: all fields combined → `previous_text` (first audio chunk)
+/// - **Qwen Omni**: currently unused (STT model is opaque)
+/// - **Whisper**: all fields combined into `initial_prompt` string
+#[derive(Debug, Clone, Default)]
+pub struct SttContext {
+    pub initial_prompt: Option<String>,
+    pub domain: Option<String>,
+    pub subdomain: Option<String>,
+    pub glossary: Option<String>,
+}
+
 /// STT engine type enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

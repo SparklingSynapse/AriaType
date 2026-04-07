@@ -8,6 +8,14 @@
 //! Message protocol:
 //! - Client sends: `input_audio_chunk` with `audio_base_64`, `commit` (bool), `sample_rate`
 //! - Server responds: `partial_transcript` (interim) or `committed_transcript` (final)
+//!
+//! # Timeout
+//! - **Server-side idle timeout: Unknown** — not documented in official API reference.
+//!   Error `insufficient_audio_activity` suggests some activity requirement exists.
+//! - Client-side final result timeout: 10 seconds
+//!
+//! # Reference
+//! - <https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime>
 
 use async_trait::async_trait;
 use futures_util::{SinkExt, Stream, StreamExt};
@@ -21,7 +29,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::commands::settings::CloudSttConfig;
 use crate::stt_engine::traits::{
-    EngineType, PartialResult, PartialResultCallback, StreamingSttEngine, TranscriptionResult,
+    EngineType, PartialResult, PartialResultCallback, SttContext, StreamingSttEngine, TranscriptionResult,
 };
 
 /// Eleven Labs Scribe v2 Realtime WebSocket endpoint
@@ -46,6 +54,7 @@ pub struct ElevenLabsStreamingClient {
     rx: Arc<Mutex<Option<BoxStream>>>,
     config: CloudSttConfig,
     language: String,
+    stt_context: SttContext,
     audio_tx: Arc<Mutex<Option<mpsc::Sender<Vec<i16>>>>>,
     on_partial: Option<PartialResultCallback>,
     audio_sender_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
@@ -66,7 +75,7 @@ impl ElevenLabsStreamingClient {
     ///
     /// # Returns
     /// A new client instance (not yet connected)
-    pub fn new(config: CloudSttConfig, language: Option<&str>) -> Self {
+    pub fn new(config: CloudSttConfig, language: Option<&str>, context: SttContext) -> Self {
         let lang = match language {
             Some(l) if l != "auto" => l.split('-').next().unwrap_or(l),
             _ => "",
@@ -77,6 +86,7 @@ impl ElevenLabsStreamingClient {
             rx: Arc::new(Mutex::new(None)),
             config,
             language: lang.to_string(),
+            stt_context: context,
             audio_tx: Arc::new(Mutex::new(None)),
             on_partial: None,
             audio_sender_task: Arc::new(Mutex::new(None)),
@@ -354,18 +364,62 @@ impl ElevenLabsStreamingClient {
         });
     }
 
+    /// Build `previous_text` string from SttContext for the first audio chunk.
+    ///
+    /// ElevenLabs `previous_text` is a free-form context string sent once at session start.
+    /// Combines glossary, domain, and initial_prompt into a single string.
+    fn build_previous_text(&self) -> Option<String> {
+        let mut parts: Vec<String> = Vec::new();
+
+        if let Some(ref glossary) = self.stt_context.glossary {
+            if !glossary.is_empty() {
+                parts.push(format!("Terminology: {}", glossary));
+            }
+        }
+
+        let domain = self.stt_context.domain.as_deref().unwrap_or("");
+        if domain != "general" && !domain.is_empty() {
+            let subdomain = self.stt_context.subdomain.as_deref().unwrap_or("");
+            if subdomain.is_empty() || subdomain == "general" {
+                parts.push(format!("Domain: {}", domain));
+            } else {
+                parts.push(format!("Domain: {} ({})", domain, subdomain));
+            }
+        }
+
+        if let Some(ref prompt) = self.stt_context.initial_prompt {
+            if !prompt.is_empty() {
+                parts.push(prompt.clone());
+            }
+        }
+
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(". "))
+        }
+    }
+
     /// Start background task to send audio chunks
     ///
     /// Receives audio chunks from the channel and sends them via WebSocket.
     /// Chunks are encoded as Base64 and wrapped in JSON messages.
     async fn start_audio_sender(&self, mut audio_rx: mpsc::Receiver<Vec<i16>>) {
         let tx = self.tx.clone();
+        let previous_text = self.build_previous_text();
         let task_handle = tokio::spawn(async move {
             let mut chunk_count = 0u32;
+            let mut first_chunk = true;
             while let Some(pcm_data) = audio_rx.recv().await {
                 let mut guard = tx.lock().await;
                 if let Some(sender) = guard.as_mut() {
-                    if let Err(e) = send_audio_chunk(sender, &pcm_data, false).await {
+                    let ctx = if first_chunk {
+                        first_chunk = false;
+                        previous_text.as_deref()
+                    } else {
+                        None
+                    };
+                    if let Err(e) = send_audio_chunk(sender, &pcm_data, false, ctx).await {
                         error!("[ElevenLabs] Failed to send audio chunk: {}", e);
                         break;
                     }
@@ -390,7 +444,7 @@ impl ElevenLabsStreamingClient {
     pub async fn send_audio(&self, pcm_data: &[i16]) -> Result<(), String> {
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or("WebSocket not connected")?;
-        send_audio_chunk(tx, pcm_data, false).await
+        send_audio_chunk(tx, pcm_data, false, None).await
     }
 
     /// Send audio data asynchronously via channel
@@ -534,17 +588,22 @@ async fn send_audio_chunk(
     sender: &mut BoxSink,
     pcm_data: &[i16],
     commit: bool,
+    previous_text: Option<&str>,
 ) -> Result<(), String> {
     let bytes: Vec<u8> = pcm_data.iter().flat_map(|&s| s.to_le_bytes()).collect();
 
     let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
 
-    let message = serde_json::json!({
+    let mut message = serde_json::json!({
         "message_type": "input_audio_chunk",
         "audio_base_64": base64_data,
         "commit": commit,
         "sample_rate": 16000
     });
+
+    if let Some(text) = previous_text {
+        message["previous_text"] = serde_json::json!(text);
+    }
 
     sender
         .send(Message::Text(message.to_string().into()))
@@ -634,7 +693,7 @@ pub async fn transcribe_elevenlabs(
         .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
         .collect();
 
-    let mut client = ElevenLabsStreamingClient::new(config.clone(), language);
+    let mut client = ElevenLabsStreamingClient::new(config.clone(), language, SttContext::default());
 
     let (result_tx, result_rx) = tokio::sync::oneshot::channel::<String>();
     let result_tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(result_tx)));
@@ -872,7 +931,7 @@ mod tests {
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = ElevenLabsStreamingClient::new(config, Some("en"));
+        let client = ElevenLabsStreamingClient::new(config, Some("en"), SttContext::default());
         assert_eq!(client.language, "en");
     }
 
@@ -887,7 +946,7 @@ mod tests {
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = ElevenLabsStreamingClient::new(config, Some("auto"));
+        let client = ElevenLabsStreamingClient::new(config, Some("auto"), SttContext::default());
         assert_eq!(client.language, "");
     }
 
@@ -902,7 +961,7 @@ mod tests {
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = ElevenLabsStreamingClient::new(config, None);
+        let client = ElevenLabsStreamingClient::new(config, None, SttContext::default());
         assert_eq!(client.language, "");
     }
 
@@ -917,7 +976,7 @@ mod tests {
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = ElevenLabsStreamingClient::new(config, Some("zh-CN"));
+        let client = ElevenLabsStreamingClient::new(config, Some("zh-CN"), SttContext::default());
         assert_eq!(client.language, "zh");
     }
 

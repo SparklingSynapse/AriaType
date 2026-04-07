@@ -1,4 +1,5 @@
 use nnnoiseless::DenoiseState;
+use std::time::Instant;
 use tracing::{debug, info};
 
 use crate::audio::resampler::{resample, resample_to_16khz};
@@ -7,13 +8,17 @@ const DENOISE_RATE: u32 = 48_000;
 const FRAME_SIZE: usize = DenoiseState::FRAME_SIZE;
 
 /// VAD speech-on threshold (RMS on f32 [-1.0, 1.0] scale, ~-44 dB).
-/// Chunks with RMS at or above this level are classified as speech.
 const VAD_SPEECH_ON_RMS: f32 = 0.006;
 
 /// VAD speech-off threshold (RMS on f32 [-1.0, 1.0] scale, ~-54 dB).
-/// Once speech is detected, the chunk stays in speech state until RMS
-/// drops below this level (hysteresis to prevent rapid switching).
 const VAD_SPEECH_OFF_RMS: f32 = 0.002;
+
+/// Maximum silence duration before sending a keepalive chunk.
+/// Cloud STT providers (Volcengine confirmed at 5s, others unknown) disconnect
+/// if no audio is received within a timeout period. We send a keepalive at 4s
+/// to stay safely under the 5s limit while minimizing bandwidth waste.
+/// See: https://www.volcengine.com/docs/6561/1354869 (Volcengine streaming STT)
+const KEEPALIVE_INTERVAL_SECS: u64 = 4;
 
 /// Processed audio chunk with speech detection result.
 pub struct ProcessedChunk {
@@ -43,18 +48,13 @@ pub struct StreamProcessorStats {
 ///
 /// Designed for use in the audio callback thread via `Arc<Mutex<>>`.
 pub struct StreamAudioProcessor {
-    /// Persistent denoise state (maintains filter history across frames).
     denoise_state: Option<Box<DenoiseState<'static>>>,
-    /// Whether denoise is enabled.
     denoise_enabled: bool,
-    /// Whether VAD-based chunk skipping is enabled.
     vad_enabled: bool,
-    /// Current speech detection state (for hysteresis).
     is_speech: bool,
-    /// Buffer for partial denoise frames (must align to FRAME_SIZE = 480).
     denoise_buffer: Vec<f32>,
-    /// Processing statistics for this session.
     stats: StreamProcessorStats,
+    last_send_time: Option<Instant>,
 }
 
 impl StreamAudioProcessor {
@@ -75,6 +75,7 @@ impl StreamAudioProcessor {
             is_speech: false,
             denoise_buffer: Vec::new(),
             stats: StreamProcessorStats::default(),
+            last_send_time: None,
         }
     }
 
@@ -103,13 +104,28 @@ impl StreamAudioProcessor {
         };
 
         // Step 2: VAD check on the 16 kHz audio
-        let has_speech = if self.vad_enabled {
+        let vad_result = if self.vad_enabled {
             self.detect_speech(&audio_16khz)
         } else {
             true
         };
 
-        // Step 3: Convert f32 → i16 for STT engines
+        // Step 3: Keepalive
+        // First chunk always sends (last_send_time is None), then keepalive kicks in.
+        let now = Instant::now();
+        let needs_keepalive = self.vad_enabled
+            && !vad_result
+            && self
+                .last_send_time
+                .is_none_or(|t| now.duration_since(t).as_secs() >= KEEPALIVE_INTERVAL_SECS);
+
+        let has_speech = vad_result || needs_keepalive;
+
+        if has_speech {
+            self.last_send_time = Some(now);
+        }
+
+        // Step 4: Convert f32 → i16 for STT engines
         let pcm_i16: Vec<i16> = audio_16khz
             .iter()
             .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)

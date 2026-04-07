@@ -1,3 +1,23 @@
+//! Qwen Omni Realtime STT Client (阿里云通义千问)
+//!
+//! Implements WebSocket-based streaming speech-to-text using Qwen Omni Realtime API
+//! via Alibaba Cloud DashScope.
+//!
+//! # Protocol
+//! - WebSocket URL: `wss://dashscope.aliyuncs.com/api-ws/v1/inference/`
+//! - JSON-based OpenAI-compatible session protocol
+//!
+//! # Timeout
+//! - **Server-side idle timeout: Unknown** — not documented in official API reference.
+//! - Qwen-Omni-Realtime (full multimodal): 120-minute maximum session duration
+//! - SDK client-side heartbeat: 6 seconds
+//! - Client-side session ready timeout: 5 seconds
+//! - Client-side final result timeout: 30 seconds
+//!
+//! # Reference
+//! - <https://www.alibabacloud.com/help/en/model-studio/qwen-real-time-speech-recognition>
+//! - <https://www.alibabacloud.com/help/en/model-studio/realtime> (Qwen-Omni-Realtime)
+
 use async_trait::async_trait;
 use futures_util::{SinkExt, Stream, StreamExt};
 use std::pin::Pin;
@@ -11,7 +31,7 @@ use uuid::Uuid;
 
 use crate::commands::settings::CloudSttConfig;
 use crate::stt_engine::traits::{
-    EngineType, PartialResult, PartialResultCallback, StreamingSttEngine, TranscriptionResult,
+    EngineType, PartialResult, PartialResultCallback, SttContext, StreamingSttEngine, TranscriptionResult,
 };
 
 const QWEN_OMNI_REALTIME_ENDPOINT: &str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
@@ -43,7 +63,7 @@ unsafe impl Send for QwenOmniRealtimeClient {}
 unsafe impl Sync for QwenOmniRealtimeClient {}
 
 impl QwenOmniRealtimeClient {
-    pub fn new(config: CloudSttConfig, language: Option<&str>) -> Self {
+    pub fn new(config: CloudSttConfig, language: Option<&str>, _context: SttContext) -> Self {
         let lang = normalize_realtime_language(language).unwrap_or_default();
 
         Self {
@@ -814,7 +834,7 @@ pub async fn transcribe_qwen_omni_realtime(
         .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
         .collect();
 
-    let mut client = QwenOmniRealtimeClient::new(config.clone(), language);
+    let mut client = QwenOmniRealtimeClient::new(config.clone(), language, SttContext::default());
 
     client.connect().await?;
 
@@ -977,7 +997,7 @@ mod tests {
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, Some("en"));
+        let client = QwenOmniRealtimeClient::new(config, Some("en"), SttContext::default());
         assert_eq!(client.language, "en");
     }
 
@@ -992,7 +1012,7 @@ mod tests {
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, Some("zh-CN"));
+        let client = QwenOmniRealtimeClient::new(config, Some("zh-CN"), SttContext::default());
         assert_eq!(client.language, "zh");
     }
 
@@ -1007,7 +1027,7 @@ mod tests {
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, Some("zh-CN"));
+        let client = QwenOmniRealtimeClient::new(config, Some("zh-CN"), SttContext::default());
         let message = client.build_session_update_message();
         let session = message.get("session").unwrap();
 
@@ -1222,7 +1242,7 @@ mod tests {
             language: "zh".to_string(),
         };
 
-        let mut client = QwenOmniRealtimeClient::new(config, Some("zh-CN"));
+        let mut client = QwenOmniRealtimeClient::new(config, Some("zh-CN"), SttContext::default());
         client.connect().await.unwrap();
 
         let audio_tx = client.get_audio_sender().await.unwrap();
@@ -1286,7 +1306,7 @@ mod tests {
             language: "zh".to_string(),
         };
 
-        let mut client = QwenOmniRealtimeClient::new(config, Some("zh"));
+        let mut client = QwenOmniRealtimeClient::new(config, Some("zh"), SttContext::default());
         let err = client.connect().await.unwrap_err();
         assert!(err.contains("Access denied."), "unexpected error: {}", err);
         assert!(client.get_audio_sender().await.is_none());
@@ -1305,7 +1325,7 @@ mod tests {
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, Some("auto"));
+        let client = QwenOmniRealtimeClient::new(config, Some("auto"), SttContext::default());
         assert_eq!(client.language, "");
     }
 
@@ -1320,7 +1340,7 @@ mod tests {
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, None);
+        let client = QwenOmniRealtimeClient::new(config, None, SttContext::default());
         assert_eq!(client.language, "");
     }
 }

@@ -54,6 +54,19 @@ wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream
 - Punctuation and formatting
 - Low latency (~200ms chunk processing)
 
+### STT Output Principle: Raw & Accurate
+
+> **STT should output raw, unprocessed transcription.** The Polish engine handles formatting (ITN, punctuation, deduplication). STT's job is accurate phonetic transcription, not polished text.
+
+**Volcengine configuration:**
+```json
+{
+  "enable_itn": true,     // Numbers: "一九七八" → "1978" — Polish engine handles formatting
+  "enable_punc": true,   // Punctuation: "今天天气好" → "今天天气好。" — Polish engine handles formatting
+  "enable_ddc": false    // Disfluency/deduplication — OFF: preserve raw output
+}
+```
+
 ---
 
 ## Volcengine Flash
