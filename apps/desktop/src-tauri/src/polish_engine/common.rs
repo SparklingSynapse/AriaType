@@ -121,6 +121,23 @@ pub fn polish_text_blocking(
         return Err("Polish model not downloaded".to_string());
     }
 
+    // Check model file size to detect incomplete downloads
+    let model_metadata = std::fs::metadata(&model_path).map_err(|e| {
+        error!(engine = %engine, path = ?model_path, error = %e, "polish_model_metadata_failed");
+        format!("Failed to read model metadata: {e}")
+    })?;
+    let model_size_mb = model_metadata.len() / (1024 * 1024);
+    info!(engine = %engine, path = ?model_path, size_mb = model_size_mb, "polish_model_file_checked");
+
+    // LFM2-2.6B Q4_K_M should be at least 1.4GB
+    if model_size_mb < 1400 {
+        error!(engine = %engine, size_mb = model_size_mb, "polish_model_file_too_small");
+        return Err(format!(
+            "Model file appears incomplete: {}MB (expected ~1500MB)",
+            model_size_mb
+        ));
+    }
+
     let t0 = std::time::Instant::now();
 
     info!(engine = %engine, "polish_backend_init_start");
