@@ -31,6 +31,7 @@ If applicable, add screenshots to help explain your problem.
 Add any other context about the problem here.
 
 ## Logs
+<img width="2160" height="1442" alt="image" src="https://github.com/user-attachments/assets/01169ce4-bb41-4546-9a88-31bc3b44e8c3" />
 If applicable, paste relevant logs here:
 ```
 [paste logs here]
