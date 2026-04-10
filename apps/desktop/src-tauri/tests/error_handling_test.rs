@@ -1,5 +1,6 @@
 use ariatype_lib::polish_engine::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
-use ariatype_lib::stt_engine::{EngineType, SttEngine, TranscriptionRequest, TranscriptionResult};
+use ariatype_lib::stt_engine::traits::{PartialResultCallback, RecordingConsumer};
+use ariatype_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -9,6 +10,7 @@ struct MockSttEngine {
     should_fail: bool,
     failure_message: String,
     engine_type: EngineType,
+    chunks: std::sync::Mutex<Vec<Vec<i16>>>,
 }
 
 impl MockSttEngine {
@@ -19,6 +21,7 @@ impl MockSttEngine {
             should_fail: false,
             failure_message: "Mock failure".to_string(),
             engine_type: EngineType::Whisper,
+            chunks: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -35,18 +38,6 @@ impl MockSttEngine {
 
     fn build(self) -> Arc<Self> {
         Arc::new(self)
-    }
-}
-
-impl Default for MockSttEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SttEngine for MockSttEngine {
-    fn engine_type(&self) -> EngineType {
-        self.engine_type
     }
 
     async fn transcribe(
@@ -65,6 +56,32 @@ impl SttEngine for MockSttEngine {
             self.latency_ms,
         ))
     }
+}
+
+impl Default for MockSttEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl RecordingConsumer for MockSttEngine {
+    async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String> {
+        self.chunks.lock().unwrap().push(pcm_data);
+        Ok(())
+    }
+
+    async fn finish(&self) -> Result<String, String> {
+        if self.latency_ms > 0 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(self.latency_ms)).await;
+        }
+        if self.should_fail {
+            return Err(self.failure_message.clone());
+        }
+        Ok(self.result_text.clone())
+    }
+
+    fn set_partial_callback(&mut self, _callback: PartialResultCallback) {}
 }
 
 struct MockPolishEngine {
@@ -135,7 +152,7 @@ async fn test_network_timeout_handling() {
         .with_failure("Network timeout: connection timed out after 30s")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/test.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -149,7 +166,7 @@ async fn test_connection_failed_handling() {
         .with_failure("Connection failed: Failed to connect to server")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/test.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -163,7 +180,7 @@ async fn test_invalid_api_response() {
         .with_failure("Invalid API response: malformed JSON received")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/test.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -179,7 +196,7 @@ async fn test_rate_limit_handling() {
         )
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/test.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -193,7 +210,7 @@ async fn test_empty_audio_input() {
         .with_failure("Empty audio input: audio file is empty or contains no data")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/empty.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -207,7 +224,7 @@ async fn test_unsupported_format() {
         .with_failure("Unsupported audio format: expected WAV/MP3/PCM, got .xyz")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/audio.xyz");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -221,7 +238,7 @@ async fn test_model_not_found() {
         .with_failure("Whisper model 'base' not found at /models/ggml-base.bin")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/test.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -235,7 +252,7 @@ async fn test_model_load_failed() {
         .with_failure("Failed to load model: insufficient memory to load ggml-model.bin")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/test.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -252,7 +269,7 @@ async fn test_partial_result_recovery() {
             .build(),
     );
 
-    let request = TranscriptionRequest::new("/tmp/test.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -272,7 +289,7 @@ async fn test_error_propagation_chain() {
             .build(),
     );
 
-    let stt_request = TranscriptionRequest::new("/tmp/test.wav");
+    let stt_request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let stt_result: Result<TranscriptionResult, String> = stt_mock.transcribe(stt_request).await;
     assert!(stt_result.is_err());
 
@@ -289,7 +306,7 @@ async fn test_authentication_failure() {
         )
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/test.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -303,7 +320,7 @@ async fn test_forbidden_access() {
         .with_failure("Cloud STT access forbidden (403). Your subscription may have expired.")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new("/tmp/test.wav");
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -386,26 +403,25 @@ async fn test_polish_empty_input() {
 }
 
 #[tokio::test]
-async fn test_long_path_error_handling() {
-    let long_path = "/tmp/".to_string() + &"a/".repeat(100);
+async fn test_long_samples_error_handling() {
     let mock = MockSttEngine::new()
-        .with_failure("File not found: path too long")
+        .with_failure("Input too large")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new(&long_path);
+    let long_samples: Vec<f32> = vec![0.0; 16000 * 100];
+    let request = TranscriptionRequest::new(long_samples);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
 }
 
 #[tokio::test]
-async fn test_special_chars_path_error() {
-    let special_path = "/tmp/audio with spaces & symbols.wav";
+async fn test_special_chars_error() {
     let mock = MockSttEngine::new()
-        .with_failure("File not found: invalid path characters")
+        .with_failure("Invalid input characters")
         .with_latency(10);
 
-    let request = TranscriptionRequest::new(special_path);
+    let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result: Result<TranscriptionResult, String> = mock.transcribe(request).await;
 
     assert!(result.is_err());
@@ -437,7 +453,7 @@ async fn test_concurrent_error_handling() {
     for _ in 0..10 {
         let mock_clone = mock.clone();
         let handle = tokio::spawn(async move {
-            let request = TranscriptionRequest::new("/tmp/test.wav");
+            let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
             mock_clone.transcribe(request).await
         });
         handles.push(handle);

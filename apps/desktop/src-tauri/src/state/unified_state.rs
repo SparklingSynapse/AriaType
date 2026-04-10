@@ -1,18 +1,10 @@
 use parking_lot::Mutex;
-use std::collections::VecDeque;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc, Arc,
 };
 use tauri::async_runtime::JoinHandle;
 use tokio::sync::mpsc as async_mpsc;
-
-#[derive(Debug, Clone)]
-pub struct TranscriptionJob {
-    pub audio_path: String,
-    pub timestamp: std::time::SystemTime,
-    pub task_id: u64,
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct SessionState {
@@ -21,33 +13,11 @@ pub struct SessionState {
     pub chunk_count: usize,
 }
 
-/// Audio data storage for recording session
-pub enum AudioStorage {
-    /// Accumulating in memory for STT (both local and cloud)
-    Local {
-        samples: Arc<Mutex<Vec<i16>>>,
-        sample_rate: Arc<Mutex<u32>>,
-        channels: Arc<Mutex<u16>>,
-    },
-    /// Streaming STT (cloud) where audio is sent continuously
-    Streaming,
-}
-
-impl AudioStorage {
-    pub fn is_cloud(&self) -> bool {
-        matches!(self, AudioStorage::Streaming)
-    }
-}
-
-/// Streaming STT state for cloud providers (kept for backward compatibility)
+/// Recording consumer state for all STT engines.
 pub struct StreamingSttState {
-    /// Channel to send PCM data to the streaming client
     pub audio_tx: async_mpsc::Sender<Vec<i16>>,
-    /// Accumulated transcription text
     pub accumulated_text: String,
-    /// Task ID for this session
     pub task_id: u64,
-    /// Handle to the spawned streaming task - must be awaited to ensure proper shutdown
     pub streaming_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
@@ -199,10 +169,6 @@ pub struct AppState {
     pub output_path: Mutex<Option<String>>,
     /// When true, the global hotkey should not trigger recording (e.g. user is setting a new hotkey)
     pub hotkey_capture_mode: AtomicBool,
-    /// FIFO queue for transcription jobs (local STT only)
-    pub transcription_queue: Mutex<VecDeque<TranscriptionJob>>,
-    /// Number of jobs currently being processed
-    pub processing_count: std::sync::atomic::AtomicUsize,
     /// Monotonically increasing task ID; incremented on each new recording session
     pub task_counter: AtomicU64,
     /// Timestamp (ms since UNIX epoch) when the current recording started; used to
@@ -221,10 +187,8 @@ pub struct AppState {
     pub idle_timer_running: AtomicBool,
     /// Current recording session state for accumulating transcription text
     pub session_state: Mutex<Option<SessionState>>,
-    /// Streaming STT state for cloud providers (None when using local STT)
+    /// Recording consumer state for all STT engines (None when idle)
     pub streaming_stt: Mutex<Option<StreamingSttState>>,
-    /// Audio storage for current recording (cloud streaming or local accumulation)
-    pub audio_storage: Mutex<Option<AudioStorage>>,
     /// Transcription history store (SQLite)
     pub history_store: Mutex<crate::history::HistoryStore>,
 }
@@ -238,6 +202,7 @@ impl AppState {
         // Initialize unified engine manager with default models directory
         let models_dir = crate::stt_engine::UnifiedEngineManager::default_models_dir();
         let engine_manager = Arc::new(crate::stt_engine::UnifiedEngineManager::new(models_dir));
+        engine_manager.set_provider(settings.gpu_acceleration);
 
         // Initialize unified polish manager
         let polish_manager = Arc::new(crate::polish_engine::UnifiedPolishManager::new());
@@ -257,8 +222,6 @@ impl AppState {
             is_transcribing: AtomicBool::new(false),
             output_path: Mutex::new(None),
             hotkey_capture_mode: AtomicBool::new(false),
-            transcription_queue: Mutex::new(VecDeque::new()),
-            processing_count: std::sync::atomic::AtomicUsize::new(0),
             task_counter: AtomicU64::new(0),
             recording_start_time: AtomicU64::new(0),
             level_monitor_tx: Mutex::new(Some(level_tx)),
@@ -269,7 +232,6 @@ impl AppState {
             idle_timer_running: AtomicBool::new(false),
             session_state: Mutex::new(None),
             streaming_stt: Mutex::new(None),
-            audio_storage: Mutex::new(None),
             history_store: Mutex::new(
                 crate::history::HistoryStore::new().expect("failed to initialize history store"),
             ),

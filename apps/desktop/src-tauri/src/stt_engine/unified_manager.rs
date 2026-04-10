@@ -1,22 +1,55 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tracing::{error, info, instrument};
 
-use super::cloud::CloudSttEngine;
-use super::sense_voice::SenseVoiceEngine;
-use super::traits::{EngineType, SttEngine, TranscriptionRequest, TranscriptionResult};
-use super::whisper::WhisperEngine;
+use super::models;
+use super::sherpa_onnx::SherpaOnnxEngine;
+use super::traits::{EngineType, TranscriptionRequest, TranscriptionResult};
 use crate::utils::AppPaths;
 use crate::utils::{download, DownloadOptions, HuggingFaceSource};
 
-use super::sense_voice::models as sense_voice_models;
-use super::whisper::models as whisper_models;
-use sense_voice_models::versions as sense_voice_versions;
-use whisper_models::versions as whisper_versions;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InferenceProvider {
+    Cpu,
+    CoreML,
+    Cuda,
+}
 
-type EngineCacheKey = (EngineType, String);
+impl InferenceProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            InferenceProvider::Cpu => "cpu",
+            InferenceProvider::CoreML => "coreml",
+            InferenceProvider::Cuda => "cuda",
+        }
+    }
+
+    pub fn from_gpu_setting(gpu_acceleration: bool) -> Self {
+        if gpu_acceleration {
+            #[cfg(target_os = "macos")]
+            {
+                InferenceProvider::CoreML
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                InferenceProvider::Cuda
+            }
+        } else {
+            InferenceProvider::Cpu
+        }
+    }
+}
+
+impl fmt::Display for InferenceProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+type EngineCacheKey = (EngineType, String, Option<String>, InferenceProvider);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
@@ -41,13 +74,17 @@ pub struct RecommendedModel {
     pub downloaded: bool,
 }
 
-const WHISPER_REPO: &str = "ggerganov/whisper.cpp";
-const WHISPER_REVISION: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
-const SENSEVOICE_REPO: &str = "lovemefan/sense-voice-gguf";
+const SENSEVOICE_REPO: &str = "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17";
+const WHISPER_BASE_REPO: &str = "csukuangfj/sherpa-onnx-whisper-base";
+const WHISPER_SMALL_REPO: &str = "csukuangfj/sherpa-onnx-whisper-small";
+const SILERO_VAD_REPO: &str = "onnx-community/silero-vad";
+const SILERO_VAD_REMOTE_FILE: &str = "onnx/model.onnx";
+const SILERO_VAD_LOCAL_FILE: &str = "silero_vad.onnx";
 
 pub struct UnifiedEngineManager {
     models_dir: PathBuf,
     engine_cache: Arc<Mutex<Option<(EngineCacheKey, EngineInstance)>>>,
+    provider: Arc<Mutex<InferenceProvider>>,
 }
 
 impl UnifiedEngineManager {
@@ -56,6 +93,16 @@ impl UnifiedEngineManager {
         Self {
             models_dir,
             engine_cache: Arc::new(Mutex::new(None)),
+            provider: Arc::new(Mutex::new(InferenceProvider::Cpu)),
+        }
+    }
+
+    pub fn set_provider(&self, gpu_acceleration: bool) {
+        let new_provider = InferenceProvider::from_gpu_setting(gpu_acceleration);
+        let mut provider = self.provider.lock().unwrap();
+        if *provider != new_provider {
+            info!(old = %*provider, new = %new_provider, "provider_updated");
+            *provider = new_provider;
         }
     }
 
@@ -67,19 +114,25 @@ impl UnifiedEngineManager {
         &self,
         engine_type: EngineType,
         version: &str,
+        language: Option<&str>,
     ) -> Result<EngineInstance, String> {
         match engine_type {
-            EngineType::Whisper => {
-                let engine = WhisperEngine::new(&self.models_dir, version)?;
-                Ok(EngineInstance::Whisper(engine))
-            }
-            EngineType::SenseVoice => {
-                let engine = SenseVoiceEngine::new(&self.models_dir, version)?;
-                Ok(EngineInstance::SenseVoice(engine))
+            EngineType::Whisper | EngineType::SenseVoice => {
+                let model_def = models::find_by_name(version)
+                    .ok_or_else(|| format!("Unknown model: {}", version))?;
+                if model_def.engine_type != engine_type {
+                    return Err(format!(
+                        "Model '{}' is for {:?}, not {:?}",
+                        version, model_def.engine_type, engine_type
+                    ));
+                }
+                let provider = *self.provider.lock().unwrap();
+                let engine =
+                    SherpaOnnxEngine::new(&self.models_dir, model_def, language, provider)?;
+                Ok(EngineInstance::Local(engine))
             }
             EngineType::Cloud => {
-                let engine = CloudSttEngine::new()?;
-                Ok(EngineInstance::Cloud(engine))
+                Err("Cloud STT uses streaming lifecycle, not batch transcription.".to_string())
             }
         }
     }
@@ -88,8 +141,15 @@ impl UnifiedEngineManager {
         &self,
         engine_type: EngineType,
         version: &str,
+        language: Option<&str>,
     ) -> Result<EngineInstance, String> {
-        let cache_key = (engine_type, version.to_string());
+        let provider = *self.provider.lock().unwrap();
+        let cache_key = (
+            engine_type,
+            version.to_string(),
+            language.map(|s| s.to_string()),
+            provider,
+        );
         let mut cache = self.engine_cache.lock().unwrap();
 
         if let Some((cached_key, cached_engine)) = cache.as_ref() {
@@ -98,7 +158,7 @@ impl UnifiedEngineManager {
             }
         }
 
-        let engine = self.create_engine_instance(engine_type, version)?;
+        let engine = self.create_engine_instance(engine_type, version, language)?;
         *cache = Some((cache_key, engine.clone()));
         Ok(engine)
     }
@@ -108,33 +168,13 @@ impl UnifiedEngineManager {
         *cache = None;
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn clear_engine_cache(&self, engine_type: EngineType, version: Option<&str>) {
-        let mut cache = self.engine_cache.lock().unwrap();
-        if let Some((cached_key, _)) = cache.as_ref() {
-            let should_clear = if let Some(v) = version {
-                cached_key.0 == engine_type && cached_key.1 == v
-            } else {
-                cached_key.0 == engine_type
-            };
-
-            if should_clear {
-                *cache = None;
-                info!(
-                    engine = ?engine_type,
-                    version = ?version,
-                    "engine_cache_cleared"
-                );
-            }
-        }
-    }
-
     #[instrument(
         skip(self, request),
         fields(
-            engine = ?engine_type,
+            engine = engine_type.as_str(),
             model = request.model_name.as_deref().unwrap_or("default"),
             language = request.language.as_deref().unwrap_or("auto"),
+            samples = request.samples.len(),
         ),
         ret,
         err
@@ -152,171 +192,155 @@ impl UnifiedEngineManager {
             .language
             .clone()
             .unwrap_or_else(|| "auto".to_string());
-        info!(
-            engine = ?engine_type,
-            model = %model,
-            language = %lang,
-            path = ?request.audio_path,
-            "transcription_started"
-        );
+        info!("transcription_started");
 
-        // Get model version from request, use default if not specified
-        let version = request.model_name.as_deref().unwrap_or({
-            match engine_type {
-                EngineType::Whisper => whisper_versions::DEFAULT,
-                EngineType::SenseVoice => sense_voice_versions::DEFAULT,
-                EngineType::Cloud => "cloud",
-            }
-        });
+        let version =
+            if request.model_name.as_deref() == Some("default") || request.model_name.is_none() {
+                let default_model = models::default_for_language(&lang);
+                default_model.name.to_string()
+            } else {
+                request
+                    .model_name
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string())
+            };
 
-        let engine = self.get_or_create_engine(engine_type, version)?;
+        let lang_for_engine = if lang == "auto" {
+            None
+        } else {
+            Some(lang.as_str())
+        };
+        let engine = self.get_or_create_engine(engine_type, &version, lang_for_engine)?;
 
         let result = engine.transcribe(request).await;
 
         match &result {
             Ok(r) => {
-                info!(engine = ?engine_type, model = %model, text_len = r.text.len(), duration_ms = r.total_ms, "transcription_completed")
+                info!(engine = engine_type.as_str(), model = %model, text_len = r.text.len(), duration_ms = r.total_ms, "transcription_completed")
             }
             Err(e) => {
-                error!(engine = ?engine_type, model = %model, error = %e, "transcription_failed")
+                error!(engine = engine_type.as_str(), model = %model, error = %e, "transcription_failed")
             }
         }
 
         result
     }
 
-    /// Get all available engines
     pub fn available_engines() -> Vec<EngineType> {
         EngineType::all()
     }
 
     // ==================== Model Management Functions ====================
 
-    /// Get all models for a specific engine
     pub fn get_models(&self, engine_type: EngineType) -> Vec<ModelInfo> {
-        let models: Vec<ModelInfo> = match engine_type {
-            EngineType::Whisper => whisper_models::ALL
-                .iter()
-                .map(|def| {
-                    let path = self.models_dir.join(def.filename);
-                    ModelInfo {
-                        name: def.name.to_string(),
-                        display_name: def.display_name.to_string(),
-                        size_mb: def.size_mb as u64,
-                        filename: def.filename.to_string(),
-                        downloaded: path.exists(),
-                        speed_score: def.speed_score,
-                        accuracy_score: def.accuracy_score,
-                        engine: "whisper".to_string(),
-                    }
-                })
-                .collect(),
-            EngineType::SenseVoice => sense_voice_models::ALL
-                .iter()
-                .map(|def| {
-                    let path = self.models_dir.join(def.filename);
-                    ModelInfo {
-                        name: def.name.to_string(),
-                        display_name: def.display_name.to_string(),
-                        size_mb: def.size_mb as u64,
-                        filename: def.filename.to_string(),
-                        downloaded: path.exists(),
-                        speed_score: def.speed_score,
-                        accuracy_score: def.accuracy_score,
-                        engine: "sensevoice".to_string(),
-                    }
-                })
-                .collect(),
-            EngineType::Cloud => {
-                vec![ModelInfo {
-                    name: "cloud".to_string(),
-                    display_name: "Cloud STT".to_string(),
-                    size_mb: 0,
-                    filename: "cloud".to_string(),
-                    downloaded: true,
-                    speed_score: 10,
-                    accuracy_score: 10,
-                    engine: "cloud".to_string(),
-                }]
-            }
-        };
-
-        models
+        models::ALL
+            .iter()
+            .filter(|m| m.engine_type == engine_type)
+            .map(|def| {
+                let downloaded = self.is_model_downloaded(engine_type, def.name);
+                ModelInfo {
+                    name: def.name.to_string(),
+                    display_name: def.display_name.to_string(),
+                    size_mb: def.size_mb as u64,
+                    filename: def.name.to_string(),
+                    downloaded,
+                    speed_score: def.speed_score,
+                    accuracy_score: def.accuracy_score,
+                    engine: def.engine_type.as_str().to_string(),
+                }
+            })
+            .collect()
     }
 
-    /// Get all models from all local engines (excludes Cloud which is configured separately)
     pub fn get_all_models(&self) -> Vec<ModelInfo> {
-        let mut all_models = Vec::new();
-        for engine_type in EngineType::all() {
-            // Skip Cloud engine - it's configured separately and doesn't have downloadable models
-            if engine_type == EngineType::Cloud {
-                continue;
-            }
-            all_models.extend(self.get_models(engine_type));
-        }
-        all_models
+        models::ALL
+            .iter()
+            .map(|def| {
+                let downloaded = self.is_model_downloaded(def.engine_type, def.name);
+                ModelInfo {
+                    name: def.name.to_string(),
+                    display_name: def.display_name.to_string(),
+                    size_mb: def.size_mb as u64,
+                    filename: def.name.to_string(),
+                    downloaded,
+                    speed_score: def.speed_score,
+                    accuracy_score: def.accuracy_score,
+                    engine: def.engine_type.as_str().to_string(),
+                }
+            })
+            .collect()
     }
 
-    /// Auto-detect engine type by model name
     pub fn get_engine_by_model_name(model_name: &str) -> Option<EngineType> {
         if model_name == "cloud" {
             Some(EngineType::Cloud)
-        } else if whisper_models::find_by_name(model_name).is_some() {
-            Some(EngineType::Whisper)
-        } else if sense_voice_models::find_by_name(model_name).is_some() {
-            Some(EngineType::SenseVoice)
         } else {
-            None
+            models::find_by_name(model_name).map(|m| m.engine_type)
         }
     }
 
-    /// Check if a model is downloaded
     pub fn is_model_downloaded(&self, engine_type: EngineType, model_name: &str) -> bool {
-        let filename = match engine_type {
-            EngineType::Whisper => {
-                if let Some(model) = whisper_models::find_by_name(model_name) {
-                    model.filename
-                } else {
-                    return false;
-                }
-            }
-            EngineType::SenseVoice => {
-                if let Some(model) = sense_voice_models::find_by_name(model_name) {
-                    model.filename
-                } else {
-                    return false;
-                }
-            }
-            EngineType::Cloud => {
-                return true;
-            }
+        let model_def = match models::find_by_name(model_name) {
+            Some(def) => def,
+            None => return false,
         };
 
-        self.models_dir.join(filename).exists()
-    }
-
-    /// Get the file path for a model
-    pub fn get_model_path(&self, engine_type: EngineType, model_name: &str) -> PathBuf {
-        match engine_type {
-            EngineType::Whisper => {
-                if let Some(model) = whisper_models::find_by_name(model_name) {
-                    self.models_dir.join(model.filename)
-                } else {
-                    self.models_dir.join(format!("ggml-{}.bin", model_name))
-                }
-            }
-            EngineType::SenseVoice => {
-                if let Some(model) = sense_voice_models::find_by_name(model_name) {
-                    self.models_dir.join(model.filename)
-                } else {
-                    self.models_dir.join(format!("{}.gguf", model_name))
-                }
-            }
-            EngineType::Cloud => PathBuf::new(),
+        if model_def.engine_type != engine_type {
+            return false;
         }
+
+        let model_subdir = self.models_dir.join(model_def.name);
+        model_def
+            .files
+            .iter()
+            .all(|f| model_subdir.join(f.filename).exists())
     }
 
-    /// Download a model
+    pub fn resolve_available_model(
+        &self,
+        requested_model: &str,
+        language: &str,
+    ) -> (EngineType, String) {
+        if let Some(model_def) = models::find_by_name(requested_model) {
+            if self.is_model_downloaded(model_def.engine_type, model_def.name) {
+                return (model_def.engine_type, model_def.name.to_string());
+            }
+        }
+
+        let candidates = models::recommend_by_language(language);
+        for model_def in &candidates {
+            if self.is_model_downloaded(model_def.engine_type, model_def.name) {
+                tracing::warn!(
+                    requested = requested_model,
+                    fallback = model_def.name,
+                    "configured_model_not_downloaded_falling_back"
+                );
+                return (model_def.engine_type, model_def.name.to_string());
+            }
+        }
+
+        for model_def in models::ALL {
+            if self.is_model_downloaded(model_def.engine_type, model_def.name) {
+                tracing::warn!(
+                    requested = requested_model,
+                    fallback = model_def.name,
+                    "no_recommended_model_available_using_first_downloaded"
+                );
+                return (model_def.engine_type, model_def.name.to_string());
+            }
+        }
+
+        let default = models::default_for_language(language);
+        (default.engine_type, default.name.to_string())
+    }
+
+    pub fn get_model_path(&self, engine_type: EngineType, model_name: &str) -> PathBuf {
+        if engine_type == EngineType::Cloud {
+            return PathBuf::new();
+        }
+        self.models_dir.join(model_name)
+    }
+
     pub async fn download_model<F>(
         &self,
         engine_type: EngineType,
@@ -327,45 +351,95 @@ impl UnifiedEngineManager {
     where
         F: Fn(u64, u64) + Send + Sync + 'static,
     {
-        let (repo, revision, filename) = match engine_type {
+        let model_def = models::find_by_name(model_name)
+            .ok_or_else(|| format!("Unknown model: {}", model_name))?;
+
+        if model_def.engine_type != engine_type {
+            return Err(format!(
+                "Model '{}' is for {:?}, not {:?}",
+                model_name, model_def.engine_type, engine_type
+            ));
+        }
+
+        let repo = match engine_type {
+            EngineType::SenseVoice => SENSEVOICE_REPO,
             EngineType::Whisper => {
-                let model = whisper_models::find_by_name(model_name)
-                    .ok_or_else(|| format!("Unknown Whisper model: {}", model_name))?;
-                (WHISPER_REPO, Some(WHISPER_REVISION), model.filename)
-            }
-            EngineType::SenseVoice => {
-                let model = sense_voice_models::find_by_name(model_name)
-                    .ok_or_else(|| format!("Unknown SenseVoice model: {}", model_name))?;
-                (SENSEVOICE_REPO, None, model.filename)
+                if model_name == "whisper-small" {
+                    WHISPER_SMALL_REPO
+                } else {
+                    WHISPER_BASE_REPO
+                }
             }
             EngineType::Cloud => {
                 return Err("Cloud models do not need to be downloaded".to_string());
             }
         };
 
-        let output_path = self.models_dir.join(filename);
+        let model_subdir = self.models_dir.join(model_name);
+        std::fs::create_dir_all(&model_subdir)
+            .map_err(|e| format!("Failed to create model directory: {}", e))?;
 
-        let mut source_builder = HuggingFaceSource::new(repo, filename);
-        if let Some(rev) = revision {
-            source_builder = source_builder.with_revision(rev);
+        let total_size_bytes: u64 = model_def
+            .files
+            .iter()
+            .map(|f| u64::from(f.size_mb) * 1024 * 1024)
+            .sum();
+
+        let mut last_output_path: Option<PathBuf> = None;
+        let progress_cb = Arc::new(progress_callback) as Arc<dyn Fn(u64, u64) + Send + Sync>;
+        let completed_bytes = Arc::new(std::sync::atomic::AtomicU64::new(0u64));
+
+        for model_file in model_def.files {
+            let output_path = model_subdir.join(model_file.filename);
+
+            if output_path.exists() {
+                let file_bytes = u64::from(model_file.size_mb) * 1024 * 1024;
+                completed_bytes.fetch_add(file_bytes, std::sync::atomic::Ordering::Relaxed);
+                progress_cb(
+                    completed_bytes.load(std::sync::atomic::Ordering::Relaxed),
+                    total_size_bytes,
+                );
+                info!(file = %model_file.filename, "file_already_exists_skipping");
+                last_output_path = Some(output_path);
+                continue;
+            }
+
+            info!(
+                repo = repo,
+                file = %model_file.filename,
+                "downloading_model_file"
+            );
+
+            let source = HuggingFaceSource::new(repo, model_file.filename).into_source();
+            let urls = source.urls();
+
+            let cb = progress_cb.clone();
+            let completed_ref = completed_bytes.clone();
+            let file_size_bytes = u64::from(model_file.size_mb) * 1024 * 1024;
+            let options = DownloadOptions::new(&urls[0], &output_path)
+                .with_fallbacks(urls[1..].to_vec())
+                .with_cancel_flag(cancel_flag.clone())
+                .with_progress_callback(Arc::new(move |downloaded, total| {
+                    let file_total = if total > 0 { total } else { file_size_bytes };
+                    let file_done = if file_total > 0 { downloaded } else { 0 };
+                    let base = completed_ref.load(std::sync::atomic::Ordering::Relaxed);
+                    cb(base + file_done, total_size_bytes);
+                }))
+                .with_model_name(model_name);
+
+            let path = download(options).await?;
+            completed_bytes.fetch_add(file_size_bytes, std::sync::atomic::Ordering::Relaxed);
+            last_output_path = Some(path);
         }
-        let source = source_builder.into_source();
 
-        let urls = source.urls();
+        let output_path = last_output_path.unwrap_or(model_subdir);
+        info!(engine = ?engine_type, model = %model_name, path = ?output_path, "model_download_completed");
 
-        let options = DownloadOptions::new(&urls[0], &output_path)
-            .with_fallbacks(urls[1..].to_vec())
-            .with_cancel_flag(cancel_flag)
-            .with_progress_callback(Arc::new(progress_callback))
-            .with_model_name(model_name);
-
-        download(options).await
+        Ok(output_path)
     }
 
-    /// Preload model into cache
     #[instrument(skip(self), fields(engine = ?engine_type, model = %model_name), ret, err)]
     pub fn load_model(&self, engine_type: EngineType, model_name: &str) -> Result<(), String> {
-        // Check if model is downloaded
         if !self.is_model_downloaded(engine_type, model_name) {
             return Err(format!(
                 "Model '{}' not downloaded. Please download it first.",
@@ -373,14 +447,13 @@ impl UnifiedEngineManager {
             ));
         }
 
-        // Create engine instance and put it into cache
         info!(
             engine = ?engine_type,
             model = %model_name,
             "model_preload_started"
         );
 
-        let _ = self.get_or_create_engine(engine_type, model_name)?;
+        let _ = self.get_or_create_engine(engine_type, model_name, None)?;
 
         info!(
             engine = ?engine_type,
@@ -391,94 +464,136 @@ impl UnifiedEngineManager {
         Ok(())
     }
 
-    /// Delete a model file
     pub fn delete_model(&self, engine_type: EngineType, model_name: &str) -> Result<(), String> {
-        let model_path = self.get_model_path(engine_type, model_name);
+        let model_subdir = self.models_dir.join(model_name);
 
-        // Check if file exists
-        if !model_path.exists() {
+        if !model_subdir.exists() {
             return Err(format!(
                 "Model '{}' not found at path: {}",
                 model_name,
-                model_path.display()
+                model_subdir.display()
             ));
         }
 
-        // If model is in cache, clear it first
-
-        // Delete the model file
-        std::fs::remove_file(&model_path)
+        std::fs::remove_dir_all(&model_subdir)
             .map_err(|e| format!("Failed to delete model '{}': {}", model_name, e))?;
 
         info!(
             engine = ?engine_type,
             model = %model_name,
-            path = ?model_path,
+            path = ?model_subdir,
             "model_deleted"
         );
 
         Ok(())
     }
 
-    /// Recommend engines and models by language
-    ///
-    /// Returns a list sorted by accuracy (descending), including all engine and model combinations that support the language
     pub fn recommend_by_language(&self, lang: &str) -> Vec<RecommendedModel> {
-        let mut recommendations = Vec::new();
+        let recommended = models::recommend_by_language(lang);
 
-        // Get Whisper recommended models
-        let whisper_models = whisper_models::recommend_by_language(lang);
-        for model in whisper_models {
-            let model_path = self.models_dir.join(model.filename);
-            recommendations.push(RecommendedModel {
-                engine_type: EngineType::Whisper,
-                model_name: model.name.to_string(),
-                display_name: model.display_name.to_string(),
-                size_mb: model.size_mb as u64,
-                speed_score: model.speed_score,
-                accuracy_score: model.accuracy_score,
-                downloaded: model_path.exists(),
-            });
+        recommended
+            .into_iter()
+            .map(|model_def| {
+                let downloaded = self.is_model_downloaded(model_def.engine_type, model_def.name);
+                RecommendedModel {
+                    engine_type: model_def.engine_type,
+                    model_name: model_def.name.to_string(),
+                    display_name: model_def.display_name.to_string(),
+                    size_mb: model_def.size_mb as u64,
+                    speed_score: model_def.speed_score,
+                    accuracy_score: model_def.accuracy_score,
+                    downloaded,
+                }
+            })
+            .collect()
+    }
+
+    pub fn vad_model_path(&self) -> PathBuf {
+        self.models_dir.join(SILERO_VAD_LOCAL_FILE)
+    }
+
+    pub fn is_vad_model_downloaded(&self) -> bool {
+        self.vad_model_path().exists()
+    }
+
+    pub async fn download_vad_model(
+        &self,
+        cancel_flag: Arc<AtomicBool>,
+    ) -> Result<PathBuf, String> {
+        let output_path = self.vad_model_path();
+
+        if output_path.exists() {
+            info!("vad_model_already_exists");
+            return Ok(output_path);
         }
-
-        // Get SenseVoice recommended models
-        let sensevoice_models = sense_voice_models::recommend_by_language(lang);
-        for model in sensevoice_models {
-            let model_path = self.models_dir.join(model.filename);
-            recommendations.push(RecommendedModel {
-                engine_type: EngineType::SenseVoice,
-                model_name: model.name.to_string(),
-                display_name: model.display_name.to_string(),
-                size_mb: model.size_mb as u64,
-                speed_score: model.speed_score,
-                accuracy_score: model.accuracy_score,
-                downloaded: model_path.exists(),
-            });
-        }
-
-        // Sort by accuracy descending, then by speed descending for same accuracy
-        recommendations.sort_by(|a, b| {
-            b.accuracy_score
-                .cmp(&a.accuracy_score)
-                .then_with(|| b.speed_score.cmp(&a.speed_score))
-        });
 
         info!(
-            language = %lang,
-            count = recommendations.len(),
-            "language_recommendations_generated"
+            repo = SILERO_VAD_REPO,
+            remote_file = SILERO_VAD_REMOTE_FILE,
+            local_file = SILERO_VAD_LOCAL_FILE,
+            "downloading_vad_model"
         );
 
-        recommendations
+        let source = HuggingFaceSource::new(SILERO_VAD_REPO, SILERO_VAD_REMOTE_FILE).into_source();
+        let urls = source.urls();
+
+        let options = DownloadOptions::new(&urls[0], &output_path)
+            .with_fallbacks(urls[1..].to_vec())
+            .with_cancel_flag(cancel_flag)
+            .with_model_name("silero-vad");
+
+        let path = download(options).await?;
+
+        info!(path = ?path, "vad_model_downloaded");
+        Ok(path)
+    }
+
+    pub async fn ensure_vad_model(&self) -> Result<PathBuf, String> {
+        if self.is_vad_model_downloaded() {
+            return Ok(self.vad_model_path());
+        }
+
+        info!("vad_model_missing_auto_downloading");
+        self.download_vad_model(Arc::new(AtomicBool::new(false)))
+            .await
+    }
+
+    pub async fn ensure_default_model(&self, language: &str) -> Result<(), String> {
+        let default = models::default_for_language(language);
+        let engine_type = default.engine_type;
+        let model_name = default.name;
+
+        if self.is_model_downloaded(engine_type, model_name) {
+            info!(model = model_name, "default_model_already_downloaded");
+            return Ok(());
+        }
+
+        info!(
+            engine = ?engine_type,
+            model = model_name,
+            language = language,
+            "default_model_missing_auto_downloading"
+        );
+
+        self.download_model(
+            engine_type,
+            model_name,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            |_, _| {},
+        )
+        .await?;
+
+        if let Err(e) = self.ensure_vad_model().await {
+            tracing::warn!(error = %e, "vad_model_ensure_failed");
+        }
+
+        Ok(())
     }
 }
 
-/// Engine instance enum (to avoid trait object issues)
 #[derive(Clone)]
 pub(crate) enum EngineInstance {
-    Whisper(WhisperEngine),
-    SenseVoice(SenseVoiceEngine),
-    Cloud(CloudSttEngine),
+    Local(SherpaOnnxEngine),
 }
 
 impl EngineInstance {
@@ -487,9 +602,7 @@ impl EngineInstance {
         request: TranscriptionRequest,
     ) -> Result<TranscriptionResult, String> {
         match self {
-            EngineInstance::Whisper(engine) => engine.transcribe(request).await,
-            EngineInstance::SenseVoice(engine) => engine.transcribe(request).await,
-            EngineInstance::Cloud(engine) => engine.transcribe(request).await,
+            EngineInstance::Local(engine) => engine.transcribe(request).await,
         }
     }
 }
@@ -525,74 +638,70 @@ mod tests {
     }
 
     #[test]
-    fn test_version_constants() {
-        // Test Whisper version constants
-        assert_eq!(whisper_versions::DEFAULT, whisper_versions::BASE);
-        assert_eq!(whisper_versions::ALL.len(), 5);
-        assert!(whisper_versions::ALL.contains(&whisper_versions::TINY));
-        assert!(whisper_versions::ALL.contains(&whisper_versions::BASE));
-        assert!(whisper_versions::ALL.contains(&whisper_versions::SMALL_Q8_0));
-        assert!(whisper_versions::ALL.contains(&whisper_versions::MEDIUM_Q5_0));
-        assert!(whisper_versions::ALL.contains(&whisper_versions::LARGE_V3_TURBO_Q8_0));
-
-        // Test SenseVoice version constants
-        assert_eq!(
-            sense_voice_versions::DEFAULT,
-            sense_voice_versions::SMALL_Q4_K
-        );
-        assert_eq!(sense_voice_versions::ALL.len(), 2);
-        assert!(sense_voice_versions::ALL.contains(&sense_voice_versions::SMALL_Q4_K));
-        assert!(sense_voice_versions::ALL.contains(&sense_voice_versions::SMALL_Q8_0));
-    }
-
-    #[test]
     fn test_model_definitions() {
-        // Test Whisper model definitions
-        assert_eq!(whisper_models::TINY.name, "tiny");
-        assert_eq!(whisper_models::TINY.speed_score, 10);
-        assert_eq!(whisper_models::BASE.name, "base");
-        assert_eq!(whisper_models::DEFAULT.name, "base");
-        assert_eq!(whisper_models::ALL.len(), 5);
-
-        // Test SenseVoice model definitions
-        assert_eq!(
-            sense_voice_models::SMALL_Q4_K.name,
-            "sense-voice-small-q4_k"
-        );
-        assert_eq!(sense_voice_models::SMALL_Q4_K.size_mb, 244);
-        assert_eq!(sense_voice_models::DEFAULT.name, "sense-voice-small-q4_k");
-        assert_eq!(sense_voice_models::ALL.len(), 2);
-
-        // Test model lookup
-        let model = whisper_models::find_by_name("tiny");
-        assert!(model.is_some());
-        assert_eq!(model.unwrap().name, "tiny");
-
-        let model = sense_voice_models::find_by_name("sense-voice-small-q8_0");
-        assert!(model.is_some());
-        assert_eq!(model.unwrap().name, "sense-voice-small-q8_0");
+        assert_eq!(models::ALL.len(), 3);
+        assert_eq!(models::SENSE_VOICE_SMALL.name, "sense-voice-small");
+        assert_eq!(models::WHISPER_BASE.name, "whisper-base");
+        assert_eq!(models::WHISPER_SMALL.name, "whisper-small");
     }
 
     #[test]
-    fn test_model_recommendations() {
-        // Test recommending Whisper models by language
-        let zh_models = whisper_models::recommend_by_language("zh");
-        assert!(!zh_models.is_empty());
-        // Should be sorted by accuracy descending
-        for i in 1..zh_models.len() {
-            assert!(zh_models[i - 1].accuracy_score >= zh_models[i].accuracy_score);
-        }
+    fn test_get_engine_by_model_name() {
+        assert_eq!(
+            UnifiedEngineManager::get_engine_by_model_name("sense-voice-small"),
+            Some(EngineType::SenseVoice)
+        );
+        assert_eq!(
+            UnifiedEngineManager::get_engine_by_model_name("whisper-base"),
+            Some(EngineType::Whisper)
+        );
+        assert_eq!(
+            UnifiedEngineManager::get_engine_by_model_name("whisper-small"),
+            Some(EngineType::Whisper)
+        );
+        assert_eq!(
+            UnifiedEngineManager::get_engine_by_model_name("cloud"),
+            Some(EngineType::Cloud)
+        );
+        assert_eq!(
+            UnifiedEngineManager::get_engine_by_model_name("unknown"),
+            None
+        );
+    }
 
-        // Test recommending Whisper models by speed
-        let fast_models = whisper_models::recommend_by_speed(8);
-        assert!(!fast_models.is_empty());
-        for model in fast_models {
-            assert!(model.speed_score >= 8);
-        }
+    #[test]
+    fn test_recommend_by_language_zh() {
+        let temp_dir = std::env::temp_dir().join("test_recommend_zh_v2");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let manager = UnifiedEngineManager::new(temp_dir.clone());
 
-        // Test recommending SenseVoice models by language
-        let zh_models = sense_voice_models::recommend_by_language("zh");
-        assert_eq!(zh_models.len(), 2);
+        let recommendations = manager.recommend_by_language("zh");
+        assert!(!recommendations.is_empty());
+
+        let has_sensevoice = recommendations
+            .iter()
+            .any(|r| r.engine_type == EngineType::SenseVoice);
+        assert!(has_sensevoice, "Should recommend SenseVoice for Chinese");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_recommend_by_language_en() {
+        let temp_dir = std::env::temp_dir().join("test_recommend_en_v2");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let manager = UnifiedEngineManager::new(temp_dir.clone());
+
+        let recommendations = manager.recommend_by_language("en");
+        assert!(!recommendations.is_empty());
+
+        // English is SenseVoice-preferred (zh/yue/ja/ko/en)
+        let has_sensevoice = recommendations
+            .iter()
+            .any(|r| r.engine_type == EngineType::SenseVoice);
+        assert!(has_sensevoice, "Should recommend SenseVoice for English");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
@@ -620,12 +729,11 @@ mod tests {
 
     #[test]
     fn test_load_model_not_downloaded() {
-        let temp_dir = std::env::temp_dir().join("test_load_model");
+        let temp_dir = std::env::temp_dir().join("test_load_model_v2");
         let _ = std::fs::create_dir_all(&temp_dir);
         let manager = UnifiedEngineManager::new(temp_dir.clone());
 
-        // Trying to load undownloaded model should fail
-        let result = manager.load_model(EngineType::Whisper, "tiny");
+        let result = manager.load_model(EngineType::Whisper, "whisper-base");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not downloaded"));
 
@@ -634,12 +742,11 @@ mod tests {
 
     #[test]
     fn test_delete_model_not_exists() {
-        let temp_dir = std::env::temp_dir().join("test_delete_model");
+        let temp_dir = std::env::temp_dir().join("test_delete_model_v2");
         let _ = std::fs::create_dir_all(&temp_dir);
         let manager = UnifiedEngineManager::new(temp_dir.clone());
 
-        // Trying to delete non-existent model should fail
-        let result = manager.delete_model(EngineType::Whisper, "tiny");
+        let result = manager.delete_model(EngineType::Whisper, "whisper-base");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
 
@@ -647,116 +754,42 @@ mod tests {
     }
 
     #[test]
-    fn test_recommend_by_language_zh() {
-        let temp_dir = std::env::temp_dir().join("test_recommend_zh");
+    fn test_resolve_available_model_falls_back_to_downloaded() {
+        let temp_dir = std::env::temp_dir().join("test_resolve_model_fallback");
         let _ = std::fs::create_dir_all(&temp_dir);
+
+        let sensevoice_dir = temp_dir.join("sense-voice-small");
+        let _ = std::fs::create_dir_all(&sensevoice_dir);
+        std::fs::File::create(sensevoice_dir.join("model.int8.onnx")).unwrap();
+        std::fs::File::create(sensevoice_dir.join("tokens.txt")).unwrap();
+
         let manager = UnifiedEngineManager::new(temp_dir.clone());
 
-        let recommendations = manager.recommend_by_language("zh");
+        let (engine_type, model_name) = manager.resolve_available_model("whisper-base", "zh");
+        assert_eq!(model_name, "sense-voice-small");
+        assert_eq!(engine_type, EngineType::SenseVoice);
 
-        // Should have recommendations
-        assert!(!recommendations.is_empty());
+        let (engine_type2, model_name2) =
+            manager.resolve_available_model("sense-voice-small", "zh");
+        assert_eq!(model_name2, "sense-voice-small");
+        assert_eq!(engine_type2, EngineType::SenseVoice);
 
-        // Should include SenseVoice model (optimized for Chinese)
-        let has_sensevoice = recommendations
-            .iter()
-            .any(|r| r.engine_type == EngineType::SenseVoice);
-        assert!(has_sensevoice, "Should recommend SenseVoice for Chinese");
-
-        // Should include Whisper models that support Chinese
-        let has_whisper = recommendations
-            .iter()
-            .any(|r| r.engine_type == EngineType::Whisper);
-        assert!(has_whisper, "Should recommend Whisper models for Chinese");
-
-        // Verify sorted by accuracy descending
-        for i in 1..recommendations.len() {
-            let prev = &recommendations[i - 1];
-            let curr = &recommendations[i];
-            assert!(
-                prev.accuracy_score >= curr.accuracy_score,
-                "Should be sorted by accuracy score (descending)"
-            );
-        }
+        let (engine_type3, model_name3) =
+            manager.resolve_available_model("nonexistent-model", "auto");
+        assert_eq!(model_name3, "sense-voice-small");
+        assert_eq!(engine_type3, EngineType::SenseVoice);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
-    fn test_recommend_by_language_en() {
-        let temp_dir = std::env::temp_dir().join("test_recommend_en");
+    fn test_resolve_available_model_nothing_downloaded() {
+        let temp_dir = std::env::temp_dir().join("test_resolve_model_nothing");
         let _ = std::fs::create_dir_all(&temp_dir);
         let manager = UnifiedEngineManager::new(temp_dir.clone());
 
-        let recommendations = manager.recommend_by_language("en");
-
-        // Should have recommendations
-        assert!(!recommendations.is_empty());
-
-        // All recommended models should support English
-        for rec in &recommendations {
-            // Verify model names are not empty
-            assert!(!rec.model_name.is_empty());
-            assert!(!rec.display_name.is_empty());
-        }
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_recommend_by_language_includes_download_status() {
-        use std::fs::File;
-        use std::io::Write;
-
-        let temp_dir = std::env::temp_dir().join("test_recommend_download");
-        let _ = std::fs::create_dir_all(&temp_dir);
-        let manager = UnifiedEngineManager::new(temp_dir.clone());
-
-        // Create a fake SenseVoice model file
-        let model_path = temp_dir.join("sense-voice-small-q4_k.gguf");
-        let mut file = File::create(&model_path).unwrap();
-        file.write_all(b"fake model data").unwrap();
-
-        let recommendations = manager.recommend_by_language("zh");
-
-        // Find SenseVoice Small Q4 model
-        let sensevoice_q4 = recommendations
-            .iter()
-            .find(|r| r.model_name == "sense-voice-small-q4_k");
-
-        assert!(sensevoice_q4.is_some());
-        assert!(
-            sensevoice_q4.unwrap().downloaded,
-            "Should detect downloaded model"
-        );
-
-        // Other models should be undownloaded
-        let other_models: Vec<_> = recommendations
-            .iter()
-            .filter(|r| r.model_name != "sense-voice-small-q4_k")
-            .collect();
-
-        for model in other_models {
-            assert!(!model.downloaded, "Other models should not be downloaded");
-        }
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_recommend_by_language_empty_for_unsupported() {
-        let temp_dir = std::env::temp_dir().join("test_recommend_unsupported");
-        let _ = std::fs::create_dir_all(&temp_dir);
-        let manager = UnifiedEngineManager::new(temp_dir.clone());
-
-        // Use an unsupported language code
-        let recommendations = manager.recommend_by_language("xyz");
-
-        // Should return empty list
-        assert!(
-            recommendations.is_empty(),
-            "Should return empty list for unsupported language"
-        );
+        let (_, model_name) = manager.resolve_available_model("whisper-base", "auto");
+        assert_eq!(model_name, models::DEFAULT.name);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

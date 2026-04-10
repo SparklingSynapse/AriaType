@@ -214,11 +214,6 @@ const CHUNK_DELAY_MS: u64 = 50;
 /// Splits text into grapheme-aware chunks with delays to prevent IME composition reset.
 fn try_enigo_key_sequence(text: &str) -> bool {
     let grapheme_count = text.graphemes(true).count();
-    info!(
-        text = %text,
-        text_len = text.len(),
-        grapheme_count, "text_injection_enigo_started"
-    );
 
     let mut enigo = match Enigo::new(&Settings::default()) {
         Ok(e) => e,
@@ -315,14 +310,10 @@ impl super::TextInjector for MacosInjector {
         let grapheme_count = text.graphemes(true).count();
         let has_newline = text.contains('\n');
         info!(
-            text = %text,
             text_len = text.len(),
-            grapheme_count,
-            has_newline, "text_injection_started"
+            grapheme_count, has_newline, "text_injection_started"
         );
 
-        // Use clipboard for multiline text - enigo's \n causes issues in Terminal
-        // where newline is interpreted as "enter/execute" instead of literal text
         if has_newline {
             info!("text_injection_clipboard_mode-multiline");
             let ok = try_clipboard_paste(text);

@@ -11,7 +11,7 @@ This guide walks through adding a new cloud speech-to-text provider to the strea
 
 ## Overview
 
-The streaming engine uses a trait-based architecture. Each provider implements `StreamingSttEngine` and integrates into `CloudSttEngine` through `StreamingSttClient` enum.
+All STT engines (local and cloud) implement the unified `SttEngine` trait. Cloud providers integrate through the `StreamingSttClient` enum, which implements `SttEngine` and delegates to per-provider WebSocket clients.
 
 ## Step 1: Implement the Trait
 
@@ -19,39 +19,44 @@ Create `stt_engine/cloud/new_provider.rs`:
 
 ```rust
 use async_trait::async_trait;
-use tokio::sync::Sender;
+use tokio::sync::mpsc;
 
-use crate::stt_engine::cloud::{StreamingSttEngine, PartialResultCallback};
+use crate::stt_engine::traits::{EngineType, PartialResultCallback, SttEngine, SttContext};
+use crate::commands::settings::CloudSttConfig;
 
 pub struct NewProviderEngine {
     partial_callback: Option<PartialResultCallback>,
+    audio_sender: Option<mpsc::Sender<Vec<i16>>>,
     // Provider-specific fields
 }
 
 impl NewProviderEngine {
-    pub fn new(config: NewProviderConfig) -> Self {
+    pub fn new(config: CloudSttConfig, language: Option<&str>, context: SttContext) -> Self {
         Self {
             partial_callback: None,
+            audio_sender: None,
         }
     }
 }
 
 #[async_trait]
-impl StreamingSttEngine for NewProviderEngine {
-    fn set_partial_callback(&mut self, callback: PartialResultCallback) {
-        self.partial_callback = Some(callback);
+impl SttEngine for NewProviderEngine {
+    fn engine_type(&self) -> EngineType {
+        EngineType::Cloud
     }
 
-    async fn connect(&mut self) -> Result<(), String> {
-        // Establish WebSocket connection
-    }
-
-    async fn get_audio_sender(&self) -> Option<Sender<Vec<i16>>> {
-        // Return audio sender channel
+    async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String> {
+        // Forward to WebSocket (streaming) or buffer (non-streaming)
+        todo!("Implement chunk forwarding")
     }
 
     async fn finish(&self) -> Result<String, String> {
-        // Send EOS and return transcription
+        // Send EOS and return final transcription
+        todo!("Implement session finalization")
+    }
+
+    fn set_partial_callback(&mut self, callback: PartialResultCallback) {
+        self.partial_callback = Some(callback);
     }
 }
 ```
@@ -129,13 +134,13 @@ async fn test_stt_new_provider_schema() {
         language: "en".to_string(),
     };
 
-    let engine = CloudSttEngine::new().unwrap();
-    let result = engine.transcribe(request).await;
+    // Use UnifiedEngineManager to create the engine
+    let mut engine = StreamingSttClient::new(config, Some("en"), SttContext::default()).unwrap();
+    engine.connect().await.unwrap();
 
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    // Auth error proves request format is correct
-    assert!(err.contains("401") || err.contains("403"));
+    // Send a chunk and finish — expect auth error from real endpoint
+    engine.send_chunk(vec![0i16; 512]).await.unwrap_err();
+    // Auth error (401/403) proves endpoint URL and request format are correct
 }
 ```
 

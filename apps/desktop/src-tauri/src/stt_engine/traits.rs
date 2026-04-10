@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 /// Structured STT context passed to each engine.
 ///
@@ -65,28 +63,28 @@ impl std::fmt::Display for EngineType {
     }
 }
 
-/// Transcription request parameters
+/// Transcription request parameters for batch (local) engines.
+///
+/// Denoise and VAD are handled upstream by `StreamAudioProcessor` before
+/// audio reaches this point, so they are not part of the request.
+/// Cloud STT uses the `RecordingConsumer` streaming lifecycle directly
+/// (send_chunk + finish), not this batch request.
 #[derive(Debug, Clone)]
 pub struct TranscriptionRequest {
-    pub audio_path: PathBuf,
+    /// In-memory f32 samples (16kHz mono, already preprocessed).
+    pub samples: Vec<f32>,
     pub language: Option<String>,
     pub model_name: Option<String>,
     pub initial_prompt: Option<String>,
-    pub denoise_mode: String,
-    pub vad_enabled: bool,
-    pub cloud_config: Option<crate::commands::settings::CloudSttConfig>,
 }
 
 impl TranscriptionRequest {
-    pub fn new(audio_path: impl Into<PathBuf>) -> Self {
+    pub fn new(samples: Vec<f32>) -> Self {
         Self {
-            audio_path: audio_path.into(),
+            samples,
             language: None,
             model_name: None,
             initial_prompt: None,
-            denoise_mode: "auto".to_string(),
-            vad_enabled: true,
-            cloud_config: None,
         }
     }
 
@@ -102,21 +100,6 @@ impl TranscriptionRequest {
 
     pub fn with_prompt(mut self, prompt: impl Into<String>) -> Self {
         self.initial_prompt = Some(prompt.into());
-        self
-    }
-
-    pub fn with_denoise_mode(mut self, mode: impl Into<String>) -> Self {
-        self.denoise_mode = mode.into();
-        self
-    }
-
-    pub fn with_vad_enabled(mut self, enabled: bool) -> Self {
-        self.vad_enabled = enabled;
-        self
-    }
-
-    pub fn with_cloud_config(mut self, config: crate::commands::settings::CloudSttConfig) -> Self {
-        self.cloud_config = Some(config);
         self
     }
 }
@@ -183,71 +166,39 @@ pub struct PartialResult {
 /// Callback type for receiving partial transcription results
 pub type PartialResultCallback = Arc<dyn Fn(PartialResult) + Send + Sync>;
 
-/// Streaming STT engine trait for cloud engines with streaming-only lifecycle.
+/// Consumer of PCM audio chunks during a recording session.
 ///
-/// This trait defines the lifecycle for streaming speech-to-text engines:
-/// - `start()` initializes the streaming session
-/// - `send_chunk()` sends audio chunks as they become available
-/// - `finish()` finalizes the session and returns the complete transcription
+/// This is the unified abstraction for the recording pipeline's downstream
+/// STT processing. Two implementations exist with fundamentally different
+/// semantics:
 ///
-/// # Usage Example
+/// - **`BufferingConsumer`** (local models): `send_chunk` buffers PCM in memory;
+///   `finish` batch-transcribes via `UnifiedEngineManager`. No partial results.
 ///
-/// ```ignore
-/// let mut engine = MyStreamingEngine::new(config);
-/// engine.set_partial_callback(|result| {
-///     println!("Partial: {}", result.text);
-/// });
+/// - **`StreamingConsumer`** (cloud STT): `send_chunk` forwards PCM to a live
+///   WebSocket; `finish` signals end-of-stream and awaits the final result.
+///   Partial results arrive via the callback set before the first `send_chunk`.
 ///
-/// engine.start().await?;
-/// for chunk in audio_chunks {
-///     engine.send_chunk(chunk).await?;
-/// }
-/// let final_text = engine.finish().await?;
+/// # Lifecycle
+///
+/// ```text
+/// 1. Create consumer (connect is implicit for streaming)
+/// 2. [optional] set_partial_callback (streaming only)
+/// 3. send_chunk × N   (per audio chunk from recorder)
+/// 4. finish()          (recording stopped → final transcription)
 /// ```
 #[async_trait]
-pub trait StreamingSttEngine: Send + Sync {
-    /// Initialize and start the streaming session.
-    ///
-    /// Returns `Ok(())` if the session was started successfully,
-    /// or an error string if initialization failed.
-    async fn start(&mut self) -> Result<(), String>;
-
-    /// Send an audio chunk to the streaming engine.
-    ///
-    /// The `pcm_data` should contain 16-bit signed PCM audio samples.
-    /// Returns `Ok(())` if the chunk was sent successfully.
+pub trait RecordingConsumer: Send + Sync {
+    /// Feed one audio chunk (16-bit PCM, 16kHz mono) into the consumer.
     async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String>;
 
-    /// Finish the streaming session and get the final transcription.
-    ///
-    /// This signals the end of audio input and returns the complete
-    /// transcribed text. Returns `Ok(text)` on success or an error string.
+    /// Signal end-of-recording and obtain the final transcription text.
     async fn finish(&self) -> Result<String, String>;
 
-    /// Set the callback for receiving partial transcription results.
+    /// Register a callback for partial transcription results.
     ///
-    /// The callback will be invoked whenever a partial result is available
-    /// during streaming.
-    fn set_partial_callback(&mut self, callback: PartialResultCallback);
-
-    /// Get the audio sender channel for this streaming session.
-    ///
-    /// Returns `Some(Sender)` if the engine supports external audio feeding,
-    /// or `None` if the engine manages audio internally.
-    async fn get_audio_sender(&self) -> Option<mpsc::Sender<Vec<i16>>>;
-}
-
-/// STT engine unified interface
-#[allow(async_fn_in_trait)]
-pub trait SttEngine: Send + Sync {
-    /// Engine type
-    fn engine_type(&self) -> EngineType;
-
-    /// Async transcription
-    async fn transcribe(
-        &self,
-        request: TranscriptionRequest,
-    ) -> Result<TranscriptionResult, String>;
+    /// Only meaningful for streaming consumers; buffering consumers ignore this.
+    fn set_partial_callback(&mut self, _callback: PartialResultCallback) {}
 }
 
 #[cfg(test)]
@@ -256,25 +207,22 @@ mod tests {
 
     #[test]
     fn test_transcription_request_new() {
-        let request = TranscriptionRequest::new("/path/to/audio.wav");
-        assert_eq!(request.audio_path, PathBuf::from("/path/to/audio.wav"));
+        let request = TranscriptionRequest::new(vec![0.0; 16000]);
+        assert_eq!(request.samples.len(), 16000);
         assert!(request.language.is_none());
         assert!(request.model_name.is_none());
         assert!(request.initial_prompt.is_none());
-        assert_eq!(request.denoise_mode, "auto");
-        assert!(request.vad_enabled);
-        assert!(request.cloud_config.is_none());
     }
 
     #[test]
     fn test_transcription_request_with_model() {
-        let request = TranscriptionRequest::new("/path/to/audio.wav").with_model("base");
+        let request = TranscriptionRequest::new(vec![]).with_model("base");
         assert_eq!(request.model_name, Some("base".to_string()));
     }
 
     #[test]
     fn test_transcription_request_with_language() {
-        let request = TranscriptionRequest::new("/path/to/audio.wav").with_language("en");
+        let request = TranscriptionRequest::new(vec![]).with_language("en");
         assert_eq!(request.language, Some("en".to_string()));
     }
 

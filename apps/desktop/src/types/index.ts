@@ -15,4 +15,4 @@ export type PresetPosition =
   | "bottom-center"
   | "bottom-right";
 
-export type WhisperModel = "tiny" | "base" | "small" | "medium" | "large";
+export type LocalSttModel = "sense-voice-small" | "whisper-base" | "whisper-small";

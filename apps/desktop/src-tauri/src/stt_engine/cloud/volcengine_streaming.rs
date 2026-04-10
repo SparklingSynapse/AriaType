@@ -23,12 +23,8 @@ use tokio_tungstenite::{connect_async_tls_with_config, tungstenite::protocol::Me
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
-use async_trait::async_trait;
-
 use crate::commands::settings::CloudSttConfig;
-use crate::stt_engine::traits::{
-    PartialResult, PartialResultCallback, StreamingSttEngine, SttContext,
-};
+use crate::stt_engine::traits::{PartialResult, PartialResultCallback, SttContext};
 
 // Protocol constants
 const PROTOCOL_VERSION: u8 = 0b0001;
@@ -794,29 +790,6 @@ impl VolcengineStreamingClient {
             info!(provider = "volcengine", "connection_closed");
         }
         *self.rx.lock().await = None;
-    }
-}
-
-#[async_trait]
-impl StreamingSttEngine for VolcengineStreamingClient {
-    async fn start(&mut self) -> Result<(), String> {
-        self.connect().await
-    }
-
-    async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String> {
-        self.send_audio_async(pcm_data).await
-    }
-
-    async fn finish(&self) -> Result<String, String> {
-        VolcengineStreamingClient::finish(self).await
-    }
-
-    fn set_partial_callback(&mut self, callback: PartialResultCallback) {
-        self.on_partial = Some(callback);
-    }
-
-    async fn get_audio_sender(&self) -> Option<mpsc::Sender<Vec<i16>>> {
-        self.audio_tx.lock().await.clone()
     }
 }
 

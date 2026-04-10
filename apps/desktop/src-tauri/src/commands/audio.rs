@@ -1,8 +1,6 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use hound::WavReader;
 use parking_lot::Mutex as ParkingMutex;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -12,10 +10,9 @@ use crate::events::{
     EventName, RecordingStateEvent, TranscriptionCompleteEvent, TranscriptionPartialEvent,
 };
 use crate::state::app_state::AppState;
-use crate::state::unified_state::{AudioStorage, StreamingSttState};
+use crate::state::unified_state::StreamingSttState;
 use crate::stt_engine::cloud::StreamingSttClient;
-use crate::stt_engine::traits::StreamingSttEngine;
-use crate::utils::AppPaths;
+use crate::stt_engine::traits::RecordingConsumer;
 
 // Audio activity thresholds (0-100 normalized scale)
 // ON: ~-36 dB, above typical office noise
@@ -88,11 +85,7 @@ pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
         .as_millis() as u64;
     state.recording_start_time.store(start_ms, Ordering::SeqCst);
 
-    if cloud_stt_enabled {
-        start_streaming_recording(&app, task_id, cloud_stt_config, language)?;
-    } else {
-        start_chunked_recording(&app, task_id)?;
-    }
+    start_unified_recording(&app, task_id, cloud_stt_enabled, cloud_stt_config, language)?;
 
     if let Some(tx) = state.level_monitor_tx.lock().as_ref() {
         let _ = tx.send(true);
@@ -112,9 +105,10 @@ pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
 
 /// Memory accumulation for cloud STT (volcengine).
 /// Audio is accumulated in memory and sent to API when recording stops.
-fn start_streaming_recording(
+fn start_unified_recording(
     app: &AppHandle,
     task_id: u64,
+    cloud_stt_enabled: bool,
     config: crate::commands::settings::CloudSttConfig,
     language: String,
 ) -> Result<(), String> {
@@ -124,9 +118,8 @@ fn start_streaming_recording(
         settings.audio_device.clone()
     };
 
-    let (denoise_enabled, vad_enabled, stt_context) = {
+    let (denoise_mode, vad_enabled, stt_context) = {
         let settings = state.settings.lock();
-        let denoise = matches!(settings.denoise_mode.as_str(), "on" | "auto");
         let ctx = crate::stt_engine::traits::SttContext {
             domain: {
                 let d = settings.stt_engine_work_domain.trim().to_string();
@@ -154,7 +147,7 @@ fn start_streaming_recording(
             },
             ..Default::default()
         };
-        (denoise, settings.vad_enabled, ctx)
+        (settings.denoise_mode.clone(), settings.vad_enabled, ctx)
     };
 
     let (app_tx, mut app_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(100);
@@ -165,8 +158,6 @@ fn start_streaming_recording(
         task_id,
         streaming_task: Arc::new(ParkingMutex::new(None)),
     });
-
-    *state.audio_storage.lock() = Some(AudioStorage::Streaming);
 
     let device_name = if audio_device == "default" {
         None
@@ -183,9 +174,21 @@ fn start_streaming_recording(
     let sample_rate_clone = sample_rate.clone();
     let channels_clone = channels.clone();
 
+    let vad_model_path = state.engine_manager.vad_model_path();
+    let vad_model_exists = state.engine_manager.is_vad_model_downloaded();
+    let vad_path_arg = if vad_enabled && vad_model_exists {
+        Some(vad_model_path.as_path())
+    } else {
+        None
+    };
+
     let processor: Arc<ParkingMutex<crate::audio::stream_processor::StreamAudioProcessor>> =
         Arc::new(ParkingMutex::new(
-            crate::audio::stream_processor::StreamAudioProcessor::new(denoise_enabled, vad_enabled),
+            crate::audio::stream_processor::StreamAudioProcessor::new(
+                &denoise_mode,
+                vad_enabled,
+                vad_path_arg,
+            ),
         ));
 
     let (sr, ch) = {
@@ -240,103 +243,122 @@ fn start_streaming_recording(
 
     let app_clone = app.clone();
     let handle = tauri::async_runtime::spawn(async move {
-        let context_for_log = (
-            stt_context
-                .domain
-                .clone()
-                .unwrap_or_else(|| "none".to_owned()),
-            stt_context
-                .subdomain
-                .clone()
-                .unwrap_or_else(|| "none".to_owned()),
-            stt_context
-                .glossary
-                .clone()
-                .unwrap_or_else(|| "none".to_owned()),
-        );
-        let mut client = match StreamingSttClient::new(config, Some(&language), stt_context) {
-            Ok(c) => c,
-            Err(e) => {
-                error!(task_id, error = %e, "streaming_client_create_failed");
-                let _ = app_clone.emit(
-                    EventName::RECORDING_STATE_CHANGED,
-                    RecordingStateEvent {
-                        status: "error".to_string(),
-                        task_id,
-                    },
-                );
-                return;
-            }
-        };
-        let provider_name = client.provider_name();
-
-        let (domain, subdomain, glossary) = context_for_log;
-        info!(
-            task_id,
-            provider = %provider_name,
-            domain,
-            subdomain,
-            glossary,
-            "streaming_client_connected"
-        );
-
-        let app_event_clone = app_clone.clone();
-
-        client.set_partial_callback(Arc::new(move |result| {
-            if !result.is_final && !result.text.is_empty() {
-                let _ = app_event_clone.emit(
-                    EventName::TRANSCRIPTION_PARTIAL,
-                    TranscriptionPartialEvent {
-                        text: result.text,
-                        is_definite: result.is_definite,
-                        task_id,
-                    },
-                );
-            }
-        }));
-
-        if let Err(e) = client.connect().await {
-            error!(task_id, provider = %provider_name, error = %e, "streaming_client_connect_failed");
-            let _ = app_clone.emit(
-                EventName::RECORDING_STATE_CHANGED,
-                RecordingStateEvent {
-                    status: "error".to_string(),
-                    task_id,
-                },
+        let consumer: Box<dyn RecordingConsumer> = if cloud_stt_enabled {
+            let (domain, subdomain, glossary) = (
+                stt_context
+                    .domain
+                    .clone()
+                    .unwrap_or_else(|| "none".to_owned()),
+                stt_context
+                    .subdomain
+                    .clone()
+                    .unwrap_or_else(|| "none".to_owned()),
+                stt_context
+                    .glossary
+                    .clone()
+                    .unwrap_or_else(|| "none".to_owned()),
             );
-            return;
-        }
 
-        let audio_tx = match client.get_audio_sender().await {
-            Some(tx) => tx,
-            None => {
-                error!(task_id, "audio_sender_unavailable-streaming_client");
-                return;
+            let client =
+                match StreamingSttClient::new(config, Some(&language), stt_context) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        error!(task_id, error = %e, "streaming_client_create_failed");
+                        let _ = app_clone.emit(
+                            EventName::RECORDING_STATE_CHANGED,
+                            RecordingStateEvent {
+                                status: "error".to_string(),
+                                task_id,
+                            },
+                        );
+                        return;
+                    }
+                };
+            let provider_name = client.provider_name();
+            info!(task_id, provider = %provider_name, domain, subdomain, glossary, "streaming_client_created");
+
+            let app_event_clone = app_clone.clone();
+            let callback = Arc::new(move |result: crate::stt_engine::traits::PartialResult| {
+                if !result.is_final && !result.text.is_empty() {
+                    let _ = app_event_clone.emit(
+                        EventName::TRANSCRIPTION_PARTIAL,
+                        TranscriptionPartialEvent {
+                            text: result.text,
+                            is_definite: result.is_definite,
+                            task_id,
+                        },
+                    );
+                }
+            });
+
+            match crate::stt_engine::cloud::StreamingConsumer::new(client, callback).await {
+                Ok(consumer) => {
+                    info!(task_id, provider = %provider_name, "streaming_consumer_connected");
+                    Box::new(consumer) as Box<dyn RecordingConsumer>
+                }
+                Err(e) => {
+                    error!(task_id, provider = %provider_name, error = %e, "streaming_consumer_connect_failed");
+                    let _ = app_clone.emit(
+                        EventName::RECORDING_STATE_CHANGED,
+                        RecordingStateEvent {
+                            status: "error".to_string(),
+                            task_id,
+                        },
+                    );
+                    return;
+                }
             }
+        } else {
+            let state_inner = app_clone.state::<AppState>();
+            let (model_name, lang, initial_prompt) = {
+                let settings = state_inner.settings.lock();
+                (
+                    settings.model.clone(),
+                    settings.stt_engine_language.clone(),
+                    settings.stt_engine_initial_prompt.clone(),
+                )
+            };
+
+            let (_resolved_engine_type, resolved_model_name) = state_inner
+                .engine_manager
+                .resolve_available_model(&model_name, &lang);
+
+            if resolved_model_name != model_name {
+                info!(
+                    requested = %model_name,
+                    resolved = %resolved_model_name,
+                    "model_fallback_applied"
+                );
+                let _ = app_clone.emit(
+                    EventName::MODEL_RESOLVED,
+                    crate::events::ModelResolvedEvent {
+                        requested: model_name.clone(),
+                        resolved: resolved_model_name.clone(),
+                    },
+                );
+            }
+
+            let engine = crate::stt_engine::buffering_engine::BufferingConsumer::new(
+                state_inner.engine_manager.clone(),
+                resolved_model_name,
+                lang,
+                Some(initial_prompt),
+                stt_context,
+            );
+
+            Box::new(engine) as Box<dyn RecordingConsumer>
         };
 
-        // Forward chunks
         let mut chunks_sent = 0;
         while let Some(chunk) = app_rx.recv().await {
-            if let Err(e) = audio_tx.send(chunk).await {
-                error!(task_id, provider = %provider_name, error = %e, "audio_chunk_send_failed-streaming");
+            if let Err(e) = consumer.send_chunk(chunk).await {
+                error!(task_id, error = %e, "audio_chunk_send_failed");
                 break;
             }
             chunks_sent += 1;
-            info!(task_id, provider = %provider_name, chunk_index = chunks_sent, "audio_chunk_sent-streaming");
         }
-        info!(
-            task_id,
-            total_chunks = chunks_sent,
-            "audio_chunks_sent_all-awaiting_final"
-        );
+        info!(task_id, total_chunks = chunks_sent, "audio_chunks_all_sent");
 
-        // The client's internal audio sender task only exits after every clone of
-        // its mpsc sender is dropped. This forwarder owns one clone, so release it
-        // before calling finish() or finish() will wait on itself forever.
-        drop(audio_tx);
-
-        // When app_rx is closed (recording stopped), we call finish()
         let _ = app_clone.emit(
             EventName::RECORDING_STATE_CHANGED,
             RecordingStateEvent {
@@ -345,8 +367,10 @@ fn start_streaming_recording(
             },
         );
 
-        debug!(task_id, "streaming_client_finish_invoked");
-        match client.finish().await {
+        debug!(task_id, "consumer_finish_invoked");
+        let text_result: Result<String, String> = consumer.finish().await;
+
+        match text_result {
             Ok(text) => {
                 let raw_text = text.clone();
                 let state = app_clone.state::<AppState>();
@@ -359,8 +383,9 @@ fn start_streaming_recording(
                 info!(
                     task_id,
                     text_len = final_text.len(),
-                    "transcription_final_received-streaming"
+                    "transcription_final_received"
                 );
+
                 if !final_text.is_empty() {
                     save_to_history(
                         &state,
@@ -400,12 +425,11 @@ fn start_streaming_recording(
                         },
                     );
                 }
-
                 let _ = state.finish_session(task_id);
             }
             Err(e) => {
                 let state = app_clone.state::<AppState>();
-                error!(task_id, error = %e, "streaming_stt_finish_failed");
+                error!(task_id, error = %e, "stt_finish_failed");
                 let _ = app_clone.emit(
                     EventName::RECORDING_STATE_CHANGED,
                     RecordingStateEvent {
@@ -426,63 +450,8 @@ fn start_streaming_recording(
         task_id,
         sample_rate = sr,
         channels = ch,
-        "recording_started-cloud_streaming"
-    );
-    Ok(())
-}
-
-/// Memory accumulation for local STT engines (Whisper, SenseVoice).
-/// Audio is accumulated in memory and transcribed as a whole when recording stops.
-fn start_chunked_recording(app: &AppHandle, task_id: u64) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let audio_device = {
-        let settings = state.settings.lock();
-        settings.audio_device.clone()
-    };
-
-    let samples: Arc<ParkingMutex<Vec<i16>>> = Arc::new(ParkingMutex::new(Vec::new()));
-    let sample_rate: Arc<ParkingMutex<u32>> = Arc::new(ParkingMutex::new(0));
-    let channels: Arc<ParkingMutex<u16>> = Arc::new(ParkingMutex::new(0));
-
-    *state.audio_storage.lock() = Some(AudioStorage::Local {
-        samples: samples.clone(),
-        sample_rate: sample_rate.clone(),
-        channels: channels.clone(),
-    });
-
-    let device_name = if audio_device == "default" {
-        None
-    } else {
-        Some(audio_device)
-    };
-
-    let samples_clone = samples.clone();
-    let sample_rate_clone = sample_rate.clone();
-    let channels_clone = channels.clone();
-
-    let (sr, ch) = {
-        let recorder = state.recorder.lock();
-        recorder
-            .start_streaming(device_name, move |pcm, sr, ch| {
-                samples_clone.lock().extend_from_slice(pcm);
-                if *sample_rate_clone.lock() == 0 {
-                    *sample_rate_clone.lock() = sr;
-                    *channels_clone.lock() = ch;
-                }
-            })
-            .map_err(|e| {
-                error!(error = %e, "recorder_start_failed-local");
-                state.is_recording.store(false, Ordering::SeqCst);
-                crate::commands::window::update_pill_visibility(app);
-                e.to_string()
-            })?
-    };
-
-    info!(
-        task_id,
-        sample_rate = sr,
-        channels = ch,
-        "recording_started-local_memory"
+        cloud = cloud_stt_enabled,
+        "recording_started-unified"
     );
     Ok(())
 }
@@ -518,17 +487,6 @@ pub fn stop_recording_sync(app: AppHandle) -> Result<Option<String>, String> {
     }
 
     let task_id = state.task_counter.load(Ordering::SeqCst);
-    let audio_storage = state.audio_storage.lock().take();
-
-    let (cloud_stt_enabled, cloud_stt_config, language) = {
-        let settings = state.settings.lock();
-        (
-            #[allow(deprecated)]
-            settings.is_volcengine_streaming_active(),
-            settings.get_active_cloud_stt_config(),
-            settings.stt_engine_language.clone(),
-        )
-    };
 
     state.is_recording.store(false, Ordering::SeqCst);
 
@@ -548,61 +506,14 @@ pub fn stop_recording_sync(app: AppHandle) -> Result<Option<String>, String> {
         }
     }
 
-    match audio_storage {
-        Some(AudioStorage::Local {
-            samples,
-            sample_rate,
-            channels,
-        }) => {
-            let s = samples.lock().clone();
-            let sr = *sample_rate.lock();
-            let ch = *channels.lock();
-
-            if cloud_stt_enabled {
-                finish_cloud_stt_recording(&app, task_id, s, sr, ch, cloud_stt_config, language)?;
-            } else {
-                finish_local_recording(&app, task_id, s, sr, ch)?;
-            }
-            Ok(None)
+    let streaming_state = state.streaming_stt.lock().take();
+    if let Some(stt) = streaming_state {
+        info!(task_id, "stt_stopping-awaiting_final");
+        if let Some(handle) = stt.streaming_task.lock().take() {
+            await_streaming_task_in_background(task_id, handle);
         }
-        Some(AudioStorage::Streaming) => {
-            let streaming_state = state.streaming_stt.lock().take();
-            if let Some(stt) = streaming_state {
-                info!(task_id, "streaming_stt_stopping-awaiting_final");
-                if let Some(handle) = stt.streaming_task.lock().take() {
-                    await_streaming_task_in_background(task_id, handle);
-                }
-                drop(stt);
-            }
-            Ok(None)
-        }
-        None => {
-            warn!(task_id, "audio_storage_missing-recording_interrupted");
-            let _ = app.emit(
-                EventName::RECORDING_STATE_CHANGED,
-                RecordingStateEvent {
-                    status: "idle".to_string(),
-                    task_id,
-                },
-            );
-            Ok(None)
-        }
-    }
-}
-
-/// Finalize local STT recording - write accumulated audio to WAV and transcribe.
-#[instrument(skip(app, samples), fields(task_id))]
-fn finish_local_recording(
-    app: &AppHandle,
-    task_id: u64,
-    samples: Vec<i16>,
-    sample_rate: u32,
-    channels: u16,
-) -> Result<(), String> {
-    let state = app.state::<AppState>();
-
-    if samples.is_empty() {
-        warn!(task_id, "audio_samples_empty-local");
+    } else {
+        warn!(task_id, "streaming_state_missing-recording_interrupted");
         let _ = app.emit(
             EventName::RECORDING_STATE_CHANGED,
             RecordingStateEvent {
@@ -610,67 +521,9 @@ fn finish_local_recording(
                 task_id,
             },
         );
-        return Ok(());
     }
 
-    info!(
-        task_id,
-        samples = samples.len(),
-        sample_rate,
-        channels,
-        "recording_finalizing-local"
-    );
-
-    let _ = app.emit(
-        EventName::RECORDING_STATE_CHANGED,
-        RecordingStateEvent {
-            status: "transcribing".to_string(),
-            task_id,
-        },
-    );
-
-    let app_dir = AppPaths::recordings_dir();
-    std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
-
-    let filename = format!("recording_{}.wav", uuid::Uuid::new_v4());
-    let output_path = app_dir.join(&filename);
-
-    let spec = hound::WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    {
-        let mut writer = hound::WavWriter::create(&output_path, spec)
-            .map_err(|e| format!("Failed to create WAV file: {}", e))?;
-        for sample in &samples {
-            writer
-                .write_sample(*sample)
-                .map_err(|e| format!("Failed to write sample: {}", e))?;
-        }
-        writer
-            .finalize()
-            .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
-    }
-
-    info!(task_id, path = %output_path.display(), "wav_written-local_transcription_starting");
-
-    let job = crate::state::unified_state::TranscriptionJob {
-        audio_path: output_path.to_string_lossy().to_string(),
-        timestamp: std::time::SystemTime::now(),
-        task_id,
-    };
-
-    *state.output_path.lock() = Some(output_path.to_string_lossy().to_string());
-
-    let app_clone = app.clone();
-    tauri::async_runtime::spawn(async move {
-        run_transcription(app_clone, job.audio_path, task_id).await;
-    });
-
-    Ok(())
+    Ok(None)
 }
 
 async fn run_local_polish(
@@ -958,603 +811,6 @@ async fn maybe_polish_transcription_text(
     .await
 }
 
-/// Finalize cloud STT recording - write accumulated audio to WAV and send to volcengine API.
-#[instrument(skip(app, samples), fields(task_id))]
-fn finish_cloud_stt_recording(
-    app: &AppHandle,
-    task_id: u64,
-    samples: Vec<i16>,
-    sample_rate: u32,
-    channels: u16,
-    config: crate::commands::settings::CloudSttConfig,
-    language: String,
-) -> Result<(), String> {
-    let state = app.state::<AppState>();
-
-    if samples.is_empty() {
-        warn!(task_id, "audio_samples_empty-local");
-        let _ = app.emit(
-            EventName::RECORDING_STATE_CHANGED,
-            RecordingStateEvent {
-                status: "idle".to_string(),
-                task_id,
-            },
-        );
-        return Ok(());
-    }
-
-    info!(
-        task_id,
-        samples = samples.len(),
-        sample_rate,
-        channels,
-        "recording_finalizing-cloud"
-    );
-
-    let _ = app.emit(
-        EventName::RECORDING_STATE_CHANGED,
-        RecordingStateEvent {
-            status: "transcribing".to_string(),
-            task_id,
-        },
-    );
-
-    let app_dir = AppPaths::recordings_dir();
-    std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
-
-    let filename = format!("recording_{}.wav", uuid::Uuid::new_v4());
-    let output_path = app_dir.join(&filename);
-
-    let spec = hound::WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    {
-        let mut writer = hound::WavWriter::create(&output_path, spec)
-            .map_err(|e| format!("Failed to create WAV file: {}", e))?;
-        for sample in &samples {
-            writer
-                .write_sample(*sample)
-                .map_err(|e| format!("Failed to write sample: {}", e))?;
-        }
-        writer
-            .finalize()
-            .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
-    }
-
-    info!(task_id, path = %output_path.display(), "wav_written-cloud_transcription_starting");
-
-    *state.output_path.lock() = Some(output_path.to_string_lossy().to_string());
-
-    let audio_path = output_path.to_string_lossy().to_string();
-    let app_clone = app.clone();
-
-    tauri::async_runtime::spawn(async move {
-        let result = run_cloud_transcription_with_streaming(
-            &app_clone,
-            &audio_path,
-            task_id,
-            config,
-            language,
-        )
-        .await;
-
-        match result {
-            Ok(text) if !text.is_empty() => {
-                let raw_text = text.clone();
-                let state = app_clone.state::<AppState>();
-                let (final_text, polish_time_ms) =
-                    maybe_polish_transcription_text(Some(&app_clone), &state, task_id, text).await;
-
-                save_to_history(
-                    &state,
-                    &raw_text,
-                    &final_text,
-                    None,
-                    if polish_time_ms > 0 {
-                        Some(polish_time_ms as i64)
-                    } else {
-                        None
-                    },
-                    polish_time_ms > 0,
-                );
-
-                let _ = app_clone.emit(
-                    EventName::TRANSCRIPTION_COMPLETE,
-                    TranscriptionCompleteEvent {
-                        text: final_text.clone(),
-                        task_id,
-                    },
-                );
-
-                let _ = app_clone.emit(
-                    EventName::RECORDING_STATE_CHANGED,
-                    RecordingStateEvent {
-                        status: "idle".to_string(),
-                        task_id,
-                    },
-                );
-
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                let _ = crate::commands::text::do_insert_text(app_clone.clone(), final_text).await;
-                let _ = state.finish_session(task_id);
-            }
-            Ok(_) => {
-                let state = app_clone.state::<AppState>();
-                let _ = app_clone.emit(
-                    EventName::RECORDING_STATE_CHANGED,
-                    RecordingStateEvent {
-                        status: "idle".to_string(),
-                        task_id,
-                    },
-                );
-                let _ = state.finish_session(task_id);
-            }
-            Err(e) => {
-                let state = app_clone.state::<AppState>();
-                error!(task_id, error = %e, "transcription_failed-cloud");
-                let _ = app_clone.emit(
-                    EventName::RECORDING_STATE_CHANGED,
-                    RecordingStateEvent {
-                        status: "idle".to_string(),
-                        task_id,
-                    },
-                );
-                let _ = state.finish_session(task_id);
-            }
-        }
-    });
-
-    Ok(())
-}
-
-/// Run cloud STT transcription using streaming API
-async fn run_cloud_transcription_with_streaming(
-    app: &AppHandle,
-    audio_path: &str,
-    task_id: u64,
-    config: crate::commands::settings::CloudSttConfig,
-    language: String,
-) -> Result<String, String> {
-    let stt_context = {
-        let state = app.state::<AppState>();
-        let settings = state.settings.lock();
-        crate::stt_engine::traits::SttContext {
-            domain: {
-                let d = settings.stt_engine_work_domain.trim().to_string();
-                if d.is_empty() {
-                    None
-                } else {
-                    Some(d)
-                }
-            },
-            subdomain: {
-                let s = settings.stt_engine_work_subdomain.trim().to_string();
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            },
-            glossary: {
-                let g = settings.stt_engine_user_glossary.trim().to_string();
-                if g.is_empty() {
-                    None
-                } else {
-                    Some(g)
-                }
-            },
-            ..Default::default()
-        }
-    };
-
-    let mut client = StreamingSttClient::new(config, Some(&language), stt_context)?;
-
-    let app_clone = app.clone();
-    client.set_partial_callback(Arc::new(move |result| {
-        if !result.is_final && !result.text.is_empty() {
-            let _ = app_clone.emit(
-                EventName::TRANSCRIPTION_PARTIAL,
-                TranscriptionPartialEvent {
-                    text: result.text,
-                    is_definite: result.is_definite,
-                    task_id,
-                },
-            );
-        }
-    }));
-
-    client.connect().await?;
-
-    let audio_tx = client
-        .get_audio_sender()
-        .await
-        .ok_or("Failed to get audio sender")?;
-
-    let reader = hound::WavReader::open(audio_path)
-        .map_err(|e| format!("Failed to read WAV file: {}", e))?;
-    let spec = reader.spec();
-    let input_sample_rate = spec.sample_rate;
-    let input_channels = spec.channels;
-
-    let samples_i16: Vec<i16> = reader
-        .into_samples::<i16>()
-        .filter_map(|s| s.ok())
-        .collect();
-
-    let samples_16khz_mono: Vec<i16> = {
-        let mut audio_f32: Vec<f32> = samples_i16.iter().map(|&s| s as f32 / 32768.0).collect();
-
-        if input_channels == 2 {
-            let mono: Vec<f32> = audio_f32
-                .chunks(2)
-                .map(|stereo| (stereo[0] + stereo.get(1).copied().unwrap_or(0.0)) / 2.0)
-                .collect();
-            audio_f32 = mono;
-        }
-
-        if input_sample_rate != 16000 {
-            let resampled =
-                crate::audio::resampler::resample_to_16khz(&audio_f32, input_sample_rate)
-                    .map_err(|e| format!("Resampling failed: {}", e))?;
-            resampled
-                .iter()
-                .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)
-                .collect()
-        } else {
-            audio_f32
-                .iter()
-                .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)
-                .collect()
-        }
-    };
-
-    const CHUNK_SIZE: usize = 3200;
-    for chunk in samples_16khz_mono.chunks(CHUNK_SIZE) {
-        audio_tx
-            .send(chunk.to_vec())
-            .await
-            .map_err(|e| format!("Failed to send audio chunk: {}", e))?;
-    }
-
-    drop(audio_tx);
-
-    client.finish().await
-}
-
-#[allow(dead_code)]
-/// Process transcription queue in FIFO order
-fn process_transcription_queue(app: AppHandle) {
-    let state = app.state::<AppState>();
-
-    // Check if already processing
-    let current_count = state.processing_count.load(Ordering::SeqCst);
-    if current_count > 0 {
-        debug!(
-            jobs = current_count,
-            "transcription_queue_processor_running"
-        );
-        return;
-    }
-
-    // Get next job from queue
-    let job = {
-        let mut queue = state.transcription_queue.lock();
-        queue.pop_front()
-    };
-
-    if let Some(job) = job {
-        state.processing_count.fetch_add(1, Ordering::SeqCst);
-        state.is_transcribing.store(true, Ordering::SeqCst);
-
-        // Emit processing state; frontend will filter by task_id
-        info!(task_id = job.task_id, "transcription_processing_started");
-        let _ = app.emit(
-            EventName::RECORDING_STATE_CHANGED,
-            RecordingStateEvent {
-                status: "processing".to_string(),
-                task_id: job.task_id,
-            },
-        );
-
-        let app_clone = app.clone();
-        let job_task_id = job.task_id;
-        tauri::async_runtime::spawn(async move {
-            run_transcription(app_clone.clone(), job.audio_path, job_task_id).await;
-
-            // Decrement counter
-            let state = app_clone.state::<AppState>();
-            state.processing_count.fetch_sub(1, Ordering::SeqCst);
-            state.is_transcribing.store(false, Ordering::SeqCst);
-
-            // Process next job in queue
-            process_transcription_queue(app_clone);
-        });
-    } else {
-        debug!("transcription_queue_empty");
-    }
-}
-
-#[instrument(skip(app), fields(task_id, audio_path))]
-async fn run_transcription(app: AppHandle, audio_path: String, task_id: u64) {
-    let state = app.state::<AppState>();
-
-    // Log wav file information for debugging
-    log_wav_file_info(&audio_path, task_id);
-
-    let (
-        mut model_name,
-        language,
-        initial_prompt,
-        domain,
-        subdomain,
-        glossary,
-        denoise_mode,
-        vad_enabled,
-        cloud_config,
-    ) = {
-        let settings = state.settings.lock();
-        debug!(task_id, model = %settings.model, language = %settings.stt_engine_language, "transcription_settings");
-        debug!(task_id, domain = %settings.stt_engine_work_domain, subdomain = %settings.stt_engine_work_subdomain, glossary_len = settings.stt_engine_user_glossary.len(), "domain_glossary_settings");
-        (
-            settings.model.clone(),
-            settings.stt_engine_language.clone(),
-            settings.stt_engine_initial_prompt.clone(),
-            settings.stt_engine_work_domain.clone(),
-            settings.stt_engine_work_subdomain.clone(),
-            settings.stt_engine_user_glossary.clone(),
-            settings.denoise_mode.clone(),
-            settings.vad_enabled,
-            settings.get_active_cloud_stt_config(),
-        )
-    };
-
-    if cloud_config.enabled {
-        model_name = "cloud".to_string();
-    }
-
-    // Auto-detect engine type from model name (more reliable than settings.stt_engine)
-    let engine_type =
-        match crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name) {
-            Some(et) => et,
-            None => {
-                error!(task_id, model = %model_name, "model_unknown-engine_undetermined");
-                let _ = app.emit(
-                    EventName::TRANSCRIPTION_ERROR,
-                    &format!("Unknown model: {}", model_name),
-                );
-                let _ = app.emit(
-                    EventName::RECORDING_STATE_CHANGED,
-                    RecordingStateEvent {
-                        status: "error".to_string(),
-                        task_id,
-                    },
-                );
-                state.is_transcribing.store(false, Ordering::SeqCst);
-                return;
-            }
-        };
-
-    debug!(task_id, engine = ?engine_type, model = %model_name, "engine_detected-from_model");
-
-    // Check if model is downloaded using engine manager
-    if !state
-        .engine_manager
-        .is_model_downloaded(engine_type, &model_name)
-    {
-        let msg = format!(
-            "Model '{}' not downloaded. Please download it in Settings > Model.",
-            model_name
-        );
-        warn!(task_id, model = %model_name, engine = ?engine_type, "model_not_downloaded");
-        let _ = app.emit(EventName::TRANSCRIPTION_ERROR, &msg);
-        let _ = app.emit(
-            EventName::RECORDING_STATE_CHANGED,
-            RecordingStateEvent {
-                status: "error".to_string(),
-                task_id,
-            },
-        );
-
-        let app_error = app.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(3));
-            let state = app_error.state::<AppState>();
-            let next_status = if state.is_recording.load(Ordering::SeqCst) {
-                "recording"
-            } else {
-                "idle"
-            };
-            let _ = app_error.emit(
-                EventName::RECORDING_STATE_CHANGED,
-                RecordingStateEvent {
-                    status: next_status.to_string(),
-                    task_id,
-                },
-            );
-        });
-        state.is_transcribing.store(false, Ordering::SeqCst);
-        return;
-    }
-
-    // Build transcription request
-    let prompt =
-        build_stt_engine_prompt(&initial_prompt, &language, &domain, &subdomain, &glossary);
-    let mut request = crate::stt_engine::TranscriptionRequest::new(audio_path.clone())
-        .with_model(model_name.clone())
-        .with_language(language.clone())
-        .with_denoise_mode(denoise_mode)
-        .with_vad_enabled(vad_enabled)
-        .with_cloud_config(cloud_config);
-    if let Some(p) = prompt {
-        request = request.with_prompt(p);
-    }
-
-    // Execute transcription using engine manager
-    let result = state.engine_manager.transcribe(engine_type, request).await;
-
-    let (text, mut metrics) = match result {
-        Ok(result) => (
-            result.text,
-            crate::events::TranscriptionMetrics {
-                load_time_ms: result.model_load_ms.unwrap_or(0),
-                preprocess_time_ms: result.preprocess_ms.unwrap_or(0),
-                inference_time_ms: result.inference_ms.unwrap_or(0),
-                polish_time_ms: 0,
-                total_time_ms: result.total_ms,
-            },
-        ),
-        Err(e) => {
-            error!(task_id, error = %e, "transcription_failed");
-            let _ = app.emit(EventName::TRANSCRIPTION_ERROR, &e);
-            let _ = app.emit(
-                EventName::RECORDING_STATE_CHANGED,
-                RecordingStateEvent {
-                    status: "error".to_string(),
-                    task_id,
-                },
-            );
-            state.is_transcribing.store(false, Ordering::SeqCst);
-            let _ = std::fs::remove_file(&audio_path);
-            return;
-        }
-    };
-
-    state.is_transcribing.store(false, Ordering::SeqCst);
-    let _ = std::fs::remove_file(&audio_path);
-
-    if !text.is_empty() {
-        info!(task_id, chars = text.len(), "chunk_transcribed");
-
-        // Append text to session state for accumulation
-        state.append_session_text(task_id, &text);
-
-        // Check if this is the last chunk
-        let has_more = !state.transcription_queue.lock().is_empty();
-        let is_still_recording = state.is_recording.load(Ordering::SeqCst);
-        let is_last_chunk = !has_more && !is_still_recording;
-
-        if is_last_chunk {
-            // This is the last chunk - get accumulated text and do final polish
-            let (accumulated_text, chunk_count) =
-                state.get_session_text(task_id).unwrap_or((text.clone(), 1));
-
-            info!(
-                task_id,
-                chars = accumulated_text.len(),
-                chunks = chunk_count,
-                "session_complete-polish_starting"
-            );
-
-            let raw_text = accumulated_text.clone();
-            let (final_text, polish_time_ms) =
-                maybe_polish_transcription_text(Some(&app), &state, task_id, accumulated_text)
-                    .await;
-            metrics.polish_time_ms = polish_time_ms;
-            metrics.total_time_ms += polish_time_ms;
-            let _ = app.emit(EventName::TRANSCRIPTION_METRICS, &metrics);
-            info!(
-                task_id,
-                load_ms = metrics.load_time_ms,
-                preprocess_ms = metrics.preprocess_time_ms,
-                inference_ms = metrics.inference_time_ms,
-                polish_ms = metrics.polish_time_ms,
-                total_ms = metrics.total_time_ms,
-                "transcription_metrics"
-            );
-
-            save_to_history(
-                &state,
-                &raw_text,
-                &final_text,
-                Some(metrics.total_time_ms as i64),
-                if polish_time_ms > 0 {
-                    Some(polish_time_ms as i64)
-                } else {
-                    None
-                },
-                polish_time_ms > 0,
-            );
-
-            let _ = app.emit(
-                EventName::TRANSCRIPTION_COMPLETE,
-                TranscriptionCompleteEvent {
-                    text: final_text.clone(),
-                    task_id,
-                },
-            );
-
-            let _ = app.emit(
-                EventName::RECORDING_STATE_CHANGED,
-                RecordingStateEvent {
-                    status: "idle".to_string(),
-                    task_id,
-                },
-            );
-
-            let _ = state.finish_session(task_id);
-
-            let app_clone = app.clone();
-            let text_clone = final_text.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                crate::commands::text::do_insert_text(app_clone, text_clone).await;
-            });
-        } else {
-            // Intermediate chunk - just update status, don't inject yet
-            debug!(
-                task_id,
-                has_more, is_still_recording, "chunk_intermediate_processed"
-            );
-            let next = if has_more {
-                "processing"
-            } else if is_still_recording {
-                "recording"
-            } else {
-                "idle"
-            };
-            let _ = app.emit(
-                EventName::RECORDING_STATE_CHANGED,
-                RecordingStateEvent {
-                    status: next.to_string(),
-                    task_id,
-                },
-            );
-        }
-    } else {
-        let _ = app.emit(EventName::TRANSCRIPTION_METRICS, &metrics);
-        info!(
-            task_id,
-            load_ms = metrics.load_time_ms,
-            preprocess_ms = metrics.preprocess_time_ms,
-            inference_ms = metrics.inference_time_ms,
-            total_ms = metrics.total_time_ms,
-            "transcription metrics"
-        );
-
-        warn!(task_id, "transcription_empty_result");
-        let has_more = !state.transcription_queue.lock().is_empty();
-        let is_still_recording = state.is_recording.load(Ordering::SeqCst);
-        let next = if has_more {
-            "processing"
-        } else if is_still_recording {
-            "recording"
-        } else {
-            "idle"
-        };
-        let _ = app.emit(
-            EventName::RECORDING_STATE_CHANGED,
-            RecordingStateEvent {
-                status: next.to_string(),
-                task_id,
-            },
-        );
-    }
-}
-
 #[tauri::command]
 pub fn get_audio_level(state: State<'_, AppState>) -> u32 {
     state.audio_level.load(Ordering::SeqCst)
@@ -1706,171 +962,6 @@ pub fn start_audio_level_monitor(app: AppHandle) -> Result<(), String> {
         if effective_activity != last_activity {
             let _ = app.emit(EventName::AUDIO_ACTIVITY, effective_activity);
             last_activity = effective_activity;
-        }
-    }
-}
-
-fn build_stt_engine_prompt(
-    initial_prompt: &str,
-    language: &str,
-    domain: &str,
-    subdomain: &str,
-    glossary: &str,
-) -> Option<String> {
-    let mut parts: Vec<String> = Vec::new();
-
-    // Language-specific base prompt (most important for output language)
-    let lang_code = language.split('-').next().unwrap_or(language);
-    let base_prompt = get_language_base_prompt(lang_code);
-    if !base_prompt.is_empty() {
-        parts.push(base_prompt.to_string());
-    }
-
-    // User's custom initial_prompt (if provided, takes precedence)
-    if !initial_prompt.is_empty() {
-        parts.push(initial_prompt.to_string());
-    }
-
-    // Domain-specific prompt in target language
-    if domain != "general" {
-        let domain_prompt = get_domain_prompt(lang_code, domain, subdomain);
-        if !domain_prompt.is_empty() {
-            parts.push(domain_prompt);
-        }
-    }
-
-    // Glossary in target language format
-    if !glossary.is_empty() {
-        let glossary_formatted = format_glossary(lang_code, glossary);
-        parts.push(glossary_formatted);
-    }
-
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join("\n"))
-    }
-}
-
-fn get_language_base_prompt(lang: &str) -> &'static str {
-    match lang {
-        "zh" => "以下是普通话的句子，请用简体中文输出。",
-        "en" => "The following is an English sentence.",
-        "ja" => "以下は日本語の文章です。",
-        "ko" => "다음은 한국어 문장입니다.",
-        "fr" => "Voici une phrase en français.",
-        "de" => "Das ist ein deutscher Satz.",
-        "es" => "Esta es una oración en español.",
-        "ru" => "Это предложение на русском языке.",
-        "pt" => "Esta é uma frase em português.",
-        "it" => "Questa è una frase in italiano.",
-        _ => "",
-    }
-}
-
-fn get_domain_prompt(lang: &str, domain: &str, subdomain: &str) -> String {
-    if domain == "general" || domain.is_empty() {
-        return String::new();
-    }
-
-    match lang {
-        "zh" => {
-            if subdomain == "general" || subdomain.is_empty() {
-                format!(
-                    "请优先识别{}领域的专业术语和技术词汇。",
-                    get_domain_name_zh(domain)
-                )
-            } else {
-                format!(
-                    "请优先识别{}领域中{}相关的专业术语。",
-                    get_domain_name_zh(domain),
-                    subdomain
-                )
-            }
-        }
-        "en" => {
-            if subdomain == "general" || subdomain.is_empty() {
-                format!(
-                    "Prioritize recognition of {} terminology and technical terms.",
-                    get_domain_name_en(domain)
-                )
-            } else {
-                format!(
-                    "Prioritize recognition of {} terminology, focusing on {}.",
-                    get_domain_name_en(domain),
-                    subdomain
-                )
-            }
-        }
-        _ => {
-            if subdomain == "general" || subdomain.is_empty() {
-                format!(
-                    "Prioritize recognition of {} terminology and technical terms.",
-                    get_domain_name_en(domain)
-                )
-            } else {
-                format!(
-                    "Prioritize recognition of {} terminology, focusing on {}.",
-                    get_domain_name_en(domain),
-                    subdomain
-                )
-            }
-        }
-    }
-}
-
-fn get_domain_name_zh(domain: &str) -> String {
-    match domain {
-        "it" => "IT技术".to_string(),
-        "legal" => "法律".to_string(),
-        "medical" => "医学".to_string(),
-        "finance" => "金融".to_string(),
-        "education" => "教育".to_string(),
-        _ => domain.to_string(),
-    }
-}
-
-fn get_domain_name_en(domain: &str) -> String {
-    match domain {
-        "it" => "IT".to_string(),
-        "legal" => "legal".to_string(),
-        "medical" => "medical".to_string(),
-        "finance" => "finance".to_string(),
-        "education" => "education".to_string(),
-        _ => domain.to_string(),
-    }
-}
-
-fn format_glossary(lang: &str, glossary: &str) -> String {
-    match lang {
-        "zh" => format!("专业词汇：{}", glossary),
-        "ja" => format!("専門用語：{}", glossary),
-        "ko" => format!("전문 용어：{}", glossary),
-        "en" => format!("Terminology: {}", glossary),
-        _ => format!("Terminology: {}", glossary),
-    }
-}
-
-fn log_wav_file_info(audio_path: &str, task_id: u64) {
-    let path = PathBuf::from(audio_path);
-
-    let file_size = match std::fs::metadata(&path) {
-        Ok(meta) => meta.len(),
-        Err(e) => {
-            warn!(task_id, error = %e, path = %audio_path, "wav_file_size_failed");
-            return;
-        }
-    };
-
-    match WavReader::open(&path) {
-        Ok(reader) => {
-            let spec = reader.spec();
-            let duration_secs = reader.duration() as f64 / spec.sample_rate as f64;
-
-            info!(task_id, path = %audio_path, file_size_bytes = file_size, sample_rate = spec.sample_rate, channels = spec.channels, bits_per_sample = spec.bits_per_sample, duration_secs = duration_secs, "wav_file_info");
-        }
-        Err(e) => {
-            warn!(task_id, error = %e, path = %audio_path, "wav_file_read_failed");
         }
     }
 }

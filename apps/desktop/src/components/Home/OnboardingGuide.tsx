@@ -12,7 +12,6 @@ import {
   Shield,
   Zap,
   Eye,
-  Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
@@ -37,6 +36,13 @@ import practiceSvg from "@/assets/illustrations/onboarding/practice.png";
 import doneSvg from "@/assets/illustrations/onboarding/done.png";
 
 const DEFAULT_HOTKEY = "Shift+Space";
+
+const SENSEVOICE_PREFERRED_ONBOARDING = ["zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR", "en-US"];
+
+function isSenseVoicePreferred(lang: string | undefined): boolean {
+  if (!lang || lang === "auto") return false;
+  return SENSEVOICE_PREFERRED_ONBOARDING.some((l) => lang.startsWith(l.split("-")[0]));
+}
 
 const COMMON_LANGUAGES = [
   { code: "auto", label: "Auto" },
@@ -277,23 +283,15 @@ function ModelStep({
   onSelectModel: (modelName: string) => void;
   onModelReadyChange: (isReady: boolean) => void;
 }) {
-  const { t } = useTranslation();
   const [models, setModels] = useState<RecommendedModel[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
   const [autoDownloadStarted, setAutoDownloadStarted] = useState(false);
 
-  const DEFAULT_MODELS = ["base", "sense-voice-small-q4_k"];
-  const CJK_LANGUAGES = ["zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR"];
-
   const getRecommendedModelName = (lang: string): string => {
-    if (
-      lang &&
-      lang !== "auto" &&
-      CJK_LANGUAGES.some((l) => lang.startsWith(l))
-    ) {
-      return "sense-voice-small-q4_k";
+    if (isSenseVoicePreferred(lang)) {
+      return "sense-voice-small";
     }
-    return "base";
+    return "whisper-base";
   };
 
   const recommendedModelName = getRecommendedModelName(language);
@@ -322,8 +320,10 @@ function ModelStep({
             .recommendModelsByLanguage(language || "auto")
             .then(setModels)
             .catch((err: unknown) => logger.error("failed_to_refresh_models_after_download", { error: String(err) }));
-          const displayName =
-            modelName === "base" ? "Whisper Base" : "SenseVoice Small Q4";
+          const displayName = modelName === "sense-voice-small" ? "SenseVoice Small"
+            : modelName === "whisper-base" ? "Whisper Base"
+            : modelName === "whisper-small" ? "Whisper Small"
+            : modelName;
           await windowCommands.showToast(`${displayName} download complete`);
         },
       );
@@ -341,17 +341,16 @@ function ModelStep({
     setAutoDownloadStarted(true);
 
     const startDownloads = async () => {
-      for (const modelName of DEFAULT_MODELS) {
-        try {
-          const isDownloaded = await modelCommands.isModelDownloaded(modelName);
-          if (isDownloaded) {
-            setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
-          } else {
-            await modelCommands.downloadModel(modelName);
-          }
-        } catch (err) {
-          logger.error("failed_to_start_model_download", { modelName, error: String(err) });
+      const modelName = getRecommendedModelName(language || "auto");
+      try {
+        const isDownloaded = await modelCommands.isModelDownloaded(modelName);
+        if (isDownloaded) {
+          setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
+        } else {
+          await modelCommands.downloadModel(modelName);
         }
+      } catch (err) {
+        logger.error("failed_to_start_model_download", { modelName, error: String(err) });
       }
       modelCommands
         .recommendModelsByLanguage(language || "auto")
@@ -377,69 +376,35 @@ function ModelStep({
     }
   }, [selectedModel, models, progressMap, onModelReadyChange]);
 
-  const recommendedModel = models.find(
-    (m) => m.model_name === recommendedModelName,
-  );
-
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
       <img src={modelSvg} alt="Model" className="w-full max-w-[200px] max-h-[100px] object-contain" />
       <div className="space-y-3 w-full">
-        {DEFAULT_MODELS.map((modelName) => {
-          const modelInfo = models.find((m) => m.model_name === modelName);
-          const isRecommended = recommendedModel?.model_name === modelName;
-          const isSelected = selectedModel === modelName;
-          const progress = progressMap[modelName] || 0;
-          const isDownloaded = modelInfo?.downloaded ?? false;
-
-          const displayName =
-            modelName === "base"
-              ? "Whisper Base (74M)"
-              : "SenseVoice Small Q4 (244M)";
-          const accuracyScore = modelName === "base" ? 7 : 9;
-
-          return (
-            <div
-              key={modelName}
-              className={cn(
-                "flex items-center justify-between p-4 rounded-2xl border bg-card cursor-pointer transition-all",
-                isSelected
-                  ? "border-primary shadow-sm ring-1 ring-primary"
-                  : isRecommended && isDownloaded
-                    ? "border-primary/30 hover:bg-secondary/50"
-                    : "border-border hover:bg-secondary/50",
-              )}
-              onClick={() => onSelectModel(modelName)}
-            >
-              <div className="flex items-center gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">{displayName}</p>
-                    {isRecommended && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 rounded">
-                        <Star className="w-2.5 h-2.5 fill-current" />
-                        {t("onboarding.model.recommended")}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {modelName === "base" ? "74MB" : "244MB"} ·{" "}
-                    {t("model.available.accuracy")}: {accuracyScore}/10
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center">
-                {isDownloaded || progress === 100 ? null : (
-                  <CircularProgress
-                    progress={progress}
-                    size={18}
-                    strokeWidth={2}
-                  />
-                )}
-              </div>
+        <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
+          <div className="flex items-center gap-3">
+            <div>
+              <p className="text-sm font-medium">
+                {recommendedModelName === "sense-voice-small"
+                  ? "SenseVoice Small"
+                  : recommendedModelName === "whisper-base"
+                    ? "Whisper Base"
+                    : recommendedModelName}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {models.find((m) => m.model_name === recommendedModelName)?.size_mb ?? "..."}MB
+              </p>
             </div>
-          );
-        })}
+          </div>
+          <div className="flex items-center">
+            {(progressMap[recommendedModelName] === 100) ? null : (
+              <CircularProgress
+                progress={progressMap[recommendedModelName] ?? 0}
+                size={18}
+                strokeWidth={2}
+              />
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -743,8 +708,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [isModelReady, setIsModelReady] = useState(false);
-
-  const steps: Step[] = [
+  const allSteps: Step[] = [
     {
       id: "permissions",
       title: t("onboarding.permissions.title"),
@@ -777,9 +741,11 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
     },
   ];
 
+  const steps = allSteps;
+
   const handleNext = async () => {
     if (current.id === "model" && selectedModel) {
-      const engineType = selectedModel.includes("sense-voice")
+      const engineType = selectedModel?.startsWith("sense-voice")
         ? "sensevoice"
         : "whisper";
       await updateSetting("model", selectedModel);
@@ -817,7 +783,13 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen) {
+    if (currentStep >= steps.length) {
+      setCurrentStep(Math.max(0, steps.length - 1));
+    }
+  }, [steps.length, currentStep]);
+
+  useEffect(() => {
+    if (isOpen && currentStep < steps.length) {
       analytics.track(AnalyticsEvents.ONBOARDING_STEP_VIEWED, {
         step: currentStep,
         step_id: steps[currentStep].id,

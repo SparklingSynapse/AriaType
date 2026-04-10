@@ -26,6 +26,8 @@ pub struct EngineConfig {
     pub log_prefix: &'static str,
     pub strip_think_tags: bool,
     pub prompt_format: PromptFormat,
+    /// Minimum acceptable model file size in MB (catches incomplete downloads)
+    pub min_model_size_mb: u64,
 }
 
 /// Shared language detection logic
@@ -122,19 +124,18 @@ pub fn polish_text_blocking(
     }
 
     // Check model file size to detect incomplete downloads
-    let model_metadata = std::fs::metadata(&model_path).map_err(|e| {
+    let model_metadata = std::fs::metadata(model_path).map_err(|e| {
         error!(engine = %engine, path = ?model_path, error = %e, "polish_model_metadata_failed");
         format!("Failed to read model metadata: {e}")
     })?;
     let model_size_mb = model_metadata.len() / (1024 * 1024);
     info!(engine = %engine, path = ?model_path, size_mb = model_size_mb, "polish_model_file_checked");
 
-    // LFM2-2.6B Q4_K_M should be at least 1.4GB
-    if model_size_mb < 1400 {
-        error!(engine = %engine, size_mb = model_size_mb, "polish_model_file_too_small");
+    if model_size_mb < config.min_model_size_mb {
+        error!(engine = %engine, size_mb = model_size_mb, min_mb = config.min_model_size_mb, "polish_model_file_too_small");
         return Err(format!(
-            "Model file appears incomplete: {}MB (expected ~1500MB)",
-            model_size_mb
+            "Model file appears incomplete: {}MB (expected at least {}MB)",
+            model_size_mb, config.min_model_size_mb
         ));
     }
 

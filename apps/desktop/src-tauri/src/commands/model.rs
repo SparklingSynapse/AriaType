@@ -185,6 +185,20 @@ pub async fn download_model(
                 elapsed_ms = elapsed.as_millis(),
                 "model_download_completed"
             );
+
+            if !state.engine_manager.is_vad_model_downloaded() {
+                let mgr = state.engine_manager.clone();
+                tokio::spawn(async move {
+                    match mgr
+                        .download_vad_model(Arc::new(AtomicBool::new(false)))
+                        .await
+                    {
+                        Ok(_) => info!("vad_model_auto_downloaded"),
+                        Err(e) => warn!(error = %e, "vad_model_auto_download_failed"),
+                    }
+                });
+            }
+
             if let Err(e) = app.emit(
                 EventName::MODEL_DOWNLOAD_COMPLETE,
                 serde_json::json!({ "model": model_name }),

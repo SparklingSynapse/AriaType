@@ -45,6 +45,8 @@ impl PolishEngine for GemmaPolishEngine {
             log_prefix: "polish:gemma",
             strip_think_tags: false,
             prompt_format: PromptFormat::Gemma,
+            // Gemma 2B Q4_K_M ≈ 1.52GB
+            min_model_size_mb: 1300,
         };
 
         let t0 = std::time::Instant::now();

@@ -29,8 +29,7 @@ hound = "3.5"
 rodio = "0.19"
 rubato = "0.15"
 nnnoiseless = "0.5"
-webrtc-vad = "0.1"
-whisper-rs = "0.15.1"
+sherpa-onnx = "1.12"
 reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 futures-util = { version = "0.3", features = ["sink"] }
 tokio = { version = "1", features = ["full"] }
@@ -58,7 +57,6 @@ tempfile = "3"
 [target.'cfg(target_os = "macos")'.dependencies]
 enigo = { version = "0.6", default-features = false }
 block = "0.1"
-whisper-rs = { version = "0.15.1", features = ["metal"] }
 tauri = { version = "2", features = ["devtools", "macos-private-api", "tray-icon"] }
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2" }
 cocoa = "0.26"

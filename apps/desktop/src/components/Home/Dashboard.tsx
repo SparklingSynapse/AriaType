@@ -21,13 +21,11 @@ import i18n from "@/i18n";
 import { logger } from "@/lib/logger";
 
 import headerLight1 from "@/assets/illustrations/dashboard/header-light-1.webp";
-import headerLight2 from "@/assets/illustrations/dashboard/header-light-2.webp";
 import headerDark1 from "@/assets/illustrations/dashboard/header-dark-1.webp";
-import headerDark2 from "@/assets/illustrations/dashboard/header-dark-2.webp";
 
 const HEADER_IMAGES = {
-  light: [headerLight1, headerLight2],
-  dark: [headerDark1, headerDark2],
+  light: [headerLight1],
+  dark: [headerDark1],
 };
 
 function preloadHeaderImages() {
@@ -35,10 +33,12 @@ function preloadHeaderImages() {
     return;
   }
 
-  Object.values(HEADER_IMAGES).flat().forEach((src) => {
-    const image = new Image();
-    image.src = src;
-  });
+  Object.values(HEADER_IMAGES)
+    .flat()
+    .forEach((src) => {
+      const image = new Image();
+      image.src = src;
+    });
 }
 
 preloadHeaderImages();
@@ -66,14 +66,10 @@ interface ChartPalette {
   border: string;
 }
 
-
-
 interface ActivityRowProps {
   label: string;
   value: string;
 }
-
-
 
 function useDashboardPalette() {
   const [isDark, setIsDark] = useState(() =>
@@ -95,9 +91,9 @@ function useDashboardPalette() {
 
   return isDark
     ? {
-        primary: "#93c5fd",   // Blue-300 (Clear but soft blue)
+        primary: "#93c5fd", // Blue-300 (Clear but soft blue)
         secondary: "#6ee7b7", // Emerald-300 (Clear but soft green)
-        tertiary: "#c084fc",  // Purple-400 (Clear but soft purple)
+        tertiary: "#c084fc", // Purple-400 (Clear but soft purple)
         textMuted: "#737373",
         grid: "rgba(255,255,255,0.06)",
         panel: "rgba(255,255,255,0.028)",
@@ -105,9 +101,9 @@ function useDashboardPalette() {
         border: "rgba(255,255,255,0.075)",
       }
     : {
-        primary: "#1e3a8a",   // Blue-900 (Deep navy blue, rich but dark)
+        primary: "#1e3a8a", // Blue-900 (Deep navy blue, rich but dark)
         secondary: "#065f46", // Emerald-800 (Deep forest green)
-        tertiary: "#701a75",  // Fuchsia-900 (Deep berry/purple)
+        tertiary: "#701a75", // Fuchsia-900 (Deep berry/purple)
         textMuted: "#a3a3a3",
         grid: "rgba(0,0,0,0.04)",
         panel: "rgba(17,17,17,0.022)",
@@ -127,8 +123,12 @@ function buildHeroFallbackBackground(palette: ChartPalette) {
 function ActivityRow({ label, value }: ActivityRowProps) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-border/70 py-3.5 first:pt-0 last:border-b-0 last:pb-0">
-      <span className="text-[13px] leading-6 text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium tabular-nums text-foreground">{value}</span>
+      <span className="text-[13px] leading-6 text-muted-foreground">
+        {label}
+      </span>
+      <span className="text-sm font-medium tabular-nums text-foreground">
+        {value}
+      </span>
     </div>
   );
 }
@@ -177,7 +177,9 @@ function RhythmTooltip({
       <div className="text-xs font-medium text-foreground">{point.date}</div>
       <div className="mt-3 space-y-2">
         <div className="flex items-center justify-between gap-4 text-xs">
-          <span className="text-muted-foreground">{t("dashboard.chart.captures")}</span>
+          <span className="text-muted-foreground">
+            {t("dashboard.chart.captures")}
+          </span>
           <span className="font-medium text-foreground">{point.count}</span>
         </div>
         <div className="flex items-center justify-between gap-4 text-xs">
@@ -189,7 +191,9 @@ function RhythmTooltip({
           </span>
         </div>
         <div className="flex items-center justify-between gap-4 text-xs">
-          <span className="text-muted-foreground">{t("dashboard.chart.avgOutput")}</span>
+          <span className="text-muted-foreground">
+            {t("dashboard.chart.avgOutput")}
+          </span>
           <span className="font-medium text-foreground">
             {point.avg_output_units.toFixed(1)}
           </span>
@@ -240,7 +244,9 @@ function EngineUsageList({
                 <span className="tabular-nums">
                   {shareLabel}: {Math.round(share)}%
                 </span>
-                <span className="tabular-nums">{formatCompactNumber(engine.count)}</span>
+                <span className="tabular-nums">
+                  {formatCompactNumber(engine.count)}
+                </span>
               </div>
             </div>
             <div className="mt-3 h-[3px] rounded-full bg-secondary/35">
@@ -369,8 +375,10 @@ export function Dashboard() {
       displayDailyUsage.map((point) => ({
         ...point,
         short_date: formatShortDate(point.date),
-        avg_audio_seconds: point.count > 0 ? point.audio_ms / point.count / 1000 : 0,
-        avg_output_units: point.count > 0 ? point.output_units / point.count : 0,
+        avg_audio_seconds:
+          point.count > 0 ? point.audio_ms / point.count / 1000 : 0,
+        avg_output_units:
+          point.count > 0 ? point.output_units / point.count : 0,
       })),
     [displayDailyUsage],
   );
@@ -385,8 +393,6 @@ export function Dashboard() {
     return trendData;
   }, [trendData]);
   const isFocusedTrendWindow = visibleTrendData.length !== trendData.length;
-
-
 
   if (isLoading) {
     return <div className="mx-auto max-w-6xl p-12 min-h-[calc(100vh-4rem)]" />;
@@ -408,27 +414,27 @@ export function Dashboard() {
             style={{ backgroundImage: buildHeroFallbackBackground(palette) }}
           />
           <div className="pointer-events-none absolute inset-0 bg-secondary/5 dark:bg-black/10" />
-          <img 
-            src={HEADER_IMAGES.light[randomImageIndex]} 
-            alt="" 
-            className="pointer-events-none absolute left-1/2 top-0 min-h-full min-w-full -translate-x-1/2 object-cover dark:hidden" 
+          <img
+            src={HEADER_IMAGES.light[randomImageIndex]}
+            alt=""
+            className="pointer-events-none absolute left-1/2 top-0 min-h-full min-w-full -translate-x-1/2 object-cover dark:hidden"
           />
-          <img 
-            src={HEADER_IMAGES.dark[randomImageIndex]} 
-            alt="" 
-            className="pointer-events-none absolute left-1/2 top-0 hidden min-h-full min-w-full -translate-x-1/2 object-cover dark:block" 
+          <img
+            src={HEADER_IMAGES.dark[randomImageIndex]}
+            alt=""
+            className="pointer-events-none absolute left-1/2 top-0 hidden min-h-full min-w-full -translate-x-1/2 object-cover dark:block"
           />
-          
+
           <div className="relative z-10 flex flex-col items-center text-center">
             <div className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/50 px-3 py-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground backdrop-blur-sm">
               <span className="text-sm">👋</span>
               <span>{getGreeting(t)}</span>
             </div>
-            
-            <h2 className="mt-6 text-[clamp(2.5rem,5vw,4.5rem)] font-bold leading-[1.05] tracking-tight text-foreground">
+
+            <h2 className="mt-6 text-[clamp(2.5rem,5vw,4.5rem)] font-bold leading-[1.05] tracking-normal text-foreground">
               {t("dashboard.title")}
             </h2>
-            
+
             <p className="mt-4 max-w-[60ch] text-base leading-relaxed text-muted-foreground md:text-lg">
               {t("dashboard.description")}
             </p>
@@ -494,7 +500,7 @@ export function Dashboard() {
                 <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                   {t("dashboard.chart.usageTitle")}
                 </div>
-                <h3 className="mt-3 max-w-[20ch] text-[1.7rem] font-semibold tracking-[-0.05em] text-foreground">
+                <h3 className="mt-3 max-w-[20ch] text-[1.7rem] font-semibold  text-foreground">
                   {t("dashboard.chart.usageDesc")}
                 </h3>
                 <p className="mt-2 max-w-[58ch] text-sm leading-7 text-muted-foreground">
@@ -535,9 +541,23 @@ export function Dashboard() {
                     margin={{ top: 12, right: 6, left: -26, bottom: 0 }}
                   >
                     <defs>
-                      <linearGradient id="capturesFade" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={palette.primary} stopOpacity={0.2} />
-                        <stop offset="100%" stopColor={palette.primary} stopOpacity={0} />
+                      <linearGradient
+                        id="capturesFade"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="0%"
+                          stopColor={palette.primary}
+                          stopOpacity={0.2}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor={palette.primary}
+                          stopOpacity={0}
+                        />
                       </linearGradient>
                     </defs>
                     <CartesianGrid
@@ -579,7 +599,11 @@ export function Dashboard() {
                       stroke={palette.primary}
                       strokeWidth={2.7}
                       dot={false}
-                      activeDot={{ r: 4, strokeWidth: 0, fill: palette.primary }}
+                      activeDot={{
+                        r: 4,
+                        strokeWidth: 0,
+                        fill: palette.primary,
+                      }}
                     />
                     <Line
                       type="monotone"
@@ -622,7 +646,7 @@ export function Dashboard() {
             <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
               {t("dashboard.activity.title")}
             </div>
-            <h3 className="mt-3 max-w-[18ch] text-[1.7rem] font-semibold tracking-[-0.05em] text-foreground">
+            <h3 className="mt-3 max-w-[18ch] text-[1.7rem] font-semibold  text-foreground">
               {t("dashboard.activity.desc")}
             </h3>
 
@@ -735,10 +759,12 @@ function formatDayCount(
   });
 }
 
-
-
 function getGreeting(t: ReturnType<typeof useTranslation>["t"]) {
   const hour = new Date().getHours();
+
+  if (hour < 6) {
+    return t("dashboard.greeting.evening");
+  }
 
   if (hour < 12) {
     return t("dashboard.greeting.morning");

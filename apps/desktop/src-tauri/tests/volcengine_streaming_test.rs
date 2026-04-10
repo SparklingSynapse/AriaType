@@ -7,7 +7,7 @@ mod tests {
     use ariatype_lib::stt_engine::cloud::volcengine_streaming::{
         StreamingMode, VolcengineStreamingClient, RECOMMENDED_CHUNK_SAMPLES, URL_BIGMODEL_NOSTREAM,
     };
-    use ariatype_lib::stt_engine::traits::PartialResult;
+    use ariatype_lib::stt_engine::traits::{PartialResult, SttContext};
 
     fn create_test_wav(sample_rate: u32, channels: u16, duration_secs: f32) -> Vec<u8> {
         let samples_per_channel = (sample_rate as f32 * duration_secs) as usize;
@@ -80,10 +80,12 @@ mod tests {
             language: "zh-CN".to_string(),
         };
 
-        let _client = VolcengineStreamingClient::new(config.clone(), Some("zh-CN"));
+        let _client =
+            VolcengineStreamingClient::new(config.clone(), Some("zh-CN"), SttContext::default());
 
         // Test with auto language
-        let _client_auto = VolcengineStreamingClient::new(config, Some("auto"));
+        let _client_auto =
+            VolcengineStreamingClient::new(config, Some("auto"), SttContext::default());
     }
 
     #[test]
@@ -177,7 +179,8 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _ = rt.block_on(async {
-            let mut client = VolcengineStreamingClient::new(cloud_stt_config, None);
+            let mut client =
+                VolcengineStreamingClient::new(cloud_stt_config, None, SttContext::default());
 
             match client.connect().await {
                 Ok(()) => {
@@ -222,7 +225,11 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _ = rt.block_on(async {
-            let mut client = VolcengineStreamingClient::new(cloud_stt_config.clone(), None);
+            let mut client = VolcengineStreamingClient::new(
+                cloud_stt_config.clone(),
+                None,
+                SttContext::default(),
+            );
 
             // Connect first
             client.connect().await.expect("Failed to connect");
@@ -282,7 +289,7 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _ = rt.block_on(async {
-            let mut client = VolcengineStreamingClient::new(cloud_stt_config.clone(), None);
+            let mut client = VolcengineStreamingClient::new(cloud_stt_config.clone(), None, SttContext::default());
 
             // Set up callback to capture results
             use std::sync::Arc;
@@ -384,7 +391,11 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _ = rt.block_on(async {
-            let mut client = VolcengineStreamingClient::new(cloud_stt_config.clone(), None);
+            let mut client = VolcengineStreamingClient::new(
+                cloud_stt_config.clone(),
+                None,
+                SttContext::default(),
+            );
 
             // Connect
             client.connect().await.expect("Failed to connect");
@@ -439,7 +450,8 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _ = rt.block_on(async {
-            let mut client = VolcengineStreamingClient::new(invalid_config, None);
+            let mut client =
+                VolcengineStreamingClient::new(invalid_config, None, SttContext::default());
 
             // This should fail with authentication error
             let result = client.connect().await;

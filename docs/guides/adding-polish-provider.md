@@ -195,7 +195,7 @@ async fn test_new_provider_basic() {
 |--------|-----|--------|
 | Cloud architecture | Separate client per provider | Single `CloudPolishEngine` handles all |
 | Trait methods | `transcribe()` or streaming lifecycle | Single `polish()` method |
-| Engine types | `SttEngine` + `StreamingSttEngine` | Single `PolishEngine` trait |
+| Engine types | Unified `SttEngine` (send_chunk + finish) | Single `PolishEngine` trait |
 | Request flow | Audio → Text | Text → Text |
 
 ## Related Documentation

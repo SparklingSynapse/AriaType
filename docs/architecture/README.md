@@ -13,8 +13,8 @@ This document describes the high-level architecture of AriaType, a Tauri v2 desk
 
 | Domain | Packages | Responsibility |
 |--------|----------|----------------|
-| **Audio Pipeline** | `audio/recorder.rs`, `audio/resampler.rs`, `audio/vad.rs`, `audio/beep.rs`, `audio/level_meter.rs` | Capture, process, and manage audio data |
-| **STT Engine** | `stt_engine/whisper.rs`, `stt_engine/sense_voice.rs`, `stt_engine/volcengine.rs`, `stt_engine/qwen_omni.rs`, `stt_engine/elevenlabs.rs`, `stt_engine/deepgram.rs` | Convert speech to text using local or cloud models |
+| **Audio Pipeline** | `audio/recorder.rs`, `audio/resampler.rs`, `audio/processor.rs`, `audio/stream_processor.rs`, `audio/beep.rs`, `audio/level_meter.rs` | Capture, process, and manage audio data |
+| **STT Engine** | `stt_engine/sherpa_onnx/`, `stt_engine/cloud/`, `stt_engine/models.rs`, `stt_engine/traits.rs`, `stt_engine/unified_manager.rs` | Convert speech to text using local (sherpa-onnx) or cloud models |
 | **Polish Engine** | `polish_engine/lfm.rs`, `polish_engine/qwen.rs`, `polish_engine/anthropic.rs`, `polish_engine/openai.rs` | Refine transcribed text for accuracy and formatting |
 | **Text Injection** | `text_injector/macos.rs`, `text_injector/windows.rs` | Insert text at cursor position across platforms |
 | **Settings** | `commands/settings/`, `state/unified_state.rs` | Persist and manage user preferences and hotkeys |
@@ -68,7 +68,7 @@ apps/desktop/src-tauri/src/
 |------|------|
 | `lib.rs` | All Tauri commands must be registered here |
 | `state/unified_state.rs` | Single source of runtime truth |
-| `stt_engine/traits.rs` | SttEngine + StreamingSttEngine trait definitions |
+| `stt_engine/traits.rs` | Unified SttEngine trait definition (send_chunk + finish) |
 | `stt_engine/unified_manager.rs` | Engine lifecycle management |
 | `polish_engine/unified_manager.rs` | Polish engine lifecycle |
 | `text_injector/macos.rs` | macOS text injection (keyboard simulation + clipboard) |

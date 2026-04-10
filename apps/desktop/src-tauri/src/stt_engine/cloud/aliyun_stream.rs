@@ -1,6 +1,6 @@
-//! Qwen Omni Realtime STT Client (阿里云通义千问)
+//! Aliyun Realtime STT Client (阿里云通义千问)
 //!
-//! Implements WebSocket-based streaming speech-to-text using Qwen Omni Realtime API
+//! Implements WebSocket-based streaming speech-to-text using Aliyun Realtime API
 //! via Alibaba Cloud DashScope.
 //!
 //! # Protocol
@@ -18,22 +18,18 @@
 //! - <https://www.alibabacloud.com/help/en/model-studio/qwen-real-time-speech-recognition>
 //! - <https://www.alibabacloud.com/help/en/model-studio/realtime> (Qwen-Omni-Realtime)
 
-use async_trait::async_trait;
 use futures_util::{SinkExt, Stream, StreamExt};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, Mutex, oneshot};
 use tokio_tungstenite::tungstenite::Error as WsError;
 use tokio_tungstenite::{connect_async_tls_with_config, tungstenite::protocol::Message};
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::commands::settings::CloudSttConfig;
-use crate::stt_engine::traits::{
-    EngineType, PartialResult, PartialResultCallback, StreamingSttEngine, SttContext,
-    TranscriptionResult,
-};
+use crate::stt_engine::traits::{EngineType, PartialResult, PartialResultCallback, SttContext, TranscriptionResult};
 
 const QWEN_OMNI_REALTIME_ENDPOINT: &str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
 const QWEN_OMNI_REALTIME_MODEL: &str = "qwen3-asr-flash-realtime";
@@ -47,7 +43,7 @@ type BoxStream = Pin<Box<dyn Stream<Item = Result<Message, WsError>> + Send>>;
 type BoxSink = Pin<Box<dyn futures_util::Sink<Message, Error = WsError> + Send>>;
 type SessionResultRx = Arc<Mutex<Option<oneshot::Receiver<Result<(), String>>>>>;
 
-pub struct QwenOmniRealtimeClient {
+pub struct AliyunStreamClient {
     tx: Arc<Mutex<Option<BoxSink>>>,
     rx: Arc<Mutex<Option<BoxStream>>>,
     config: CloudSttConfig,
@@ -60,10 +56,10 @@ pub struct QwenOmniRealtimeClient {
     final_transcript: Arc<Mutex<String>>,
 }
 
-unsafe impl Send for QwenOmniRealtimeClient {}
-unsafe impl Sync for QwenOmniRealtimeClient {}
+unsafe impl Send for AliyunStreamClient {}
+unsafe impl Sync for AliyunStreamClient {}
 
-impl QwenOmniRealtimeClient {
+impl AliyunStreamClient {
     pub fn new(config: CloudSttConfig, language: Option<&str>, _context: SttContext) -> Self {
         let lang = normalize_realtime_language(language).unwrap_or_default();
 
@@ -89,7 +85,7 @@ impl QwenOmniRealtimeClient {
         self.audio_tx.lock().await.clone()
     }
 
-    #[instrument(skip(self), fields(provider = "qwen-omni-realtime"), ret, err)]
+    #[instrument(skip(self), fields(provider = "aliyun-stream"), ret, err)]
     pub async fn connect(&mut self) -> Result<(), String> {
         if self.config.api_key.is_empty() {
             return Err("AliYun DashScope API key is empty. Please configure your AliYun DashScope API key in Settings > Cloud STT.".to_string());
@@ -105,7 +101,7 @@ impl QwenOmniRealtimeClient {
 
         let url = format!("{}?model={}", endpoint, model);
 
-        info!(provider = "qwen-omni-realtime", url = %url, "websocket_connecting");
+        info!(provider = "aliyun-stream", url = %url, "websocket_connecting");
 
         let mut request =
             tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(&url)
@@ -129,9 +125,9 @@ impl QwenOmniRealtimeClient {
                     || error_str.contains("Unauthorized")
                     || error_str.contains("invalid_api_key")
                 {
-                    error!(provider = "qwen-omni-realtime", http.status_code = 401, error = %error_str, "websocket_connect_failed");
+                    error!(provider = "aliyun-stream", http.status_code = 401, error = %error_str, "websocket_connect_failed");
                     return Err(format!(
-                        "Qwen Omni Realtime API authentication failed (401 Unauthorized).\n\
+                        "Aliyun Realtime API authentication failed (401 Unauthorized).\n\
                         \n\
                         Please verify your API key in Settings > Cloud STT.\n\
                         Get your API key from: https://bailian.console.aliyun.com/\n\
@@ -142,9 +138,9 @@ impl QwenOmniRealtimeClient {
                 }
 
                 if error_str.contains("403") || error_str.contains("Forbidden") {
-                    error!(provider = "qwen-omni-realtime", http.status_code = 403, error = %error_str, "websocket_connect_failed");
+                    error!(provider = "aliyun-stream", http.status_code = 403, error = %error_str, "websocket_connect_failed");
                     return Err(format!(
-                        "Qwen Omni Realtime API access forbidden (403).\n\
+                        "Aliyun Realtime API access forbidden (403).\n\
                         \n\
                         Possible causes:\n\
                         1. Your API key doesn't have access to the Realtime API\n\
@@ -158,16 +154,16 @@ impl QwenOmniRealtimeClient {
                     ));
                 }
 
-                error!(provider = "qwen-omni-realtime", error = %error_str, "websocket_connect_failed");
+                error!(provider = "aliyun-stream", error = %error_str, "websocket_connect_failed");
                 return Err(format!(
-                    "Failed to connect to Qwen Omni Realtime API: {}",
+                    "Failed to connect to Aliyun Realtime API: {}",
                     error_str
                 ));
             }
         };
 
         info!(
-            provider = "qwen-omni-realtime",
+            provider = "aliyun-stream",
             http.status_code = 101,
             "websocket_connected"
         );
@@ -192,7 +188,7 @@ impl QwenOmniRealtimeClient {
         match tokio::time::timeout(SESSION_READY_TIMEOUT, session_ready_rx).await {
             Ok(Ok(Ok(()))) => {
                 info!(
-                    provider = "qwen-omni-realtime",
+                    provider = "aliyun-stream",
                     "session_update_acknowledged"
                 );
             }
@@ -203,13 +199,13 @@ impl QwenOmniRealtimeClient {
             Ok(Err(_)) => {
                 self.close().await;
                 return Err(
-                    "Qwen Omni Realtime connection closed before session was ready".to_string(),
+                    "Aliyun Realtime connection closed before session was ready".to_string(),
                 );
             }
             Err(_) => {
                 self.close().await;
                 return Err(
-                    "Timed out waiting for Qwen Omni Realtime session acknowledgement".to_string(),
+                    "Timed out waiting for Aliyun Realtime session acknowledgement".to_string(),
                 );
             }
         }
@@ -226,7 +222,7 @@ impl QwenOmniRealtimeClient {
         let message = self.build_session_update_message();
 
         let message_str = message.to_string();
-        debug!(provider = "qwen-omni-realtime", payload = %message_str, "session_update_payload");
+        debug!(provider = "aliyun-stream", payload = %message_str, "session_update_payload");
 
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or("WebSocket not connected")?;
@@ -234,7 +230,7 @@ impl QwenOmniRealtimeClient {
             .await
             .map_err(|e| format!("Failed to send session update: {}", e))?;
 
-        info!(provider = "qwen-omni-realtime", "session_update_sent");
+        info!(provider = "aliyun-stream", "session_update_sent");
         Ok(())
     }
 
@@ -276,7 +272,7 @@ impl QwenOmniRealtimeClient {
             let rx_stream = match rx_guard.take() {
                 Some(s) => s,
                 None => {
-                    warn!(provider = "qwen-omni-realtime", "no_receiver_available");
+                    warn!(provider = "aliyun-stream", "no_receiver_available");
                     return;
                 }
             };
@@ -286,16 +282,16 @@ impl QwenOmniRealtimeClient {
             while let Some(msg) = stream.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
-                        debug!(provider = "qwen-omni-realtime", message_preview = %format!("{:.200}...", text), "websocket_message_received");
+                        debug!(provider = "aliyun-stream", message_preview = %format!("{:.200}...", text), "websocket_message_received");
 
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
                             if let Some(msg_type) = parsed.get("type").and_then(|t| t.as_str()) {
                                 match msg_type {
                                     "session.created" => {
-                                        debug!(provider = "qwen-omni-realtime", "session_created");
+                                        debug!(provider = "aliyun-stream", "session_created");
                                     }
                                     "session.updated" => {
-                                        info!(provider = "qwen-omni-realtime", "session_updated");
+                                        info!(provider = "aliyun-stream", "session_updated");
                                         if let Some(tx) = session_ready_tx.take() {
                                             let _ = tx.send(Ok(()));
                                         }
@@ -309,7 +305,7 @@ impl QwenOmniRealtimeClient {
                                             {
                                                 let user_error =
                                                     error_msg.to_user_friendly_message();
-                                                error!(provider = "qwen-omni-realtime", error = %user_error, "server_error");
+                                                error!(provider = "aliyun-stream", error = %user_error, "server_error");
 
                                                 *last_error.lock().await = Some(user_error);
                                                 *tx.lock().await = None;
@@ -333,10 +329,10 @@ impl QwenOmniRealtimeClient {
                                                 break;
                                             } else {
                                                 let user_error = format!(
-                                                    "Qwen Omni Realtime API error: {}",
+                                                    "Aliyun Realtime API error: {}",
                                                     error_obj
                                                 );
-                                                error!(provider = "qwen-omni-realtime", error = %user_error, "server_error");
+                                                error!(provider = "aliyun-stream", error = %user_error, "server_error");
                                                 *last_error.lock().await = Some(user_error.clone());
                                                 *tx.lock().await = None;
 
@@ -362,7 +358,7 @@ impl QwenOmniRealtimeClient {
                                         let preview = format!("{}{}", confirmed, stash);
 
                                         if !preview.is_empty() {
-                                            debug!(provider = "qwen-omni-realtime", text = %preview, "partial_transcription");
+                                            debug!(provider = "aliyun-stream", text = %preview, "partial_transcription");
 
                                             if let Some(ref callback) = on_partial {
                                                 callback(PartialResult {
@@ -377,7 +373,7 @@ impl QwenOmniRealtimeClient {
                                         if let Some(transcript) =
                                             parsed.get("transcript").and_then(|t| t.as_str())
                                         {
-                                            debug!(provider = "qwen-omni-realtime", text = %transcript, "transcription_completed");
+                                            debug!(provider = "aliyun-stream", text = %transcript, "transcription_completed");
                                             *final_transcript.lock().await = transcript.to_string();
 
                                             if let Some(ref callback) = on_partial {
@@ -396,18 +392,18 @@ impl QwenOmniRealtimeClient {
                                             .and_then(|message| message.as_str())
                                             .map_or_else(
                                                 || {
-                                                    "Qwen Omni Realtime failed to transcribe the input audio"
+                                                    "Aliyun Realtime failed to transcribe the input audio"
                                                         .to_string()
                                                 },
                                                 |message| {
                                                     format!(
-                                                        "Qwen Omni Realtime failed to transcribe the input audio: {}",
+                                                        "Aliyun Realtime failed to transcribe the input audio: {}",
                                                         message
                                                     )
                                                 },
                                             );
 
-                                        error!(provider = "qwen-omni-realtime", error = %user_error, "transcription_failed");
+                                        error!(provider = "aliyun-stream", error = %user_error, "transcription_failed");
                                         *last_error.lock().await = Some(user_error.clone());
                                         *tx.lock().await = None;
 
@@ -420,7 +416,7 @@ impl QwenOmniRealtimeClient {
                                         break;
                                     }
                                     "session.finished" => {
-                                        info!(provider = "qwen-omni-realtime", "session_finished");
+                                        info!(provider = "aliyun-stream", "session_finished");
                                         if let Some(tx) = session_ready_tx.take() {
                                             let _ = tx.send(Ok(()));
                                         }
@@ -437,7 +433,7 @@ impl QwenOmniRealtimeClient {
                                         break;
                                     }
                                     _ => {
-                                        debug!(provider = "qwen-omni-realtime", message_type = %msg_type, "unhandled_message_type");
+                                        debug!(provider = "aliyun-stream", message_type = %msg_type, "unhandled_message_type");
                                     }
                                 }
                             }
@@ -446,7 +442,7 @@ impl QwenOmniRealtimeClient {
                     Ok(Message::Close(frame)) => {
                         if let Some(frame) = frame {
                             warn!(
-                                provider = "qwen-omni-realtime",
+                                provider = "aliyun-stream",
                                 code = ?frame.code,
                                 reason = %frame.reason,
                                 "connection_closed_by_server"
@@ -455,7 +451,7 @@ impl QwenOmniRealtimeClient {
                             let mut last_error_guard = last_error.lock().await;
                             if last_error_guard.is_none() {
                                 *last_error_guard = Some(format!(
-                                    "Qwen Omni Realtime connection closed by server (code={:?}, reason={})",
+                                    "Aliyun Realtime connection closed by server (code={:?}, reason={})",
                                     frame.code, frame.reason
                                 ));
                             }
@@ -469,14 +465,14 @@ impl QwenOmniRealtimeClient {
                             }
                         } else {
                             warn!(
-                                provider = "qwen-omni-realtime",
+                                provider = "aliyun-stream",
                                 "connection_closed_no_frame"
                             );
                             *tx.lock().await = None;
                             let mut last_error_guard = last_error.lock().await;
                             if last_error_guard.is_none() {
                                 *last_error_guard = Some(
-                                    "Qwen Omni Realtime connection closed by server without close frame"
+                                    "Aliyun Realtime connection closed by server without close frame"
                                         .to_string(),
                                 );
                             }
@@ -492,9 +488,9 @@ impl QwenOmniRealtimeClient {
                         break;
                     }
                     Err(e) => {
-                        error!(provider = "qwen-omni-realtime", error = %e, "websocket_error");
+                        error!(provider = "aliyun-stream", error = %e, "websocket_error");
                         *tx.lock().await = None;
-                        let err = format!("Qwen Omni Realtime WebSocket error: {}", e);
+                        let err = format!("Aliyun Realtime WebSocket error: {}", e);
                         *last_error.lock().await = Some(err.clone());
                         if let Some(tx) = session_ready_tx.take() {
                             let _ = tx.send(Err(err.clone()));
@@ -518,17 +514,17 @@ impl QwenOmniRealtimeClient {
                 let mut guard = tx.lock().await;
                 if let Some(sender) = guard.as_mut() {
                     if let Err(e) = send_audio_chunk(sender, &pcm_data).await {
-                        error!(provider = "qwen-omni-realtime", error = %e, "audio_chunk_send_failed");
+                        error!(provider = "aliyun-stream", error = %e, "audio_chunk_send_failed");
                         break;
                     }
                     chunk_count += 1;
                 } else {
-                    debug!(provider = "qwen-omni-realtime", "audio_sender_stopped");
+                    debug!(provider = "aliyun-stream", "audio_sender_stopped");
                     break;
                 }
             }
             info!(
-                provider = "qwen-omni-realtime",
+                provider = "aliyun-stream",
                 chunks = chunk_count,
                 "audio_sender_finished"
             );
@@ -543,7 +539,7 @@ impl QwenOmniRealtimeClient {
         send_audio_chunk(tx, pcm_data).await
     }
 
-    #[instrument(skip(self), fields(provider = "qwen-omni-realtime"), err)]
+    #[instrument(skip(self), fields(provider = "aliyun-stream"), err)]
     pub async fn send_audio_async(&self, pcm_data: Vec<i16>) -> Result<(), String> {
         let guard = self.audio_tx.lock().await;
         let tx = guard
@@ -554,7 +550,7 @@ impl QwenOmniRealtimeClient {
             .map_err(|e| format!("Failed to queue audio: {}", e))
     }
 
-    #[instrument(skip(self), fields(provider = "qwen-omni-realtime"), ret, err)]
+    #[instrument(skip(self), fields(provider = "aliyun-stream"), ret, err)]
     pub async fn finish(&self) -> Result<String, String> {
         let start = Instant::now();
 
@@ -564,11 +560,11 @@ impl QwenOmniRealtimeClient {
         if let Some(handle) = task_handle {
             match handle.await {
                 Ok(()) => debug!(
-                    provider = "qwen-omni-realtime",
+                    provider = "aliyun-stream",
                     "audio_sender_task_completed"
                 ),
                 Err(e) => {
-                    warn!(provider = "qwen-omni-realtime", error = %e, "audio_sender_task_error")
+                    warn!(provider = "aliyun-stream", error = %e, "audio_sender_task_error")
                 }
             }
         }
@@ -589,7 +585,7 @@ impl QwenOmniRealtimeClient {
                 .await
                 .map_err(|e| format!("Failed to send commit packet: {}", e))?;
 
-            debug!(provider = "qwen-omni-realtime", "commit_packet_sent");
+            debug!(provider = "aliyun-stream", "commit_packet_sent");
             let finish_message = serde_json::json!({
                 "type": "session.finish",
                 "event_id": Uuid::new_v4().to_string()
@@ -600,7 +596,7 @@ impl QwenOmniRealtimeClient {
                 .map_err(|e| format!("Failed to send session finish packet: {}", e))?;
 
             debug!(
-                provider = "qwen-omni-realtime",
+                provider = "aliyun-stream",
                 "session_finish_packet_sent"
             );
         } else if let Some(err) = self.last_error.lock().await.clone() {
@@ -620,16 +616,16 @@ impl QwenOmniRealtimeClient {
                 }
                 Ok(Err(_)) => {
                     self.close().await;
-                    return Err("Qwen Omni Realtime result channel closed".to_string());
+                    return Err("Aliyun Realtime result channel closed".to_string());
                 }
                 Err(_) => {
                     self.close().await;
-                    return Err("Timeout waiting for Qwen Omni Realtime final result".to_string());
+                    return Err("Timeout waiting for Aliyun Realtime final result".to_string());
                 }
             }
         } else {
             self.close().await;
-            return Err("No Qwen Omni Realtime result receiver available".to_string());
+            return Err("No Aliyun Realtime result receiver available".to_string());
         }
 
         if let Some(err) = self.last_error.lock().await.clone() {
@@ -642,7 +638,7 @@ impl QwenOmniRealtimeClient {
 
         let total_ms = start.elapsed().as_millis() as u64;
         info!(
-            provider = "qwen-omni-realtime",
+            provider = "aliyun-stream",
             duration_ms = total_ms,
             "transcription_finished"
         );
@@ -650,39 +646,16 @@ impl QwenOmniRealtimeClient {
         Ok(final_text)
     }
 
-    #[instrument(skip(self), fields(provider = "qwen-omni-realtime"))]
+    #[instrument(skip(self), fields(provider = "aliyun-stream"))]
     pub async fn close(&self) {
         drop(self.audio_tx.lock().await.take());
         *self.session_finished_rx.lock().await = None;
         let mut guard = self.tx.lock().await;
         if let Some(mut tx) = guard.take() {
             let _ = tx.close().await;
-            info!(provider = "qwen-omni-realtime", "connection_closed");
+            info!(provider = "aliyun-stream", "connection_closed");
         }
         *self.rx.lock().await = None;
-    }
-}
-
-#[async_trait]
-impl StreamingSttEngine for QwenOmniRealtimeClient {
-    async fn start(&mut self) -> Result<(), String> {
-        self.connect().await
-    }
-
-    async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String> {
-        self.send_audio_async(pcm_data).await
-    }
-
-    async fn finish(&self) -> Result<String, String> {
-        QwenOmniRealtimeClient::finish(self).await
-    }
-
-    fn set_partial_callback(&mut self, callback: PartialResultCallback) {
-        QwenOmniRealtimeClient::set_partial_callback(self, callback);
-    }
-
-    async fn get_audio_sender(&self) -> Option<mpsc::Sender<Vec<i16>>> {
-        QwenOmniRealtimeClient::get_audio_sender(self).await
     }
 }
 
@@ -710,7 +683,7 @@ async fn send_audio_chunk(sender: &mut BoxSink, pcm_data: &[i16]) -> Result<(), 
         .map_err(|e| format!("Failed to send audio: {}", e))?;
 
     debug!(
-        provider = "qwen-omni-realtime",
+        provider = "aliyun-stream",
         samples = pcm_data.len(),
         "audio_samples_sent"
     );
@@ -747,7 +720,7 @@ impl RealtimeError {
                 self.message
             ),
             "model_not_found" => format!(
-                "Qwen Omni Realtime model not found.\n\
+                "Aliyun Realtime model not found.\n\
                 \n\
                 The specified model '{}' may not be available or you may not have access.\n\
                 Contact OpenAI support if you believe this is an error.\n\
@@ -756,7 +729,7 @@ impl RealtimeError {
                 QWEN_OMNI_REALTIME_MODEL, self.message
             ),
             _ => format!(
-                "Qwen Omni Realtime API error: {}\n\
+                "Aliyun Realtime API error: {}\n\
                 Error code: {}\n\
                 Error type: {}\n\
                 \n\
@@ -775,7 +748,7 @@ fn resolve_realtime_model(model: &str) -> &str {
     }
 }
 
-pub async fn transcribe_qwen_omni_realtime(
+pub async fn transcribe_aliyun_stream(
     config: &CloudSttConfig,
     audio_path: &std::path::Path,
     language: Option<&str>,
@@ -783,7 +756,7 @@ pub async fn transcribe_qwen_omni_realtime(
     let start = Instant::now();
 
     if !config.enabled {
-        return Err("Qwen Omni Realtime STT is not enabled".to_string());
+        return Err("Aliyun Realtime STT is not enabled".to_string());
     }
 
     if config.api_key.is_empty() {
@@ -835,7 +808,7 @@ pub async fn transcribe_qwen_omni_realtime(
         .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
         .collect();
 
-    let mut client = QwenOmniRealtimeClient::new(config.clone(), language, SttContext::default());
+    let mut client = AliyunStreamClient::new(config.clone(), language, SttContext::default());
 
     client.connect().await?;
 
@@ -860,7 +833,7 @@ pub async fn transcribe_qwen_omni_realtime(
     let total_ms = start.elapsed().as_millis() as u64;
 
     info!(
-        provider = "qwen-omni-realtime",
+        provider = "aliyun-stream",
         text_len = final_text.len(),
         duration_ms = total_ms,
         "transcription_complete"
@@ -881,7 +854,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_qwen_omni_realtime_endpoint_constant() {
+    fn test_aliyun_stream_endpoint_constant() {
         assert_eq!(
             QWEN_OMNI_REALTIME_ENDPOINT,
             "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
@@ -889,7 +862,7 @@ mod tests {
     }
 
     #[test]
-    fn test_qwen_omni_realtime_model_constant() {
+    fn test_aliyun_stream_model_constant() {
         assert_eq!(QWEN_OMNI_REALTIME_MODEL, "qwen3-asr-flash-realtime");
     }
 
@@ -991,14 +964,14 @@ mod tests {
     fn test_openai_realtime_client_new_with_language() {
         let config = CloudSttConfig {
             enabled: true,
-            provider_type: "qwen-omni-realtime".to_string(),
+            provider_type: "aliyun-stream".to_string(),
             api_key: "test-key".to_string(),
             app_id: "".to_string(),
             base_url: "".to_string(),
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, Some("en"), SttContext::default());
+        let client = AliyunStreamClient::new(config, Some("en"), SttContext::default());
         assert_eq!(client.language, "en");
     }
 
@@ -1006,14 +979,14 @@ mod tests {
     fn test_openai_realtime_client_normalizes_bcp47_language() {
         let config = CloudSttConfig {
             enabled: true,
-            provider_type: "qwen-omni-realtime".to_string(),
+            provider_type: "aliyun-stream".to_string(),
             api_key: "test-key".to_string(),
             app_id: "".to_string(),
             base_url: "".to_string(),
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, Some("zh-CN"), SttContext::default());
+        let client = AliyunStreamClient::new(config, Some("zh-CN"), SttContext::default());
         assert_eq!(client.language, "zh");
     }
 
@@ -1021,14 +994,14 @@ mod tests {
     fn test_session_update_message_omits_output_audio_format_for_text_only() {
         let config = CloudSttConfig {
             enabled: true,
-            provider_type: "qwen-omni-realtime".to_string(),
+            provider_type: "aliyun-stream".to_string(),
             api_key: "test-key".to_string(),
             app_id: "".to_string(),
             base_url: "".to_string(),
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, Some("zh-CN"), SttContext::default());
+        let client = AliyunStreamClient::new(config, Some("zh-CN"), SttContext::default());
         let message = client.build_session_update_message();
         let session = message.get("session").unwrap();
 
@@ -1235,7 +1208,7 @@ mod tests {
 
         let config = CloudSttConfig {
             enabled: true,
-            provider_type: "qwen-omni-realtime".to_string(),
+            provider_type: "aliyun-stream".to_string(),
             api_key: "test-key".to_string(),
             app_id: "".to_string(),
             base_url: mock_url,
@@ -1243,7 +1216,7 @@ mod tests {
             language: "zh".to_string(),
         };
 
-        let mut client = QwenOmniRealtimeClient::new(config, Some("zh-CN"), SttContext::default());
+        let mut client = AliyunStreamClient::new(config, Some("zh-CN"), SttContext::default());
         client.connect().await.unwrap();
 
         let audio_tx = client.get_audio_sender().await.unwrap();
@@ -1299,7 +1272,7 @@ mod tests {
 
         let config = CloudSttConfig {
             enabled: true,
-            provider_type: "qwen-omni-realtime".to_string(),
+            provider_type: "aliyun-stream".to_string(),
             api_key: "test-key".to_string(),
             app_id: "".to_string(),
             base_url: mock_url,
@@ -1307,7 +1280,7 @@ mod tests {
             language: "zh".to_string(),
         };
 
-        let mut client = QwenOmniRealtimeClient::new(config, Some("zh"), SttContext::default());
+        let mut client = AliyunStreamClient::new(config, Some("zh"), SttContext::default());
         let err = client.connect().await.unwrap_err();
         assert!(err.contains("Access denied."), "unexpected error: {}", err);
         assert!(client.get_audio_sender().await.is_none());
@@ -1319,14 +1292,14 @@ mod tests {
     fn test_openai_realtime_client_new_auto_language() {
         let config = CloudSttConfig {
             enabled: true,
-            provider_type: "qwen-omni-realtime".to_string(),
+            provider_type: "aliyun-stream".to_string(),
             api_key: "test-key".to_string(),
             app_id: "".to_string(),
             base_url: "".to_string(),
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, Some("auto"), SttContext::default());
+        let client = AliyunStreamClient::new(config, Some("auto"), SttContext::default());
         assert_eq!(client.language, "");
     }
 
@@ -1334,14 +1307,14 @@ mod tests {
     fn test_openai_realtime_client_new_none_language() {
         let config = CloudSttConfig {
             enabled: true,
-            provider_type: "qwen-omni-realtime".to_string(),
+            provider_type: "aliyun-stream".to_string(),
             api_key: "test-key".to_string(),
             app_id: "".to_string(),
             base_url: "".to_string(),
             model: "".to_string(),
             language: "".to_string(),
         };
-        let client = QwenOmniRealtimeClient::new(config, None, SttContext::default());
+        let client = AliyunStreamClient::new(config, None, SttContext::default());
         assert_eq!(client.language, "");
     }
 }

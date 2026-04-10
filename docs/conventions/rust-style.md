@@ -9,8 +9,12 @@ Project-specific conventions for the AriaType Rust backend (`apps/desktop/src-ta
 Use `thiserror` for library errors, `anyhow` for application errors. For trait boundaries, use `Result<T, String>` for simplicity across implementations.
 
 ```rust
+#[async_trait]
 pub trait SttEngine: Send + Sync {
-    async fn transcribe(&self, request: TranscriptionRequest) -> Result<TranscriptionResult, String>;
+    fn engine_type(&self) -> EngineType;
+    async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String>;
+    async fn finish(&self) -> Result<String, String>;
+    fn set_partial_callback(&mut self, callback: PartialResultCallback);
 }
 ```
 
@@ -124,8 +128,9 @@ src-tauri/src/
 │   ├── mod.rs
 │   ├── traits.rs
 │   ├── unified_manager.rs
-│   ├── whisper/
-│   ├── sense_voice/
+│   ├── buffering_engine.rs
+│   ├── models.rs
+│   ├── sherpa_onnx/
 │   └── cloud/
 ├── polish_engine/      # Text polishing engines
 ├── text_injector/      # Platform-specific text injection
@@ -235,14 +240,9 @@ Use `tokio::sync::mpsc` for async channels, `std::sync::mpsc` for sync. Use `asy
 #[async_trait]
 pub trait SttEngine: Send + Sync {
     fn engine_type(&self) -> EngineType;
-    async fn transcribe(&self, request: TranscriptionRequest) -> Result<TranscriptionResult, String>;
-}
-
-#[async_trait]
-pub trait StreamingSttEngine: Send + Sync {
-    async fn start(&mut self) -> Result<(), String>;
     async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String>;
     async fn finish(&self) -> Result<String, String>;
+    fn set_partial_callback(&mut self, callback: PartialResultCallback);
 }
 ```
 

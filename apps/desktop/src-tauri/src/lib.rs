@@ -3,7 +3,7 @@
 #![allow(deprecated)]
 use tauri::{Emitter, Manager};
 use tauri_plugin_aptabase::EventTracker;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub mod audio;
@@ -11,6 +11,7 @@ pub mod commands;
 pub mod events;
 pub mod history;
 pub mod polish_engine;
+pub mod provider_schema;
 pub mod state;
 pub mod stt_engine;
 pub mod text_injector;
@@ -24,7 +25,6 @@ use commands::audio::{
 use commands::{model, model_cache, permissions, settings, system, text, window};
 use events::EventName;
 use state::app_state::AppState;
-use stt_engine::EngineType;
 
 fn cleanup_old_logs(log_dir: &std::path::Path, keep_days: u64) {
     let cutoff =
@@ -127,6 +127,7 @@ pub fn run() {
             settings::set_hotkey_capture_mode,
             settings::get_glossary_content,
             settings::get_available_subdomains,
+            settings::get_cloud_provider_schemas,
             system::get_audio_devices,
             system::get_log_content,
             system::open_log_folder,
@@ -202,6 +203,27 @@ pub fn run() {
                 }
             }
 
+            // Auto-ensure default model at startup
+            let app_ensure = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+
+                let state = match app_ensure.try_state::<AppState>() {
+                    Some(s) => s,
+                    None => return,
+                };
+
+                let language = state.settings.lock().stt_engine_language.clone();
+                let engine_manager = state.engine_manager.clone();
+
+                let runtime = tokio::runtime::Runtime::new().unwrap();
+                runtime.block_on(async {
+                    if let Err(e) = engine_manager.ensure_default_model(&language).await {
+                        tracing::error!(error = %e, language = %language, "startup_model_ensure_failed");
+                    }
+                });
+            });
+
             let analytics_opt_in = {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock();
@@ -263,46 +285,6 @@ pub fn run() {
                 }
             });
 
-            // Auto-download base model on first launch if no model is downloaded
-            let app_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(1000));
-
-                let state = match app_handle.try_state::<AppState>() {
-                    Some(s) => s,
-                    None => return,
-                };
-
-                // Check for base model (default)
-                if !state.engine_manager.is_model_downloaded(EngineType::Whisper, "base") {
-                    info!(model = "base", "auto_download_started");
-                    let app_clone = app_handle.clone();
-                    let runtime = tokio::runtime::Runtime::new().unwrap();
-                    runtime.block_on(async {
-                        let result = state.engine_manager.download_model(
-                            EngineType::Whisper,
-                            "base",
-                            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                            |_, _| {}
-                        ).await;
-                        match result {
-                            Ok(_) => {
-                                info!(model = "base", "auto_download_completed");
-                                if let Err(e) = app_clone.emit(
-                                    EventName::MODEL_DOWNLOAD_COMPLETE,
-                                    serde_json::json!({ "model": "base" }),
-                                ) {
-                                    tracing::warn!(error = %e, "Failed to emit model download complete event");
-                                }
-                            }
-                            Err(e) => {
-                                error!(model = "base", error = %e, "auto-download failed");
-                            }
-                        }
-                    });
-                }
-            });
-
             let app_warmup = app.handle().clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(2000));
@@ -320,24 +302,30 @@ pub fn run() {
                 drop(settings);
 
                 if model_resident {
-                    // Preload STT model
                     if let Some(engine_type) = crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name) {
-                        match state.engine_manager.load_model(engine_type, &model_name) {
-                            Ok(_) => {
-                                info!(
-                                    engine = ?engine_type,
-                                    model = %model_name,
-                                    "model_loaded-startup_warmup"
-                                );
+                        if state.engine_manager.is_model_downloaded(engine_type, &model_name) {
+                            match state.engine_manager.load_model(engine_type, &model_name) {
+                                Ok(_) => {
+                                    info!(
+                                        engine = ?engine_type,
+                                        model = %model_name,
+                                        "model_loaded-startup_warmup"
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        engine = ?engine_type,
+                                        model = %model_name,
+                                        error = %e,
+                                        "model_load_failed-startup_warmup"
+                                    );
+                                }
                             }
-                            Err(e) => {
-                                warn!(
-                                    engine = ?engine_type,
-                                    model = %model_name,
-                                    error = %e,
-                                    "model_load_failed-startup_warmup"
-                                );
-                            }
+                        } else {
+                            debug!(
+                                model = %model_name,
+                                "model_not_downloaded-skipping_warmup"
+                            );
                         }
                     } else {
                         warn!(model = %model_name, "model_unknown-cannot_determine_engine");

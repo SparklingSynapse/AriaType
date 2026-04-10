@@ -35,7 +35,9 @@ A plan is only completed when all implementation units are closed, verification 
 
 ## Completed Plans
 
-See [completed/README.md](./completed/README.md) for the completed plan index.
+| Plan | Type | Date |
+|------|------|------|
+| [sherpa-onnx STT Engine Refactor](./completed/2026-04-08-001-refactor-sherpa-onnx-stt-engine.md) | refactor | 2026-04-08 |
 
 ## Provider API Reference
 

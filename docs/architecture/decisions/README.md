@@ -39,4 +39,4 @@ Every ADR is a separate file: `NNN-kebab-case-title.md`
 | [ADR-001](./001-unified-state-layer.md) | Unified State Layer | 2025-09 | Accepted |
 | [ADR-002](./002-nostream-volcengine.md) | NoStream Interface for Volcengine | 2025-09 | Accepted |
 | [ADR-003](./003-dual-layer-text-injection.md) | Dual-Layer Text Injection | 2025-10 | Accepted |
-| [ADR-004](./004-engine-trait-separation.md) | Engine Trait Separation (Batch vs Streaming) | 2025-10 | Accepted |
+| [ADR-004](./004-engine-trait-separation.md) | Unified SttEngine Trait | 2025-10 | Accepted |

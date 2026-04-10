@@ -6,13 +6,14 @@
 User holds hotkey
   → GlobalShortcut registered (tray.rs → commands/)
   → Recording starts (audio/recorder.rs)
-  → Audio captured (16kHz mono PCM)
-  → If cloud STT: chunks streamed every 1s via WebSocket
-  → If local STT: complete audio stored in AudioStorage
+  → SttEngine created (local or cloud — recorder doesn't care)
+  → Audio captured at device sample rate
+  → StreamAudioProcessor: resample → 16kHz mono → denoise (if on) → Silero VAD
+  → VAD-filtered chunks sent via mpsc channel
+  → Spawned consumer task: while let Some(chunk) = rx.recv() { engine.send_chunk(chunk) }
 User releases hotkey
-  → Recording stops
-  → WAV file written
-  → STT engine processes audio
+  → Recording stops → mpsc channel closed
+  → Consumer task: AWAIT engine.finish() — returns final transcription
   → Transcription result received
   → If polish enabled: text polished (local LLM or cloud API)
   → Final text injected at cursor (text_injector/)
@@ -23,22 +24,32 @@ User releases hotkey
 
 ```
 Settings
-  → enabled?
-  → cloud or local?
+  → cloud STT active?
+      Yes → StreamingSttClient (WebSocket-based, impls SttEngine)
+      No  → SherpaOnnxBufferingEngine (buffer-based, impls SttEngine)
 
-Local Engine Path:
-  → Check downloaded model exists
-  → Load model if not cached
-  → Batch transcribe complete audio
-  → Return TranscriptionResult
+All engines implement unified SttEngine:
+  send_chunk(pcm_16khz_mono)  — per-chunk, async
+  finish() → Result<String>    — called after channel closes
 
-Cloud Engine Path:
-  → Check credentials configured
-  → Connect WebSocket (for streaming) or HTTP
-  → Stream audio chunks (1s intervals for streaming STT)
-  → Receive partial results
-  → Receive final transcription
-  → Return TranscriptionResult
+Consumer task (identical for all engines):
+  while let Some(chunk) = rx.recv().await {
+      engine.send_chunk(chunk).await?;
+  }
+  let text = engine.finish().await?;
+
+Local Engine (via SherpaOnnxBufferingEngine):
+  → send_chunk() pushes Vec<i16> to internal buffer
+  → finish() flattens buffer → f32 → SherpaOnnxEngine transcribe
+  → Zero file I/O
+
+Cloud Streaming Engine (via StreamingSttClient):
+  → send_chunk() forwards to internal mpsc → WebSocket
+  → finish() drops internal sender, awaits WebSocket final result
+
+Cloud Non-Streaming:
+  → send_chunk() accumulates pcm in buffer
+  → finish() writes temp WAV → HTTP API → String
 ```
 
 ## State Machine
@@ -114,10 +125,16 @@ Language fields use full IETF BCP 47 tags. Use `language-REGION` values such as 
 
 ```typescript
 interface TranscriptionRequest {
-  audio_path: string;           // Path to WAV file
+  audio_source: AudioSource;    // File path or in-memory samples
   language?: string;            // BCP 47 language tag (e.g., "zh-CN")
+  denoise_mode: "on" | "off" | "auto";
+  vad_enabled: boolean;
   cloud_config?: CloudSttConfig; // Cloud provider settings
 }
+
+type AudioSource =
+  | { File: string }            // Path to WAV file (legacy / cloud non-streaming)
+  | { Memory: number[] };       // f32 16kHz mono samples (local STT, zero I/O)
 ```
 
 ### TranscriptionResult
@@ -125,9 +142,11 @@ interface TranscriptionRequest {
 ```typescript
 interface TranscriptionResult {
   text: string;                 // Final transcribed text
-  engine_type: "whisper" | "sense_voice" | "volcengine" | "qwen_omni" | "elevenlabs" | "deepgram";
+  engine_type: "whisper" | "sensevoice" | "cloud";
   duration_ms: number;          // Processing time
   audio_duration_ms?: number;   // Original audio length
+  preprocess_ms?: number;       // Audio preprocessing time
+  inference_ms?: number;        // Model inference time
 }
 ```
 
@@ -158,13 +177,24 @@ interface PolishResult {
 ## Audio Pipeline
 
 ```
-Microphone (system audio capture)
-  → Audio Recorder (16kHz mono PCM)
-  → Level Meter (real-time amplitude)
-  → VAD (voice activity detection, optional)
-  → AudioStorage (in-memory buffer)
-  → WAV Writer (file output)
-  → STT Engine (transcription)
+Microphone (system audio capture, device sample rate)
+  → Audio Recorder (raw PCM callback)
+  → Chunk buffer (0.5s accumulation)
+  → i16 → f32 conversion
+  → Stereo → mono downmix (if needed)
+  → StreamAudioProcessor:
+      ├── Denoise: RNNoise at 48kHz (if enabled)
+      ├── Resample to 16kHz
+      └── VAD: Silero at 16kHz (512-sample windows)
+  → VAD-filtered pcm_16khz_mono sent via mpsc channel
+  → Spawned consumer task:
+      while let Some(chunk) = rx.recv().await {
+          engine.send_chunk(chunk).await;
+      }
+      text = engine.finish().await;
+  → Engine internals:
+      ├── SherpaOnnxBufferingEngine → buffer Vec<i16> → finish: flatten → transcribe
+      └── StreamingSttClient → forward to WebSocket → finish: await final result
 ```
 
 ## Multi-Window Model

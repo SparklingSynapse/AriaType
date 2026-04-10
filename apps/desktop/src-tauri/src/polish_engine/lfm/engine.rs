@@ -45,6 +45,8 @@ impl PolishEngine for LfmPolishEngine {
             log_prefix: "polish:lfm",
             strip_think_tags: false,
             prompt_format: PromptFormat::ChatMl,
+            // LFM2.5-1.2B Q4_K_M ≈ 697MB, LFM2-2.6B Q4_K_M ≈ 1.6GB
+            min_model_size_mb: 600,
         };
 
         let t0 = std::time::Instant::now();

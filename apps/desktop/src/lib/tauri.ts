@@ -61,6 +61,26 @@ export interface CloudSttConfig {
   language: string;
 }
 
+export interface ProviderFieldSchema {
+  name: string;
+  key: string;
+  required: boolean;
+  default_value: string;
+  example: string;
+  secret: boolean;
+}
+
+export interface ProviderSchema {
+  id: string;
+  name: string;
+  fields: ProviderFieldSchema[];
+}
+
+export interface CloudProviderSchemas {
+  stt: ProviderSchema[];
+  polish: ProviderSchema[];
+}
+
 export interface AppSettings {
   hotkey: string;
   recording_mode: "hold" | "toggle";
@@ -161,6 +181,8 @@ export const settingsCommands = {
     invokeWithLogging<string>("get_glossary_content", { subdomain }),
   getAvailableSubdomains: (domain: string) =>
     invokeWithLogging<string[]>("get_available_subdomains", { domain }),
+  getCloudProviderSchemas: () =>
+    invokeWithLogging<CloudProviderSchemas>("get_cloud_provider_schemas"),
 };
 
 export const systemCommands = {

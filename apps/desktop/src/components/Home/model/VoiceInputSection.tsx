@@ -20,22 +20,13 @@ import { AnalyticsEvents } from "@/lib/events";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 
 function getModelLanguageHint(modelName: string, t: (key: string) => string): string {
-  if (modelName === "sense-voice-small-q4_k" || modelName === "sense-voice-small-q8_0") {
+  if (modelName === "sense-voice-small") {
     return " · " + t("model.hint.cjkBest");
   }
-  if (modelName === "large-v3-turbo-q8_0") {
+  if (modelName === "whisper-base" || modelName === "whisper-small") {
     return " · " + t("model.hint.multiLang");
   }
-  if (modelName === "small-q8_0") {
-    return " · " + t("model.hint.enCjk");
-  }
-  if (modelName === "medium-q5_0") {
-    return " · " + t("model.hint.enCjkEu");
-  }
-  if (modelName === "tiny" || modelName === "base") {
-    return " · " + t("model.hint.enFocused");
-  }
-return "";
+  return "";
 }
 
 interface VoiceInputSectionProps {

@@ -30,7 +30,7 @@ events/         # backend → frontend event emission
 |-------|----------------|
 | `types/` | Pure data structures, serialization/deserialization |
 | `config/` | Settings validation, default values, config file handling |
-| `state/` | Runtime state container (AudioStorage, StreamingSttState, settings) |
+| `state/` | Runtime state container (StreamingSttState, settings) |
 | `engines/` | Business logic, trait implementations for STT/Polish |
 | `commands/` | IPC handler, minimal logic, delegates to services |
 | `events/` | Async event emission to frontend |
@@ -65,6 +65,7 @@ components/     # UI components
 | `src-tauri/capabilities/` — never modify without explicit request | Manual review |
 | `lib.rs` — commands registered here | Manual review |
 | `src/lib/tauri.ts` — all IPC calls go here | TypeScript strict mode |
+| `audio/` → `stt_engine/` — recorder must be agnostic to engine type; engine-specific logic stays in engine implementations | Code review |
 | Frontend never calls raw `invoke()` | Lint rule in `tsconfig.json` |
 | Backend never imports frontend code | Rust module system |
 | `packages/shared/` has zero runtime dependencies | No imports from apps/ or packages/ |
@@ -90,7 +91,7 @@ components/     # UI components
 
 | File | Layer | Purpose |
 |------|-------|---------|
-| `stt_engine/traits.rs` | engine | Defines SttEngine + StreamingSttEngine traits |
+| `stt_engine/traits.rs` | engine | Defines unified SttEngine trait (send_chunk + finish) |
 | `stt_engine/unified_manager.rs` | engine | Engine lifecycle, selection logic |
 | `polish_engine/unified_manager.rs` | engine | Polish engine lifecycle |
 | `state/unified_state.rs` | state | Single source of runtime truth |

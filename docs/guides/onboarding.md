@@ -126,7 +126,7 @@ The 6-8 files that matter most:
 | `apps/desktop/src-tauri/src/lib.rs` | **All commands registered here**—missing registration = broken IPC |
 | `apps/desktop/src/lib/tauri.ts` | Frontend IPC boundary—extend this, never use raw `invoke()` |
 | `apps/desktop/src-tauri/src/state/unified_state.rs` | Runtime state container—single source of truth |
-| `apps/desktop/src-tauri/src/stt_engine/traits.rs` | `SttEngine` and `StreamingSttEngine` trait definitions |
+| `apps/desktop/src-tauri/src/stt_engine/traits.rs` | Unified `SttEngine` trait definition (send_chunk + finish) |
 | `AGENTS.md` | Agent operating contract—rules, verification, coverage gates |
 | `docs/README.md` | Documentation map—entry points, document roles, canonical indexes |
 | `docs/architecture/data-flow.md` | Primary workflow, state machine, IPC contracts |
@@ -217,8 +217,8 @@ Audio → STT → Polish → Injection
 
 audio/recorder.rs
     → audio/resampler.rs (format conversion)
-    → audio/vad.rs (voice activity detection)
-    → state/unified_state.rs::AudioStorage (storage)
+    → audio/stream_processor.rs (VAD + denoise)
+    → mpsc channel (audio chunk transport)
 
 stt_engine/traits.rs::SttEngine
     → stt_engine/unified_manager.rs (engine selection)

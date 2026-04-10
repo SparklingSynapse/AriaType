@@ -41,7 +41,7 @@ fn test_e2e_settings_default() {
     let settings = ariatype_lib::commands::settings::AppSettings::default();
 
     assert_eq!(settings.hotkey, "shift+space");
-    assert_eq!(settings.model, "base");
+    assert_eq!(settings.model, "whisper-base");
     assert_eq!(settings.language, "auto");
     assert!(!settings.polish_enabled);
 }
@@ -206,7 +206,7 @@ mod mock_polish {
 async fn test_e2e_mock_stt_engine_success() {
     let engine = mock_stt::MockSttEngine::new("Hello world");
 
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new("test.wav");
+    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result = engine.transcribe(request).await.unwrap();
 
     assert_eq!(result.text, "Hello world");
@@ -218,7 +218,7 @@ async fn test_e2e_mock_stt_engine_success() {
 async fn test_e2e_mock_stt_engine_failure() {
     let engine = mock_stt::MockSttEngine::new("Should not appear").with_failure();
 
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new("test.wav");
+    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result = engine.transcribe(request).await;
 
     assert!(result.is_err());
@@ -252,7 +252,7 @@ async fn test_e2e_mock_polish_engine_failure() {
 }
 
 async fn run_pipeline(
-    audio_path: &str,
+    samples: Vec<f32>,
     stt_result: &str,
     polish_result: &str,
     polish_enabled: bool,
@@ -260,7 +260,7 @@ async fn run_pipeline(
     let stt = mock_stt::MockSttEngine::new(stt_result);
     let polish = mock_polish::MockPolishEngine::new(polish_result);
 
-    let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(audio_path);
+    let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(samples);
     let stt_result = stt.transcribe(stt_request).await?;
 
     if polish_enabled && !stt_result.text.is_empty() {
@@ -278,11 +278,8 @@ async fn run_pipeline(
 
 #[tokio::test]
 async fn test_e2e_pipeline_transcribe_only() {
-    let wav_data = create_speech_like_wav(16000, 1, 1.0);
-    let temp_path = write_temp_wav(&wav_data);
-
     let result = run_pipeline(
-        temp_path.to_str().unwrap(),
+        vec![0.0f32; 16000],
         "This is a test transcription",
         "This should not be used",
         false,
@@ -291,17 +288,12 @@ async fn test_e2e_pipeline_transcribe_only() {
     .unwrap();
 
     assert_eq!(result, "This is a test transcription");
-
-    let _ = std::fs::remove_file(temp_path);
 }
 
 #[tokio::test]
 async fn test_e2e_pipeline_transcribe_and_polish() {
-    let wav_data = create_speech_like_wav(16000, 1, 1.0);
-    let temp_path = write_temp_wav(&wav_data);
-
     let result = run_pipeline(
-        temp_path.to_str().unwrap(),
+        vec![0.0f32; 16000],
         "um hello world uh",
         "hello world",
         true,
@@ -310,61 +302,36 @@ async fn test_e2e_pipeline_transcribe_and_polish() {
     .unwrap();
 
     assert_eq!(result, "hello world");
-
-    let _ = std::fs::remove_file(temp_path);
 }
 
 #[tokio::test]
 async fn test_e2e_pipeline_stt_fails_gracefully() {
-    let wav_data = create_speech_like_wav(16000, 1, 1.0);
-    let temp_path = write_temp_wav(&wav_data);
-
     let stt = mock_stt::MockSttEngine::new("Should fail").with_failure();
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(temp_path.to_str().unwrap());
+    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result = stt.transcribe(request).await;
 
     assert!(result.is_err());
-
-    let _ = std::fs::remove_file(temp_path);
 }
 
 #[tokio::test]
 async fn test_e2e_pipeline_empty_transcription() {
-    let wav_data = create_speech_like_wav(16000, 1, 1.0);
-    let temp_path = write_temp_wav(&wav_data);
-
-    let result = run_pipeline(
-        temp_path.to_str().unwrap(),
-        "",
-        "Should not be called",
-        true,
-    )
-    .await
-    .unwrap();
+    let result = run_pipeline(vec![0.0f32; 16000], "", "Should not be called", true)
+        .await
+        .unwrap();
 
     assert_eq!(result, "");
-
-    let _ = std::fs::remove_file(temp_path);
 }
 
 #[tokio::test]
 async fn test_e2e_pipeline_polish_failure_recovery() {
-    // Create mock STT engine that succeeds
     let stt = mock_stt::MockSttEngine::new("um hello world uh");
-    // Create mock polish engine that fails
     let polish = mock_polish::MockPolishEngine::new("Should fail").with_failure();
 
-    let wav_data = create_speech_like_wav(16000, 1, 1.0);
-    let temp_path = write_temp_wav(&wav_data);
-
-    let stt_request =
-        ariatype_lib::stt_engine::TranscriptionRequest::new(temp_path.to_str().unwrap());
+    let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let stt_result = stt.transcribe(stt_request).await.unwrap();
 
-    // Verify STT succeeds
     assert_eq!(stt_result.text, "um hello world uh");
 
-    // Test polish failure
     let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
         stt_result.text.clone(),
         "Polish this",
@@ -374,10 +341,8 @@ async fn test_e2e_pipeline_polish_failure_recovery() {
 
     assert!(polish_result.is_err(), "Polish should fail");
 
-    // Test full pipeline with graceful degradation
     let pipeline_result: Result<String, String> = async {
-        let stt_request =
-            ariatype_lib::stt_engine::TranscriptionRequest::new(temp_path.to_str().unwrap());
+        let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
         let stt_result = stt.transcribe(stt_request).await?;
 
         if !stt_result.text.is_empty() {
@@ -388,10 +353,7 @@ async fn test_e2e_pipeline_polish_failure_recovery() {
             );
             match polish.polish(polish_request).await {
                 Ok(polish_result) => Ok(polish_result.text),
-                Err(_) => {
-                    // Graceful degradation: return original STT result on polish failure
-                    Ok(stt_result.text)
-                }
+                Err(_) => Ok(stt_result.text),
             }
         } else {
             Ok(stt_result.text)
@@ -399,7 +361,6 @@ async fn test_e2e_pipeline_polish_failure_recovery() {
     }
     .await;
 
-    // Pipeline should succeed with graceful degradation
     assert!(
         pipeline_result.is_ok(),
         "Pipeline should handle polish failure gracefully"
@@ -409,6 +370,4 @@ async fn test_e2e_pipeline_polish_failure_recovery() {
         final_text, "um hello world uh",
         "Should return original STT text on polish failure"
     );
-
-    let _ = std::fs::remove_file(temp_path);
 }

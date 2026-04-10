@@ -17,7 +17,6 @@
 //! # Reference
 //! - <https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime>
 
-use async_trait::async_trait;
 use futures_util::{SinkExt, Stream, StreamExt};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -28,10 +27,7 @@ use tokio_tungstenite::{connect_async_tls_with_config, tungstenite::protocol::Me
 use tracing::{debug, error, info, warn};
 
 use crate::commands::settings::CloudSttConfig;
-use crate::stt_engine::traits::{
-    EngineType, PartialResult, PartialResultCallback, StreamingSttEngine, SttContext,
-    TranscriptionResult,
-};
+use crate::stt_engine::traits::{EngineType, PartialResult, PartialResultCallback, SttContext, TranscriptionResult};
 
 /// Eleven Labs Scribe v2 Realtime WebSocket endpoint
 const ELEVENLABS_REALTIME_ENDPOINT: &str = "wss://api.elevenlabs.io/v1/speech-to-text/realtime";
@@ -543,29 +539,6 @@ impl ElevenLabsStreamingClient {
             info!("[ElevenLabs] Connection closed");
         }
         *self.rx.lock().await = None;
-    }
-}
-
-#[async_trait]
-impl StreamingSttEngine for ElevenLabsStreamingClient {
-    async fn start(&mut self) -> Result<(), String> {
-        self.connect().await
-    }
-
-    async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String> {
-        self.send_audio_async(pcm_data).await
-    }
-
-    async fn finish(&self) -> Result<String, String> {
-        self.finish().await
-    }
-
-    fn set_partial_callback(&mut self, callback: PartialResultCallback) {
-        self.on_partial = Some(callback);
-    }
-
-    async fn get_audio_sender(&self) -> Option<mpsc::Sender<Vec<i16>>> {
-        self.audio_tx.lock().await.clone()
     }
 }
 

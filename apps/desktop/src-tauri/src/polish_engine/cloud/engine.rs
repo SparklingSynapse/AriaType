@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info};
 
-const CLOUD_POLISH_TIMEOUT: Duration = Duration::from_secs(5);
+const CLOUD_POLISH_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone)]
 pub struct CloudProviderConfig {
@@ -157,12 +157,33 @@ impl CloudPolishEngine {
         }
 
         #[derive(Serialize)]
+        #[serde(rename_all = "snake_case")]
+        enum ThinkingType {
+            Disabled,
+        }
+
+        #[derive(Serialize)]
+        struct ThinkingConfig {
+            r#type: ThinkingType,
+        }
+
+        #[derive(Serialize)]
         struct RequestBody {
             model: String,
             max_tokens: u32,
             system: String,
             messages: Vec<Message>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            thinking: Option<ThinkingConfig>,
         }
+
+        let thinking = if self.config.enable_thinking {
+            None
+        } else {
+            Some(ThinkingConfig {
+                r#type: ThinkingType::Disabled,
+            })
+        };
 
         let body = RequestBody {
             model: self.config.model.clone(),
@@ -172,6 +193,7 @@ impl CloudPolishEngine {
                 role: "user".to_string(),
                 content: user_message.to_string(),
             }],
+            thinking,
         };
 
         debug!(
@@ -179,6 +201,11 @@ impl CloudPolishEngine {
             model = %self.config.model,
             timeout_secs = CLOUD_POLISH_TIMEOUT.as_secs(),
             "cloud_polish_anthropic_request_start"
+        );
+
+        info!(
+            request_body = %serde_json::to_string(&body).unwrap_or_default(),
+            "cloud_polish_anthropic_request_body"
         );
 
         let response = self
@@ -204,6 +231,8 @@ impl CloudPolishEngine {
             return Err(format!("API error ({}): {}", status, response_text));
         }
 
+        info!(raw_response = %response_text, "cloud_polish_anthropic_raw_response");
+
         #[derive(Deserialize)]
         struct ContentBlock {
             text: Option<String>,
@@ -219,8 +248,8 @@ impl CloudPolishEngine {
 
         let text = response_body
             .content
-            .first()
-            .and_then(|c| c.text.clone())
+            .iter()
+            .find_map(|c| c.text.clone())
             .unwrap_or_default();
 
         Ok(text)

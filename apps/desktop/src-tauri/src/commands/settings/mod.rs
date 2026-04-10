@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::commands::window::position_pill_window;
 use crate::events::EventName;
@@ -131,7 +131,7 @@ impl Default for AppSettings {
         Self {
             hotkey: "shift+space".to_string(),
             recording_mode: "hold".to_string(),
-            model: "base".to_string(),
+            model: "whisper-base".to_string(),
             stt_engine: "whisper".to_string(),
             pill_position: "bottom-center".to_string(),
             pill_indicator_mode: "always".to_string(),
@@ -196,7 +196,7 @@ impl AppSettings {
         self.cloud_stt_enabled
             && matches!(
                 self.active_cloud_stt_provider.as_str(),
-                "volcengine-streaming" | "qwen-omni-realtime" | "elevenlabs"
+                "volcengine-streaming" | "aliyun-stream" | "elevenlabs"
             )
     }
 
@@ -298,6 +298,23 @@ fn resolve_stt_provider_type(
     }
 }
 
+fn validate_model_name(json: &mut serde_json::Value) -> bool {
+    let model_value = match json.get("model").and_then(|v| v.as_str()) {
+        Some(m) => m,
+        None => return false,
+    };
+
+    if crate::stt_engine::models::find_by_name(model_value).is_some() {
+        return false;
+    }
+
+    tracing::info!(old = %model_value, new = "whisper-base", "model_name_reset_to_default");
+    json["model"] = serde_json::Value::String("whisper-base".to_string());
+    json["stt_engine"] = serde_json::Value::String("whisper".to_string());
+
+    true
+}
+
 pub fn load_settings_from_disk() -> AppSettings {
     let path = get_settings_path();
     if path.exists() {
@@ -321,7 +338,9 @@ pub fn load_settings_from_disk() -> AppSettings {
             };
 
             // Run migration
-            let migrated = migrate_cloud_settings(&mut json_value);
+            let migrated_cloud = migrate_cloud_settings(&mut json_value);
+            let migrated_model = validate_model_name(&mut json_value);
+            let migrated = migrated_cloud || migrated_model;
 
             // Parse into AppSettings
             match serde_json::from_value::<AppSettings>(json_value.clone()) {
@@ -361,10 +380,8 @@ pub fn update_settings(
     key: String,
     value: serde_json::Value,
 ) -> Result<(), String> {
-    let mut model_to_reload: Option<String> = None;
-    let mut should_unload_model = false;
-    let mut should_load_model: Option<String> = None;
-    let mut should_reload_for_gpu: Option<String> = None;
+    let mut should_clear_cache = false;
+    let mut model_to_preload: Option<String> = None;
     let mut hotkey_to_register: Option<String> = None;
     let preset_to_apply: Option<String>;
     let indicator_mode_to_apply: Option<String>;
@@ -387,8 +404,8 @@ pub fn update_settings(
             "model" => {
                 if let Some(v) = value.as_str() {
                     if settings.model != v {
-                        model_to_reload = Some(v.to_string());
-                        // Auto-update stt_engine based on model name
+                        should_clear_cache = true;
+                        model_to_preload = Some(v.to_string());
                         if let Some(engine_type) =
                             crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(v)
                         {
@@ -420,9 +437,9 @@ pub fn update_settings(
             }
             "gpu_acceleration" => {
                 if let Some(v) = value.as_bool() {
-                    if v != settings.gpu_acceleration && settings.model_resident {
-                        // GPU setting changed while model is resident — reload with new setting
-                        should_reload_for_gpu = Some(settings.model.clone());
+                    if v != settings.gpu_acceleration {
+                        should_clear_cache = true;
+                        state.engine_manager.set_provider(v);
                     }
                     settings.gpu_acceleration = v;
                 }
@@ -434,6 +451,9 @@ pub fn update_settings(
             }
             "stt_engine_language" => {
                 if let Some(v) = value.as_str() {
+                    if settings.stt_engine_language != v {
+                        state.engine_manager.clear_cache();
+                    }
                     settings.stt_engine_language = v.to_string();
                 }
             }
@@ -481,12 +501,11 @@ pub fn update_settings(
             }
             "model_resident" => {
                 if let Some(v) = value.as_bool() {
-                    if !v && settings.model_resident {
-                        // switching off: schedule model unload after lock is released
-                        should_unload_model = true;
-                    } else if v && !settings.model_resident {
-                        // switching on: schedule model preload after lock is released
-                        should_load_model = Some(settings.model.clone());
+                    if v != settings.model_resident {
+                        should_clear_cache = true;
+                        if v {
+                            model_to_preload = Some(settings.model.clone());
+                        }
                     }
                     settings.model_resident = v;
                 }
@@ -635,27 +654,27 @@ pub fn update_settings(
         crate::commands::window::update_pill_visibility(&app);
     }
 
-    if should_unload_model {
-        // Model unloading is now handled by UnifiedEngineManager's engine cache
-        tracing::info!(
-            mem_mb = get_process_rss_mb(),
-            "model_unload_requested-resident_disabled"
-        );
+    if should_clear_cache {
+        state.engine_manager.clear_cache();
     }
 
-    if let Some(model_name) = should_load_model {
-        // Model preloading is now handled by UnifiedEngineManager's engine cache
-        tracing::info!(model = %model_name, mem_mb = get_process_rss_mb(), "model_preload_requested-resident_enabled");
-    }
-
-    if let Some(model_name) = should_reload_for_gpu {
-        // Model reloading is now handled by UnifiedEngineManager's engine cache
-        tracing::info!(model = %model_name, mem_mb = get_process_rss_mb(), "model_reload_requested-gpu_changed");
-    }
-
-    if let Some(model_name) = model_to_reload {
-        // Model hot-reloading is now handled by UnifiedEngineManager's engine cache
-        tracing::info!(model = %model_name, mem_mb = get_process_rss_mb(), "model_reload_requested-hot_swap");
+    if let Some(model_name) = model_to_preload {
+        let engine_type =
+            crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name)
+                .unwrap_or(crate::stt_engine::traits::EngineType::Whisper);
+        let engine_manager = state.engine_manager.clone();
+        let app_clone = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(e) = engine_manager.load_model(engine_type, &model_name) {
+                tracing::warn!(model = %model_name, error = %e, "model_preload_failed");
+            } else {
+                tracing::info!(model = %model_name, mem_mb = get_process_rss_mb(), "model_preloaded");
+                let _ = app_clone.emit(
+                    EventName::MODEL_LOADED,
+                    crate::events::ModelLoadedEvent { model: model_name },
+                );
+            }
+        });
     }
 
     Ok(())
@@ -961,6 +980,11 @@ pub fn get_available_subdomains(domain: String) -> Result<Vec<String>, String> {
     Ok(get_subdomains_for_domain(&domain))
 }
 
+#[tauri::command]
+pub fn get_cloud_provider_schemas() -> crate::provider_schema::CloudProviderSchemas {
+    crate::provider_schema::get_schemas()
+}
+
 #[cfg(target_os = "macos")]
 pub fn set_activation_policy_for_app(app: &AppHandle, stay_in_tray: bool) -> Result<(), String> {
     // Save the main window's visibility state before changing policy
@@ -988,6 +1012,80 @@ pub fn set_activation_policy_for_app(app: &AppHandle, stay_in_tray: bool) -> Res
 
     info!(stay_in_tray = stay_in_tray, "activation_policy_updated");
     Ok(())
+}
+
+/// Scans the models directory for legacy model files (ggml/gguf format)
+/// and deletes them. These are from the old whisper.cpp format that is no longer used.
+/// Current models use sherpa-onnx ONNX format (.onnx, .int8.onnx).
+///
+/// Returns the number of legacy files deleted.
+pub fn cleanup_legacy_models() -> Result<usize, String> {
+    let models_dir = AppPaths::models_dir();
+
+    if !models_dir.exists() {
+        info!(path = ?models_dir, "cleanup_legacy_models_skip-no_models_dir");
+        return Ok(0);
+    }
+
+    let mut deleted_count = 0;
+    let legacy_extensions = [".ggml", ".gguf"];
+
+    let entries = fs::read_dir(&models_dir).map_err(|e| {
+        format!(
+            "Failed to read models directory '{}': {}",
+            models_dir.display(),
+            e
+        )
+    })?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        // Check if it's a file with a legacy extension
+        if path.is_file() {
+            if let Some(ext) = path.extension() {
+                let ext_lower = ext.to_string_lossy().to_lowercase();
+                if legacy_extensions
+                    .iter()
+                    .any(|&e| e == format!(".{}", ext_lower))
+                {
+                    match fs::remove_file(&path) {
+                        Ok(_) => {
+                            info!(file = %path.display(), "legacy_model_file_deleted");
+                            deleted_count += 1;
+                        }
+                        Err(e) => {
+                            warn!(file = %path.display(), error = %e, "legacy_model_file_deletion_failed");
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check for legacy model subdirectories (e.g., "model.ggml" folders)
+        if path.is_dir() {
+            let dir_name = path.file_name().unwrap_or_default().to_string_lossy();
+            if dir_name.ends_with(".ggml") || dir_name.ends_with(".gguf") {
+                match fs::remove_dir_all(&path) {
+                    Ok(_) => {
+                        info!(dir = %path.display(), "legacy_model_dir_deleted");
+                        deleted_count += 1;
+                    }
+                    Err(e) => {
+                        warn!(dir = %path.display(), error = %e, "legacy_model_dir_deletion_failed");
+                    }
+                }
+            }
+        }
+    }
+
+    info!(deleted = deleted_count, "cleanup_legacy_models_complete");
+    Ok(deleted_count)
+}
+
+#[tauri::command]
+pub async fn cleanup_legacy_models_cmd() -> Result<usize, String> {
+    cleanup_legacy_models()
 }
 
 #[cfg(test)]

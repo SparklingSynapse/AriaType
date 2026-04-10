@@ -73,6 +73,8 @@ Code churn without stronger evidence is not progress.
 
 **Volcengine interface**: Always `bigmodel_nostream`. Bidirectional interfaces have lower accuracy — never use unless user explicitly acknowledges the tradeoff.
 
+**Architecture boundary rules**: See [`docs/architecture/layers.md`](docs/architecture/layers.md#boundary-rules) for layer dependency and module boundary constraints (including recording pipeline separation).
+
 ---
 
 ## Recovery Protocol
@@ -128,6 +130,7 @@ pnpm --filter @ariatype/website build && pnpm --filter @ariatype/website lint
 | Doc gardening process | [`docs/quality/gardening.md`](docs/quality/gardening.md) |
 | STT provider API reference | [`docs/reference/providers/stt.md`](docs/reference/providers/stt.md) |
 | Polish provider API reference | [`docs/reference/providers/polish.md`](docs/reference/providers/polish.md) |
+| Boundary rules and module constraints | [`docs/architecture/layers.md`](docs/architecture/layers.md) |
 | Feature specifications | `docs/feat/<name>/<version>/prd/erd.md` |
 | Execution plans | [`docs/plans/README.md`](docs/plans/README.md) |
 | Package-specific guides | `apps/desktop/CONTRIBUTING.md`, `packages/*/CONTRIBUTING.md` |

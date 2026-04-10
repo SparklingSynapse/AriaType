@@ -1,6 +1,6 @@
 use ariatype_lib::commands::settings::CloudSttConfig;
 use ariatype_lib::stt_engine::cloud::volcengine_streaming::VolcengineStreamingClient;
-use ariatype_lib::stt_engine::traits::PartialResult;
+use ariatype_lib::stt_engine::traits::{PartialResult, SttContext};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -138,7 +138,7 @@ async fn test_volcengine_streaming_mock_flow() {
         language: "zh-CN".to_string(),
     };
 
-    let mut client = VolcengineStreamingClient::new(config, Some("zh-CN"));
+    let mut client = VolcengineStreamingClient::new(config, Some("zh-CN"), SttContext::default());
 
     let (result_tx, result_rx) = tokio::sync::oneshot::channel::<String>();
     let result_tx = Arc::new(Mutex::new(Some(result_tx)));
@@ -284,7 +284,7 @@ async fn test_volcengine_streaming_mock_empty_audio() {
         language: "zh-CN".to_string(),
     };
 
-    let mut client = VolcengineStreamingClient::new(config, Some("zh-CN"));
+    let mut client = VolcengineStreamingClient::new(config, Some("zh-CN"), SttContext::default());
     let (result_tx, result_rx) = tokio::sync::oneshot::channel::<String>();
     let result_tx = Arc::new(Mutex::new(Some(result_tx)));
 
@@ -327,7 +327,7 @@ async fn test_volcengine_streaming_mock_connection_failure() {
         language: "zh-CN".to_string(),
     };
 
-    let mut client = VolcengineStreamingClient::new(config, Some("zh-CN"));
+    let mut client = VolcengineStreamingClient::new(config, Some("zh-CN"), SttContext::default());
     let result = client.connect().await;
 
     assert!(result.is_err(), "Connection should fail for invalid port");

@@ -12,7 +12,7 @@
 
 use ariatype_lib::commands::settings::CloudSttConfig;
 use ariatype_lib::stt_engine::cloud::{StreamingSttClient, URL_BIGMODEL_NOSTREAM};
-use ariatype_lib::stt_engine::traits::{PartialResult, StreamingSttEngine};
+use ariatype_lib::stt_engine::traits::{PartialResult, SttContext};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -64,11 +64,11 @@ fn create_silent_pcm_chunk(samples: usize) -> Vec<i16> {
 // ==================== StreamingSttEngine Trait Tests ====================
 
 #[tokio::test]
-async fn test_streaming_engine_start_auth_error() {
+async fn test_streaming_engine_connect_auth_error() {
     let config = create_volcengine_config();
-    let mut client = StreamingSttClient::new(config, Some("zh")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
-    let result = client.start().await;
+    let result = client.connect().await;
     assert!(result.is_err());
     let err = result.unwrap_err();
 
@@ -90,21 +90,19 @@ async fn test_streaming_engine_start_auth_error() {
 #[tokio::test]
 async fn test_streaming_engine_send_chunk_before_start() {
     let config = create_volcengine_config();
-    let client = StreamingSttClient::new(config, Some("zh")).unwrap();
+    let client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
-    let silent_chunk = create_silent_pcm_chunk(16000);
-    let result = client.send_chunk(silent_chunk).await;
-
+    let sender = client.get_audio_sender().await;
     assert!(
-        result.is_err(),
-        "send_chunk should fail before start() is called"
+        sender.is_none(),
+        "audio sender should be unavailable before connect"
     );
 }
 
 #[tokio::test]
 async fn test_streaming_engine_finish_before_start() {
     let config = create_volcengine_config();
-    let client = StreamingSttClient::new(config, Some("zh")).unwrap();
+    let client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
     let result = client.finish().await;
 
@@ -119,7 +117,7 @@ async fn test_streaming_engine_finish_before_start() {
 #[tokio::test]
 async fn test_streaming_engine_lifecycle_with_callback() {
     let config = create_volcengine_config();
-    let mut client = StreamingSttClient::new(config, Some("zh")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
     let callback_called = Arc::new(AtomicBool::new(false));
     let callback_clone = callback_called.clone();
@@ -127,7 +125,7 @@ async fn test_streaming_engine_lifecycle_with_callback() {
         callback_clone.store(true, Ordering::SeqCst);
     }));
 
-    let result = client.start().await;
+    let result = client.connect().await;
     assert!(result.is_err());
 
     let err = result.unwrap_err();
@@ -136,7 +134,7 @@ async fn test_streaming_engine_lifecycle_with_callback() {
             || err.contains("Forbidden")
             || err.contains("401")
             || err.contains("Unauthorized"),
-        "Expected auth error, got: {}",
+        "Expected auth error after callback setup, got: {}",
         err
     );
 }
@@ -276,7 +274,7 @@ async fn test_streaming_engine_full_lifecycle_with_mock_server() {
         language: "zh-CN".to_string(),
     };
 
-    let mut client = StreamingSttClient::new(config, Some("zh-CN")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh-CN"), SttContext::default()).unwrap();
 
     let (result_tx, result_rx) = tokio::sync::oneshot::channel::<String>();
     let result_tx = Arc::new(Mutex::new(Some(result_tx)));
@@ -408,7 +406,7 @@ async fn test_streaming_forwarder_drops_audio_sender_before_finish() {
         language: "zh-CN".to_string(),
     };
 
-    let mut client = StreamingSttClient::new(config, Some("zh-CN")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh-CN"), SttContext::default()).unwrap();
     client
         .connect()
         .await
@@ -505,7 +503,7 @@ async fn test_streaming_engine_final_result_can_come_from_header_flags_only() {
         language: "zh-CN".to_string(),
     };
 
-    let mut client = StreamingSttClient::new(config, Some("zh-CN")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh-CN"), SttContext::default()).unwrap();
     client
         .connect()
         .await
@@ -567,7 +565,7 @@ async fn test_streaming_finish_fails_when_server_closes_without_final_result() {
         language: "zh-CN".to_string(),
     };
 
-    let mut client = StreamingSttClient::new(config, Some("zh-CN")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh-CN"), SttContext::default()).unwrap();
     client
         .connect()
         .await
@@ -607,14 +605,16 @@ async fn test_streaming_finish_fails_when_server_closes_without_final_result() {
 #[tokio::test]
 async fn test_streaming_engine_multi_chunk_streaming() {
     let config = create_volcengine_config();
-    let mut client = StreamingSttClient::new(config, Some("zh")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
     // Start the streaming session - expect auth error
-    let start_result = client.start().await;
-    assert!(start_result.is_err(), "start() should fail with auth error");
+    let start_result = client.connect().await;
+    assert!(
+        start_result.is_err(),
+        "connect() should fail with auth error"
+    );
     let err = start_result.unwrap_err();
 
-    // Verify auth error (proves correct endpoint/headers/body)
     assert!(
         err.contains("403")
             || err.contains("Forbidden")
@@ -629,26 +629,13 @@ async fn test_streaming_engine_multi_chunk_streaming() {
         err
     );
 
-    // Even after auth error, the client should handle send_chunk gracefully
-    // (it will try to queue, but channel may be closed)
-    let chunk = create_silent_pcm_chunk(16000); // 1 second of 16kHz audio
-
-    // Try sending chunks - they may fail because connection already failed
-    // but the error should be a connection error, not a protocol error
-    for i in 0..3 {
-        let send_result = client.send_chunk(chunk.clone()).await;
-        // Either succeeds (queued) or fails with connection-related error
-        // Should NOT fail with "not started" since we did call start()
-        if send_result.is_err() {
-            let send_err = send_result.unwrap_err();
-            // Error could be "not connected" or "channel closed" - both are valid
-            // after auth failure
-            assert!(
-                !send_err.contains("must call start()"),
-                "Send chunk {} should not complain about start() not called",
-                i
-            );
-        }
+    // After auth error, audio sender should be unavailable
+    let sender = client.get_audio_sender().await;
+    // Sender may or may not be available depending on error timing
+    if let Some(tx) = sender {
+        let chunk = create_silent_pcm_chunk(16000);
+        // Sending may succeed (queued) or fail (channel closed due to auth error)
+        let _ = tx.send(chunk).await;
     }
 
     // finish() should also handle the failed state gracefully
@@ -684,7 +671,7 @@ async fn test_streaming_engine_multi_chunk_streaming() {
 #[tokio::test]
 async fn test_streaming_engine_audio_channel_queueing() {
     let config = create_volcengine_config();
-    let mut client = StreamingSttClient::new(config, Some("zh")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
     // Set up callback to track partial results
     let callback_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -694,8 +681,11 @@ async fn test_streaming_engine_audio_channel_queueing() {
     }));
 
     // Start connection - expect auth error
-    let start_result = client.start().await;
-    assert!(start_result.is_err(), "start() should fail with auth error");
+    let start_result = client.connect().await;
+    assert!(
+        start_result.is_err(),
+        "connect() should fail with auth error"
+    );
 
     // Get audio sender channel - should work even if connection is failing
     let audio_sender = client.get_audio_sender().await;
@@ -729,7 +719,7 @@ async fn test_streaming_engine_audio_channel_queueing() {
 #[tokio::test]
 async fn test_volcengine_dispatch_verification() {
     let config = create_volcengine_config();
-    let mut client = StreamingSttClient::new(config, Some("zh")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
     // Verify provider name dispatch
     assert_eq!(
@@ -739,8 +729,8 @@ async fn test_volcengine_dispatch_verification() {
     );
 
     // Call start and verify Volcengine-specific error
-    let result = client.start().await;
-    assert!(result.is_err(), "start() should fail with auth error");
+    let result = client.connect().await;
+    assert!(result.is_err(), "connect() should fail with auth error");
     let err = result.unwrap_err();
 
     // Volcengine-specific error signatures prove correct dispatch
@@ -763,7 +753,7 @@ async fn test_volcengine_dispatch_verification() {
 #[tokio::test]
 async fn test_volcengine_auth_error() {
     let config = create_volcengine_config();
-    let mut client = StreamingSttClient::new(config, Some("zh")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
     let result = client.connect().await;
     assert!(result.is_err());
@@ -787,7 +777,7 @@ async fn test_volcengine_auth_error() {
 #[tokio::test]
 async fn test_qwen_auth_error() {
     let config = create_qwen_config();
-    let mut client = StreamingSttClient::new(config, Some("zh")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
     let result = client.connect().await;
     assert!(result.is_err());
@@ -812,7 +802,7 @@ async fn test_qwen_auth_error() {
 #[tokio::test]
 async fn test_elevenlabs_auth_error() {
     let config = create_elevenlabs_config();
-    let mut client = StreamingSttClient::new(config, Some("en")).unwrap();
+    let mut client = StreamingSttClient::new(config, Some("en"), SttContext::default()).unwrap();
 
     let result = client.connect().await;
 
@@ -855,13 +845,24 @@ async fn test_log_retrieval_infrastructure() {
 
 #[tokio::test]
 async fn test_streaming_client_provider_name() {
-    let volcengine = StreamingSttClient::new(create_volcengine_config(), Some("zh")).unwrap();
+    let volcengine = StreamingSttClient::new(
+        create_volcengine_config(),
+        Some("zh"),
+        SttContext::default(),
+    )
+    .unwrap();
     assert_eq!(volcengine.provider_name(), "Volcengine");
 
-    let qwen = StreamingSttClient::new(create_qwen_config(), Some("zh")).unwrap();
+    let qwen =
+        StreamingSttClient::new(create_qwen_config(), Some("zh"), SttContext::default()).unwrap();
     assert_eq!(qwen.provider_name(), "Qwen Omni");
 
-    let elevenlabs = StreamingSttClient::new(create_elevenlabs_config(), Some("en")).unwrap();
+    let elevenlabs = StreamingSttClient::new(
+        create_elevenlabs_config(),
+        Some("en"),
+        SttContext::default(),
+    )
+    .unwrap();
     assert_eq!(elevenlabs.provider_name(), "Eleven Labs");
 }
 
@@ -877,7 +878,7 @@ async fn test_streaming_client_unsupported_provider() {
         language: "en".to_string(),
     };
 
-    let result = StreamingSttClient::new(config, Some("en"));
+    let result = StreamingSttClient::new(config, Some("en"), SttContext::default());
     assert!(result.is_err());
     if let Err(err) = result {
         assert!(err.contains("Unsupported streaming STT provider"));

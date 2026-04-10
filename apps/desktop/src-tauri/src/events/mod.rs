@@ -70,6 +70,12 @@ pub struct ModelLoadedEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelResolvedEvent {
+    pub requested: String,
+    pub resolved: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelUnloadedEvent {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +122,7 @@ pub mod EventName {
     pub const POLISH_MODEL_DOWNLOAD_CANCELLED: &str = "polish-model-download-cancelled";
     pub const POLISH_MODEL_DELETED: &str = "polish-model-deleted";
     pub const MODEL_LOADED: &str = "model-loaded";
+    pub const MODEL_RESOLVED: &str = "model-resolved";
     pub const MODEL_UNLOADED: &str = "model-unloaded";
     pub const SETTINGS_CHANGED: &str = "settings-changed";
     pub const TOAST_MESSAGE: &str = "toast-message";

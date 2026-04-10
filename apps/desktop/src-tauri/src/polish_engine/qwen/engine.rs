@@ -45,6 +45,8 @@ impl PolishEngine for QwenPolishEngine {
             log_prefix: "polish:qwen",
             strip_think_tags: true,
             prompt_format: PromptFormat::ChatMl,
+            // Qwen3.5-0.8B Q5_K_M ≈ 600MB is the smallest variant
+            min_model_size_mb: 400,
         };
 
         let t0 = std::time::Instant::now();

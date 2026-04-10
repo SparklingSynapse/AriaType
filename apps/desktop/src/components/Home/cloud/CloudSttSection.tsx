@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -9,56 +9,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useSettingsContext } from "@/contexts/SettingsContext";
-import { CloudSttConfig } from "@/lib/tauri";
+import { settingsCommands, CloudSttConfig, CloudProviderSchemas } from "@/lib/tauri";
 import sttSvg from "@/assets/illustrations/cloud/stt.png";
-
-type CloudSttProvider = "volcengine-streaming" | "qwen-omni-realtime" | "elevenlabs";
-
-const STT_PROVIDERS: { value: CloudSttProvider; labelKey: string; descKey: string }[] = [
-  { value: "volcengine-streaming", labelKey: "cloud.stt.provider.volcengineStreaming", descKey: "cloud.stt.provider.volcengineStreamingDesc" },
-  { value: "qwen-omni-realtime", labelKey: "cloud.stt.provider.qwenOmniRealtime", descKey: "cloud.stt.provider.qwenOmniRealtimeDesc" },
-  { value: "elevenlabs", labelKey: "cloud.stt.provider.elevenlabs", descKey: "cloud.stt.provider.elevenlabsDesc" },
-];
-
-function isVolcengineProvider(provider: string): boolean {
-  return provider === "volcengine-streaming";
-}
-
-function getApiKeyLabel(provider: CloudSttProvider, t: (key: string, fallback: string) => string): string {
-  if (isVolcengineProvider(provider)) {
-    return t("model.stt.cloud.accessToken", "Access Token");
-  }
-  return t("model.stt.cloud.apiKey", "API Key");
-}
-
-function getModelPlaceholder(provider: CloudSttProvider): string {
-  switch (provider) {
-    case "volcengine-streaming":
-      return "volc.bigasr.sauc.duration";
-    case "qwen-omni-realtime":
-      return "qwen3-asr-flash-realtime";
-    case "elevenlabs":
-      return "scribe_v2_realtime";
-    default:
-      return "model-name";
-  }
-}
-
-function getBaseUrlPlaceholder(provider: CloudSttProvider): string {
-  switch (provider) {
-    case "volcengine-streaming":
-      return "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream";
-    case "qwen-omni-realtime":
-      return "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
-    case "elevenlabs":
-      return "wss://api.elevenlabs.io/v1/speech-to-text/realtime";
-    default:
-      return "https://api.example.com/v1/transcribe";
-  }
-}
 
 function getDefaultConfig(provider: string): CloudSttConfig {
   return {
@@ -75,7 +30,12 @@ function getDefaultConfig(provider: string): CloudSttConfig {
 export function CloudSttSection() {
   const { t } = useTranslation();
   const { settings, updateSetting } = useSettingsContext();
-  const [sttErrors, setSttErrors] = useState<{ apiKey?: string; baseUrl?: string; appId?: string }>({});
+  const [schemas, setSchemas] = useState<CloudProviderSchemas | null>(null);
+  const [sttErrors, setSttErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    settingsCommands.getCloudProviderSchemas().then(setSchemas).catch(console.error);
+  }, []);
 
   const validateUrl = (url: string) => {
     if (!url) return true;
@@ -87,8 +47,10 @@ export function CloudSttSection() {
     }
   };
 
-  const activeProvider = (settings?.active_cloud_stt_provider ?? "volcengine-streaming") as CloudSttProvider;
-  const currentConfig = settings?.cloud_stt_configs?.[activeProvider] ?? getDefaultConfig(activeProvider);
+  const activeProviderId = settings?.active_cloud_stt_provider ?? "volcengine-streaming";
+  const activeSchema = schemas?.stt.find((s) => s.id === activeProviderId);
+  const currentConfig = settings?.cloud_stt_configs?.[activeProviderId] ?? getDefaultConfig(activeProviderId);
+  const configRecord = currentConfig as unknown as Record<string, string>;
   const isEnabled = settings?.cloud_stt_enabled ?? false;
 
   const updateProviderConfig = useCallback(async (provider: string, updates: Partial<CloudSttConfig>) => {
@@ -98,58 +60,50 @@ export function CloudSttSection() {
     await updateSetting("cloud_stt_configs", configs);
   }, [settings?.cloud_stt_configs, updateSetting]);
 
-  const handleFieldChange = async (key: keyof CloudSttConfig, value: string | boolean) => {
-    if (key === "base_url" && typeof value === "string") {
+  const handleFieldChange = async (key: string, value: string) => {
+    if (key === "base_url") {
       if (!validateUrl(value)) {
         setSttErrors((prev) => ({ ...prev, baseUrl: t("cloud.validation.invalidUrl", "Invalid URL format") }));
       } else {
-        setSttErrors((prev) => ({ ...prev, baseUrl: undefined }));
+        setSttErrors((prev) => ({ ...prev, baseUrl: "" }));
+      }
+    } else if (value && isEnabled) {
+      // Required field changed - clear its error if filled
+      const field = activeSchema?.fields.find((f) => f.key === key);
+      if (field?.required) {
+        setSttErrors((prev) => ({ ...prev, [key]: "" }));
       }
     }
-
-    if (key === "api_key" && typeof value === "string") {
-      if (isEnabled && !value.trim()) {
-        setSttErrors((prev) => ({ ...prev, apiKey: t("cloud.validation.apiKeyRequired", "API Key is required when enabled") }));
-      } else {
-        setSttErrors((prev) => ({ ...prev, apiKey: undefined }));
-      }
-    }
-
-    if (key === "app_id" && typeof value === "string") {
-      if (isEnabled && isVolcengineProvider(activeProvider) && !value.trim()) {
-        setSttErrors((prev) => ({ ...prev, appId: t("cloud.validation.appIdRequired", "App ID is required for Volcengine") }));
-      } else {
-        setSttErrors((prev) => ({ ...prev, appId: undefined }));
-      }
-    }
-
-    await updateProviderConfig(activeProvider, { [key]: value });
+    await updateProviderConfig(activeProviderId, { [key]: value });
   };
 
   const handleEnabledChange = async (enabled: boolean) => {
-    if (enabled) {
-      const config = currentConfig;
-      if (!config.api_key?.trim()) {
-        setSttErrors((prev) => ({ ...prev, apiKey: t("cloud.validation.apiKeyRequired", "API Key is required when enabled") }));
+    if (enabled && activeSchema) {
+      const errors: Record<string, string> = {};
+      for (const field of activeSchema.fields) {
+        if (field.required) {
+          const value = configRecord[field.key] ?? "";
+          if (!value.trim()) {
+            errors[field.key] = t("cloud.validation.fieldRequired", `${field.name} is required`);
+          }
+        }
       }
-      if (isVolcengineProvider(activeProvider) && !config.app_id?.trim()) {
-        setSttErrors((prev) => ({ ...prev, appId: t("cloud.validation.appIdRequired", "App ID is required for Volcengine") }));
+      if (configRecord.base_url && !validateUrl(configRecord.base_url)) {
+        errors.baseUrl = t("cloud.validation.invalidUrl", "Invalid URL format");
       }
-      if (config.base_url && !validateUrl(config.base_url)) {
-        setSttErrors((prev) => ({ ...prev, baseUrl: t("cloud.validation.invalidUrl", "Invalid URL format") }));
-      }
+      setSttErrors(errors);
     } else {
       setSttErrors({});
     }
     await updateSetting("cloud_stt_enabled", enabled);
   };
 
-  const handleProviderChange = async (newProvider: string) => {
-    await updateSetting("active_cloud_stt_provider", newProvider);
+  const handleProviderChange = async (newProviderId: string) => {
+    await updateSetting("active_cloud_stt_provider", newProviderId);
     setSttErrors({});
   };
 
-  if (!settings) return null;
+  if (!settings || !schemas) return null;
 
   return (
     <Card>
@@ -179,95 +133,49 @@ export function CloudSttSection() {
 
         {isEnabled && (
           <div className="space-y-4 pt-4 border-t border-border">
+            <a
+              href="https://github.com/joe223/AriaType/discussions/3"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+            >
+              {t("cloud.stt.providerGuide", "How to get API credentials")}
+              <ExternalLink className="w-3 h-3" />
+            </a>
+
             <div className="space-y-2">
               <Label>{t("model.stt.cloud.provider", "Provider")}</Label>
               <Select
-                value={activeProvider}
+                value={activeProviderId}
                 onChange={(e) => handleProviderChange(e.target.value)}
-                options={STT_PROVIDERS.map((p) => ({
-                  value: p.value,
-                  label: t(p.labelKey, p.value),
+                options={schemas.stt.map((s) => ({
+                  value: s.id,
+                  label: s.name,
                 }))}
               />
-              <p className="text-xs text-muted-foreground">
-                {t(STT_PROVIDERS.find((p) => p.value === activeProvider)?.descKey ?? "", "")}
-              </p>
             </div>
 
-            {isVolcengineProvider(activeProvider) && (
-              <div className="space-y-2">
-                <Label htmlFor="cloud-stt-app-id">{t("model.stt.cloud.appId", "App ID")}</Label>
+            {activeSchema?.fields.map((field) => (
+              <div key={field.key} className="space-y-2">
+                <Label htmlFor={`cloud-stt-${field.key}`} required={field.required}>
+                  {field.name}
+                </Label>
                 <input
-                  id="cloud-stt-app-id"
-                  type="text"
-                  className={`flex h-10 w-full rounded-2xl border bg-background px-4 py-2 text-sm transition-all ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${sttErrors.appId ? "border-destructive focus-visible:ring-1 focus-visible:ring-destructive" : "border-border focus-visible:border-primary"}`}
-                  value={currentConfig.app_id ?? ""}
-                  onChange={(e) => handleFieldChange("app_id", e.target.value)}
-                  placeholder="123456789"
+                  id={`cloud-stt-${field.key}`}
+                  type={field.secret ? "password" : "text"}
+                  className={`flex h-10 w-full rounded-2xl border bg-background px-4 py-2 text-sm transition-all ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${sttErrors[field.key] ? "border-destructive focus-visible:ring-1 focus-visible:ring-destructive" : "border-border focus-visible:border-primary"}`}
+                  value={configRecord[field.key] ?? ""}
+                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                  placeholder={field.example || undefined}
                 />
-                {sttErrors.appId && (
+                {sttErrors[field.key] && (
                   <p className="text-[13px] text-destructive flex items-center mt-1">
                     <AlertCircle className="w-3.5 h-3.5 mr-1" />
-                    {sttErrors.appId}
+                    {sttErrors[field.key]}
                   </p>
                 )}
               </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="cloud-stt-api-key">{getApiKeyLabel(activeProvider, t)}</Label>
-              <input
-                id="cloud-stt-api-key"
-                type="password"
-                className={`flex h-10 w-full rounded-2xl border bg-background px-4 py-2 text-sm transition-all ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${sttErrors.apiKey ? "border-destructive focus-visible:ring-1 focus-visible:ring-destructive" : "border-border focus-visible:border-primary"}`}
-                value={currentConfig.api_key ?? ""}
-                onChange={(e) => handleFieldChange("api_key", e.target.value)}
-                placeholder="sk-..."
-              />
-              {sttErrors.apiKey && (
-                <p className="text-[13px] text-destructive flex items-center mt-1">
-                  <AlertCircle className="w-3.5 h-3.5 mr-1" />
-                  {sttErrors.apiKey}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="cloud-stt-base-url">{t("model.stt.cloud.baseUrl", "Base URL")}</Label>
-              <input
-                id="cloud-stt-base-url"
-                type="text"
-                className={`flex h-10 w-full rounded-2xl border bg-background px-4 py-2 text-sm transition-all ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${sttErrors.baseUrl ? "border-destructive focus-visible:ring-1 focus-visible:ring-destructive" : "border-border focus-visible:border-primary"}`}
-                value={currentConfig.base_url ?? ""}
-                onChange={(e) => handleFieldChange("base_url", e.target.value)}
-                placeholder={getBaseUrlPlaceholder(activeProvider)}
-              />
-              {sttErrors.baseUrl && (
-                <p className="text-[13px] text-destructive flex items-center mt-1">
-                  <AlertCircle className="w-3.5 h-3.5 mr-1" />
-                  {sttErrors.baseUrl}
-                </p>
-              )}
-            </div>
-
-            {isVolcengineProvider(activeProvider) && (
-              <div className="space-y-2">
-                <Label htmlFor="cloud-stt-model">
-                  {t("model.stt.cloud.resourceId", "Resource ID")}
-                </Label>
-                <input
-                  id="cloud-stt-model"
-                  type="text"
-                  className="flex h-10 w-full rounded-2xl border border-border bg-background px-4 py-2 text-sm transition-all ring-offset-background placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                  value={currentConfig.model ?? ""}
-                  onChange={(e) => handleFieldChange("model", e.target.value)}
-                  placeholder={getModelPlaceholder(activeProvider)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {t("model.stt.cloud.resourceIdDesc", "火山引擎资源ID，如: volc.bigasr.sauc.duration")}
-                </p>
-              </div>
-            )}
+            ))}
           </div>
         )}
       </CardContent>

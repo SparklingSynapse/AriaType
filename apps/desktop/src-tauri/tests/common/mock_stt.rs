@@ -3,7 +3,9 @@
 //! Provides a configurable mock implementation of the STT engine trait
 //! for use in integration and unit tests.
 
-use ariatype_lib::stt_engine::{EngineType, SttEngine, TranscriptionRequest, TranscriptionResult};
+use ariatype_lib::stt_engine::traits::{PartialResultCallback, RecordingConsumer};
+use ariatype_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
+use async_trait::async_trait;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -14,6 +16,7 @@ pub struct MockSttEngine {
     should_fail: bool,
     failure_message: String,
     engine_type: EngineType,
+    chunks: std::sync::Mutex<Vec<Vec<i16>>>,
 }
 
 impl MockSttEngine {
@@ -25,6 +28,7 @@ impl MockSttEngine {
             should_fail: false,
             failure_message: "Mock failure".to_string(),
             engine_type: EngineType::Whisper,
+            chunks: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -65,16 +69,11 @@ impl Default for MockSttEngine {
     }
 }
 
-impl SttEngine for MockSttEngine {
-    fn engine_type(&self) -> EngineType {
-        self.engine_type
-    }
-
-    async fn transcribe(
+impl MockSttEngine {
+    pub async fn transcribe(
         &self,
         _request: TranscriptionRequest,
     ) -> Result<TranscriptionResult, String> {
-        // Apply artificial latency if configured
         if self.latency_ms > 0 {
             tokio::time::sleep(tokio::time::Duration::from_millis(self.latency_ms)).await;
         }
@@ -91,11 +90,34 @@ impl SttEngine for MockSttEngine {
     }
 }
 
+#[async_trait]
+impl RecordingConsumer for MockSttEngine {
+    async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String> {
+        self.chunks.lock().unwrap().push(pcm_data);
+        Ok(())
+    }
+
+    async fn finish(&self) -> Result<String, String> {
+        if self.latency_ms > 0 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(self.latency_ms)).await;
+        }
+
+        if self.should_fail {
+            return Err(self.failure_message.clone());
+        }
+
+        Ok(self.result_text.clone())
+    }
+
+    fn set_partial_callback(&mut self, _callback: PartialResultCallback) {}
+}
+
 /// Mock that tracks call count and last request
 pub struct MockSttEngineWithTracking {
     inner: MockSttEngine,
     pub call_count: AtomicUsize,
     pub last_request: std::sync::Mutex<Option<TranscriptionRequest>>,
+    chunks_received: AtomicUsize,
 }
 
 impl MockSttEngineWithTracking {
@@ -104,6 +126,7 @@ impl MockSttEngineWithTracking {
             inner: MockSttEngine::new(),
             call_count: AtomicUsize::new(0),
             last_request: std::sync::Mutex::new(None),
+            chunks_received: AtomicUsize::new(0),
         }
     }
 
@@ -143,12 +166,8 @@ impl Default for MockSttEngineWithTracking {
     }
 }
 
-impl SttEngine for MockSttEngineWithTracking {
-    fn engine_type(&self) -> EngineType {
-        self.inner.engine_type()
-    }
-
-    async fn transcribe(
+impl MockSttEngineWithTracking {
+    pub async fn transcribe(
         &self,
         request: TranscriptionRequest,
     ) -> Result<TranscriptionResult, String> {
@@ -156,6 +175,25 @@ impl SttEngine for MockSttEngineWithTracking {
         *self.last_request.lock().unwrap() = Some(request.clone());
         self.inner.transcribe(request).await
     }
+
+    pub fn chunks_received(&self) -> usize {
+        self.chunks_received.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl RecordingConsumer for MockSttEngineWithTracking {
+    async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String> {
+        self.chunks_received.fetch_add(1, Ordering::SeqCst);
+        self.inner.send_chunk(pcm_data).await
+    }
+
+    async fn finish(&self) -> Result<String, String> {
+        self.call_count.fetch_add(1, Ordering::SeqCst);
+        self.inner.finish().await
+    }
+
+    fn set_partial_callback(&mut self, _callback: PartialResultCallback) {}
 }
 
 #[cfg(test)]
@@ -165,7 +203,7 @@ mod tests {
     #[tokio::test]
     async fn test_mock_stt_default() {
         let mock = MockSttEngine::new();
-        let request = TranscriptionRequest::new("/tmp/test.wav");
+        let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
 
         let result = mock.transcribe(request).await.unwrap();
         assert_eq!(result.text, "Mock transcription");
@@ -175,7 +213,7 @@ mod tests {
     #[tokio::test]
     async fn test_mock_stt_with_text() {
         let mock = MockSttEngine::new().with_result_text("Hello world");
-        let request = TranscriptionRequest::new("/tmp/test.wav");
+        let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
 
         let result = mock.transcribe(request).await.unwrap();
         assert_eq!(result.text, "Hello world");
@@ -184,7 +222,7 @@ mod tests {
     #[tokio::test]
     async fn test_mock_stt_with_latency() {
         let mock = MockSttEngine::new().with_latency(50);
-        let request = TranscriptionRequest::new("/tmp/test.wav");
+        let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
 
         let start = std::time::Instant::now();
         mock.transcribe(request).await.unwrap();
@@ -200,7 +238,7 @@ mod tests {
     #[tokio::test]
     async fn test_mock_stt_with_failure() {
         let mock = MockSttEngine::new().with_failure("Test error");
-        let request = TranscriptionRequest::new("/tmp/test.wav");
+        let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
 
         let result = mock.transcribe(request).await;
         assert!(result.is_err());
@@ -210,7 +248,7 @@ mod tests {
     #[tokio::test]
     async fn test_mock_stt_with_engine_type() {
         let mock = MockSttEngine::new().with_engine_type(EngineType::SenseVoice);
-        let request = TranscriptionRequest::new("/tmp/test.wav");
+        let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
 
         let result = mock.transcribe(request).await.unwrap();
         assert_eq!(result.engine, EngineType::SenseVoice);
@@ -220,7 +258,7 @@ mod tests {
     async fn test_mock_stt_build() {
         let mock = MockSttEngine::new().with_result_text("Built mock").build();
 
-        let request = TranscriptionRequest::new("/tmp/test.wav");
+        let request = TranscriptionRequest::new(vec![0.0f32; 16000]);
         let result = mock.transcribe(request).await.unwrap();
         assert_eq!(result.text, "Built mock");
     }
@@ -229,16 +267,13 @@ mod tests {
     async fn test_mock_stt_tracking() {
         let mock = Arc::new(MockSttEngineWithTracking::new());
 
-        let request1 = TranscriptionRequest::new("/tmp/test1.wav");
-        let request2 = TranscriptionRequest::new("/tmp/test2.wav");
+        let request1 = TranscriptionRequest::new(vec![0.0f32; 8000]);
+        let request2 = TranscriptionRequest::new(vec![0.0f32; 16000]);
 
         mock.transcribe(request1.clone()).await.unwrap();
         mock.transcribe(request2.clone()).await.unwrap();
 
         assert_eq!(mock.call_count(), 2);
-        assert_eq!(
-            mock.last_request().map(|r| r.audio_path),
-            Some(request2.audio_path)
-        );
+        assert_eq!(mock.last_request().map(|r| r.samples.len()), Some(16000));
     }
 }
