@@ -1,6 +1,6 @@
 [package]
 name = "ariatype"
-version = "0.1.2"
+version = "0.2.0"
 description = "AriaType - Voice to Text Application"
 authors = ["AriaType Team"]
 edition = "2021"
