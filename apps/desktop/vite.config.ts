@@ -32,7 +32,6 @@ export default defineConfig(async () => ({
       input: {
         main: resolve(__dirname, "index.html"),
         pill: resolve(__dirname, "pill.html"),
-        toast: resolve(__dirname, "toast.html"),
       },
     },
   },

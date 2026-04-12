@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { audioCommands, windowCommands, settingsCommands } from "@/lib/tauri";
+import { audioCommands, settingsCommands } from "@/lib/tauri";
+import { showToast } from "@/lib/toast";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
@@ -88,7 +89,7 @@ export function useRecording() {
           : 0;
         analytics.track(AnalyticsEvents.RECORDING_STOPPED, { duration });
         recordingStartTime.current = null;
-        await windowCommands.showToast("Recording saved");
+        showToast("Recording saved");
       }
     } catch (err) {
       logger.error("failed_to_stop_recording", { error: String(err) });

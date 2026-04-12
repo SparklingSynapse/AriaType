@@ -310,30 +310,6 @@ pub async fn hide_pill_window(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn show_toast(app: AppHandle, message: String) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("toast") {
-        window.show().map_err(|e| e.to_string())?;
-        window
-            .emit(EventName::TOAST_MESSAGE, message)
-            .map_err(|e| e.to_string())?;
-
-        tokio::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-            let _ = window.hide();
-        });
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn hide_toast(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("toast") {
-        window.hide().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn update_pill_position(app: AppHandle, x: f64, y: f64) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("pill") {
         window

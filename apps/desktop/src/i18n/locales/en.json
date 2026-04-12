@@ -427,5 +427,8 @@
   "history.delete": "Delete",
   "history.processingTime": "STT: {{stt}} / Polish: {{polish}}",
   "history.confirmDelete": "Delete",
-  "history.confirmClearAll": "Are you sure you want to delete all transcription history? This cannot be undone."
+  "history.confirmClearAll": "Are you sure you want to delete all transcription history? This cannot be undone.",
+  "history.error.failed": "Transcription failed",
+  "history.retry": "Retry",
+  "history.retrying": "Retrying..."
 }

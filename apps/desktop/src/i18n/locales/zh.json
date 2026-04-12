@@ -428,5 +428,8 @@
   "history.delete": "删除",
   "history.processingTime": "语音识别: {{stt}} / 润色: {{polish}}",
   "history.confirmDelete": "删除",
-  "history.confirmClearAll": "确定要删除所有转写历史记录吗？此操作不可恢复。"
+  "history.confirmClearAll": "确定要删除所有转写历史记录吗？此操作不可恢复。",
+  "history.error.failed": "转写失败",
+  "history.retry": "重试",
+  "history.retrying": "重试中..."
 }

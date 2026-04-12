@@ -191,3 +191,119 @@ body {
 .dark .scrollbar-overlay::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
+
+/* Toast styles - minimal, elegant, with smooth transitions */
+/* Toast positioning styles */
+[data-sonner-toaster] {
+  /* Theme tokens */
+  --toast-bg: var(--card);
+  --toast-border: var(--border);
+  --toast-text: var(--foreground);
+  --toast-muted: var(--muted-foreground);
+  --toast-success: var(--accent-green);
+  --toast-error: var(--destructive);
+  --toast-warning: var(--accent-amber);
+  --toast-info: var(--accent-blue);
+}
+
+/* Hide sonner's default icon - we use CSS ::before instead */
+[data-sonner-toast] [data-icon] {
+  display: none;
+}
+
+/* Toast base - clean minimal style, no custom animation */
+.toast-base {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: var(--toast-bg);
+  border: 1px solid var(--toast-border);
+  border-radius: 1.5rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--toast-text);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.toast-base:hover {
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.12),
+    0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+.toast-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--toast-text);
+  letter-spacing: -0.01em;
+}
+
+.toast-description {
+  font-size: 12px;
+  color: var(--toast-muted);
+  letter-spacing: -0.01em;
+}
+
+/* Icon container - larger to match app's rounded-full aesthetic */
+.toast-base::before {
+  content: "";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Success - green accent */
+.toast-success {
+  border-color: color-mix(in srgb, var(--toast-success) 25%, var(--toast-border));
+}
+
+.toast-success::before {
+  content: "✓";
+  background: var(--toast-success);
+  color: white;
+}
+
+/* Error - red accent */
+.toast-error {
+  border-color: color-mix(in srgb, var(--toast-error) 25%, var(--toast-border));
+}
+
+.toast-error::before {
+  content: "✕";
+  background: var(--toast-error);
+  color: white;
+}
+
+/* Warning - amber accent */
+.toast-warning {
+  border-color: color-mix(in srgb, var(--toast-warning) 25%, var(--toast-border));
+}
+
+.toast-warning::before {
+  content: "!";
+  background: var(--toast-warning);
+  color: white;
+  font-weight: 700;
+}
+
+/* Info - blue accent */
+.toast-info {
+  border-color: color-mix(in srgb, var(--toast-info) 25%, var(--toast-border));
+}
+
+.toast-info::before {
+  content: "i";
+  background: var(--toast-info);
+  color: white;
+  font-style: italic;
+}
+
+

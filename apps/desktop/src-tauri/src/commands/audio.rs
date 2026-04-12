@@ -13,12 +13,62 @@ use crate::state::app_state::AppState;
 use crate::state::unified_state::StreamingSttState;
 use crate::stt_engine::cloud::StreamingSttClient;
 use crate::stt_engine::traits::RecordingConsumer;
+use crate::utils::AppPaths;
 
 // Audio activity thresholds (0-100 normalized scale)
 // ON: ~-36 dB, above typical office noise
 // OFF: ~-45 dB, provides hysteresis
 const AUDIO_ACTIVITY_ON_THRESHOLD: u32 = 40;
 const AUDIO_ACTIVITY_OFF_THRESHOLD: u32 = 25;
+
+/// Save raw audio buffer to WAV file.
+/// Returns the path to the saved file, or None if no audio was recorded.
+fn save_raw_audio_to_file(
+    streaming_state: &StreamingSttState,
+    sample_rate: u32,
+    channels: u16,
+) -> Option<String> {
+    let path = streaming_state.audio_save_path.as_ref()?;
+    let buffer = streaming_state.raw_audio_buffer.lock();
+    
+    if buffer.is_empty() {
+        warn!("raw_audio_buffer_empty-no_file_saved");
+        return None;
+    }
+    
+    if sample_rate == 0 || channels == 0 {
+        warn!(sample_rate, channels, "audio_params_not_set-cannot_save_file");
+        return None;
+    }
+    
+    let spec = hound::WavSpec {
+        channels,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    
+    match hound::WavWriter::create(path, spec) {
+        Ok(mut writer) => {
+            for sample in buffer.iter() {
+                if let Err(e) = writer.write_sample(*sample) {
+                    warn!(error = %e, "wav_write_failed");
+                    return None;
+                }
+            }
+            if let Err(e) = writer.finalize() {
+                warn!(error = %e, "wav_finalize_failed");
+                return None;
+            }
+            info!(path = %path.display(), samples = buffer.len(), sample_rate, channels, "raw_audio_saved");
+            Some(path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            warn!(error = %e, path = %path.display(), "wav_create_failed");
+            None
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingState {
@@ -170,11 +220,30 @@ fn start_unified_recording(
 
     let (app_tx, mut app_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(100);
 
+    // Create audio save path for retry functionality
+    let audio_save_path = AppPaths::recordings_dir().join(format!("{}_{}.wav", 
+        chrono::Utc::now().format("%Y%m%d_%H%M%S"), 
+        task_id
+    ));
+    
+    // Ensure recordings directory exists
+    if let Err(e) = std::fs::create_dir_all(AppPaths::recordings_dir()) {
+        warn!(error = %e, "recordings_directory_creation_failed");
+    }
+    
+    // Raw audio buffer for saving original recording (before VAD/processing)
+    let raw_audio_buffer: Arc<ParkingMutex<Vec<i16>>> = Arc::new(ParkingMutex::new(Vec::new()));
+    let raw_audio_buffer_clone = raw_audio_buffer.clone();
+
     *state.streaming_stt.lock() = Some(StreamingSttState {
         audio_tx: app_tx.clone(),
         accumulated_text: String::new(),
         task_id,
         streaming_task: Arc::new(ParkingMutex::new(None)),
+        audio_save_path: Some(audio_save_path.clone()),
+        raw_audio_buffer: raw_audio_buffer.clone(),
+        sample_rate: 0, // Will be set after recorder starts
+        channels: 0, // Will be set after recorder starts
     });
 
     let device_name = if audio_device == "default" {
@@ -218,6 +287,9 @@ fn start_unified_recording(
                     *channels_clone.lock() = ch;
                 }
 
+                // Accumulate raw PCM for saving to file (before any processing)
+                raw_audio_buffer_clone.lock().extend_from_slice(pcm);
+
                 let mut buffer = chunk_buffer.lock();
                 buffer.extend_from_slice(pcm);
 
@@ -259,6 +331,18 @@ fn start_unified_recording(
             })?
     };
 
+    // Update streaming_stt state with actual sample rate and channels from recording
+    {
+        let mut streaming_stt = state.streaming_stt.lock();
+        if let Some(stt) = streaming_stt.as_mut() {
+            stt.sample_rate = sr;
+            stt.channels = ch;
+        }
+    }
+
+    let sr_for_async = sr;
+    let ch_for_async = ch;
+    
     let app_clone = app.clone();
     let handle = tauri::async_runtime::spawn(async move {
         let consumer: Box<dyn RecordingConsumer> = if cloud_stt_enabled {
@@ -387,6 +471,13 @@ fn start_unified_recording(
         debug!(task_id, "consumer_finish_invoked");
         let text_result: Result<String, String> = consumer.finish().await;
 
+        // Save raw audio to file regardless of success or failure
+        let audio_path = {
+            let state = app_clone.state::<AppState>();
+            let streaming_stt = state.streaming_stt.lock();
+            streaming_stt.as_ref().and_then(|s| save_raw_audio_to_file(s, sr_for_async, ch_for_async))
+        };
+
         match text_result {
             Ok(text) => {
                 let raw_text = text.clone();
@@ -400,6 +491,7 @@ fn start_unified_recording(
                 info!(
                     task_id,
                     text_len = final_text.len(),
+                    audio_saved = audio_path.is_some(),
                     "transcription_final_received"
                 );
 
@@ -415,7 +507,14 @@ fn start_unified_recording(
                             None
                         },
                         polish_time_ms > 0,
+                        audio_path.clone(),
                     );
+                    // Clean up audio file after successful save
+                    if let Some(ref path) = audio_path {
+                        if let Err(e) = std::fs::remove_file(path) {
+                            warn!(error = %e, path = %path, "audio_cleanup_failed");
+                        }
+                    }
                     let _ = app_clone.emit(
                         EventName::TRANSCRIPTION_COMPLETE,
                         TranscriptionCompleteEvent {
@@ -434,6 +533,9 @@ fn start_unified_recording(
                     let _ =
                         crate::commands::text::do_insert_text(app_clone.clone(), final_text).await;
                 } else {
+                    // Empty result - still save failed entry with audio for potential retry
+                    let state = app_clone.state::<AppState>();
+                    save_failed_history(&state, audio_path, "Empty transcription result");
                     let _ = app_clone.emit(
                         EventName::RECORDING_STATE_CHANGED,
                         RecordingStateEvent {
@@ -447,6 +549,10 @@ fn start_unified_recording(
             Err(e) => {
                 let state = app_clone.state::<AppState>();
                 error!(task_id, error = %e, "stt_finish_failed");
+                
+                // Save failed entry with audio for retry functionality
+                save_failed_history(&state, audio_path, &e);
+                
                 let _ = app_clone.emit(
                     EventName::RECORDING_STATE_CHANGED,
                     RecordingStateEvent {
@@ -644,6 +750,7 @@ fn save_to_history(
     stt_duration_ms: Option<i64>,
     polish_duration_ms: Option<i64>,
     polish_applied: bool,
+    audio_path: Option<String>,
 ) {
     let (stt_engine, stt_model, language, is_cloud) = {
         let settings = state.settings.lock();
@@ -708,11 +815,88 @@ fn save_to_history(
         polish_applied,
         polish_engine: None,
         is_cloud,
+        audio_path,
+        status: "success".to_string(),
+        error: None,
     };
 
     let store = state.history_store.lock();
     if let Err(e) = crate::history::save_history_entry(&store, entry) {
         tracing::warn!(error = %e, "failed_to_save_history");
+    }
+}
+
+/// Save a failed recording entry to history.
+pub fn save_failed_history(
+    state: &AppState,
+    audio_path: Option<String>,
+    error: &str,
+) {
+    let (stt_engine, stt_model, language, is_cloud) = {
+        let settings = state.settings.lock();
+        let cloud_config = settings.get_active_cloud_stt_config();
+        let is_cloud = cloud_config.enabled;
+        let engine_str = if is_cloud {
+            format!("cloud-{}", cloud_config.provider_type)
+        } else {
+            crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&settings.model)
+                .map(|et| et.as_str().to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        };
+        (
+            engine_str,
+            if is_cloud {
+                Some(cloud_config.model.clone())
+            } else {
+                Some(settings.model.clone())
+            },
+            if settings.stt_engine_language.is_empty() {
+                None
+            } else {
+                Some(settings.stt_engine_language.clone())
+            },
+            is_cloud,
+        )
+    };
+
+    let recording_duration_ms = {
+        let start = state
+            .recording_start_time
+            .load(std::sync::atomic::Ordering::SeqCst);
+        if start > 0 {
+            Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64
+                    - start as i64,
+            )
+        } else {
+            None
+        }
+    };
+
+    let entry = crate::history::NewTranscriptionEntry {
+        raw_text: String::new(),
+        final_text: String::new(),
+        stt_engine,
+        stt_model,
+        language,
+        audio_duration_ms: recording_duration_ms,
+        stt_duration_ms: None,
+        polish_duration_ms: None,
+        total_duration_ms: None,
+        polish_applied: false,
+        polish_engine: None,
+        is_cloud,
+        audio_path,
+        status: "error".to_string(),
+        error: Some(error.to_string()),
+    };
+
+    let store = state.history_store.lock();
+    if let Err(e) = crate::history::save_history_entry(&store, entry) {
+        tracing::warn!(error = %e, "failed_to_save_failed_history");
     }
 }
 
@@ -986,6 +1170,265 @@ pub fn start_audio_level_monitor(app: AppHandle) -> Result<(), String> {
             last_activity = effective_activity;
         }
     }
+}
+
+/// Retry transcription for a failed entry.
+/// Called from frontend when user clicks retry button.
+pub async fn retry_transcription_internal(
+    app: AppHandle,
+    _state: State<'_, AppState>,
+    id: String,
+) -> Result<String, String> {
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "AppState not available".to_string())?;
+
+    // Get the entry to retry
+    let entry = {
+        let store = state.history_store.lock();
+        store
+            .get_entry(&id)
+            .map_err(|e| format!("Failed to get entry: {e}"))?
+    };
+
+    let entry = entry.ok_or_else(|| "Entry not found".to_string())?;
+
+    // Check if entry is in error state
+    if entry.status != "error" {
+        return Err("Entry is not in error state".to_string());
+    }
+
+    // Get audio path
+    let audio_path = entry
+        .audio_path
+        .ok_or_else(|| "No audio file saved for this entry".to_string())?;
+
+    // Check if audio file exists
+    if !std::path::Path::new(&audio_path).exists() {
+        return Err(format!("Audio file not found: {}", audio_path));
+    }
+
+    info!(entry_id = %id, audio_path = %audio_path, "retry_transcription_started");
+
+    // Emit transcribing status
+    let _ = app.emit(
+        EventName::RECORDING_STATE_CHANGED,
+        RecordingStateEvent {
+            status: "transcribing".to_string(),
+            task_id: 0, // No task_id for retry
+        },
+    );
+
+    // Transcribe the audio file
+    let text_result = transcribe_audio_file(&state, &audio_path).await;
+
+    match text_result {
+        Ok(raw_text) => {
+            let app_clone = app.clone();
+            // Apply polish if enabled
+            let (final_text, polish_time_ms) = if raw_text.is_empty() {
+                (String::new(), 0)
+            } else {
+                maybe_polish_transcription_text(Some(&app), &state, 0, raw_text.clone()).await
+            };
+
+            if final_text.is_empty() {
+                // Still failed
+                let store = state.history_store.lock();
+                store
+                    .mark_error(&id, "Retry produced empty transcription")
+                    .map_err(|e| format!("Failed to update entry: {e}"))?;
+
+                let _ = app_clone.emit(
+                    EventName::RECORDING_STATE_CHANGED,
+                    RecordingStateEvent {
+                        status: "error".to_string(),
+                        task_id: 0,
+                    },
+                );
+
+                return Err("Retry produced empty transcription".to_string());
+            }
+
+            // Update entry with new text
+            let (stt_engine, stt_model) = {
+                let settings = state.settings.lock();
+                let cloud_config = settings.get_active_cloud_stt_config();
+                let is_cloud = cloud_config.enabled;
+                (
+                    if is_cloud {
+                        format!("cloud-{}", cloud_config.provider_type)
+                    } else {
+                        crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(
+                            &settings.model,
+                        )
+                        .map(|et| et.as_str().to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
+                    },
+                    if is_cloud {
+                        Some(cloud_config.model.clone())
+                    } else {
+                        Some(settings.model.clone())
+                    },
+                )
+            };
+
+            let updates = crate::history::store::EntryUpdates {
+                raw_text: raw_text.clone(),
+                final_text: final_text.clone(),
+                stt_engine,
+                stt_model,
+                stt_duration_ms: None,
+                polish_duration_ms: if polish_time_ms > 0 {
+                    Some(polish_time_ms as i64)
+                } else {
+                    None
+                },
+                polish_applied: polish_time_ms > 0,
+                polish_engine: None,
+            };
+
+            {
+                let store = state.history_store.lock();
+                store
+                    .update_entry(&id, updates)
+                    .map_err(|e| format!("Failed to update entry: {e}"))?;
+            }
+
+            // Clean up audio file after successful retry
+            if let Err(e) = std::fs::remove_file(&audio_path) {
+                warn!(error = %e, path = %audio_path, "audio_cleanup_failed_after_retry");
+            }
+
+            info!(
+                entry_id = %id,
+                text_len = final_text.len(),
+                "retry_transcription_completed"
+            );
+
+            let _ = app_clone.emit(
+                EventName::TRANSCRIPTION_COMPLETE,
+                TranscriptionCompleteEvent {
+                    text: final_text.clone(),
+                    task_id: 0,
+                },
+            );
+
+            let _ = app_clone.emit(
+                EventName::RECORDING_STATE_CHANGED,
+                RecordingStateEvent {
+                    status: "idle".to_string(),
+                    task_id: 0,
+                },
+            );
+
+            // Insert the text
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let _ = crate::commands::text::do_insert_text(app_clone, final_text.clone()).await;
+
+            Ok(final_text)
+        }
+        Err(e) => {
+            // Update error message
+            let store = state.history_store.lock();
+            store
+                .mark_error(&id, &e)
+                .map_err(|e2| format!("Failed to update entry: {e2}"))?;
+
+            let _ = app.emit(
+                EventName::RECORDING_STATE_CHANGED,
+                RecordingStateEvent {
+                    status: "error".to_string(),
+                    task_id: 0,
+                },
+            );
+
+            Err(format!("Transcription failed: {}", e))
+        }
+    }
+}
+
+/// Transcribe an audio file for retry.
+async fn transcribe_audio_file(
+    state: &AppState,
+    audio_path: &str,
+) -> Result<String, String> {
+    let (model_name, lang) = {
+        let settings = state.settings.lock();
+        (settings.model.clone(), settings.stt_engine_language.clone())
+    };
+
+    // Read audio file
+    let reader = hound::WavReader::open(audio_path)
+        .map_err(|e| format!("Failed to open audio file: {}", e))?;
+
+    let spec = reader.spec();
+    let samples: Vec<i16> = reader
+        .into_samples()
+        .filter_map(|s| s.ok())
+        .collect();
+
+    if samples.is_empty() {
+        return Err("Audio file is empty".to_string());
+    }
+
+    // Convert to f32 samples
+    let samples_f32: Vec<f32> = samples.iter().map(|&s| s as f32 / 32768.0).collect();
+
+    // Convert to mono if stereo
+    let mono_f32 = if spec.channels == 2 {
+        samples_f32
+            .chunks(2)
+            .map(|chunk| {
+                let left = chunk.get(0).copied().unwrap_or(0.0);
+                let right = chunk.get(1).copied().unwrap_or(0.0);
+                (left + right) / 2.0
+            })
+            .collect::<Vec<f32>>()
+    } else {
+        samples_f32.clone()
+    };
+
+    // Resample to 16kHz if needed
+    let samples_16k_f32 = if spec.sample_rate != 16000 {
+        let ratio = 16000.0 / spec.sample_rate as f32;
+        let target_len = (mono_f32.len() as f32 * ratio) as usize;
+        mono_f32
+            .iter()
+            .enumerate()
+            .filter_map(|(i, _)| {
+                let src_idx = (i as f32 / ratio) as usize;
+                mono_f32.get(src_idx).copied()
+            })
+            .take(target_len)
+            .collect()
+    } else {
+        mono_f32
+    };
+
+    // Resolve model
+    let (_engine_type, resolved_model_name) = state
+        .engine_manager
+        .resolve_available_model(&model_name, &lang);
+
+    let engine_type = crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(
+        &resolved_model_name,
+    )
+    .ok_or_else(|| "Unknown engine type".to_string())?;
+
+    // Create transcription request
+    let request = crate::stt_engine::traits::TranscriptionRequest::new(samples_16k_f32)
+        .with_model(resolved_model_name.clone())
+        .with_language(lang.clone());
+
+    // Transcribe
+    let result = state
+        .engine_manager
+        .transcribe(engine_type, request)
+        .await
+        .map_err(|e| format!("Transcription failed: {}", e))?;
+
+    Ok(result.text)
 }
 
 #[cfg(test)]

@@ -23,20 +23,6 @@
         "center": true,
         "visible": true,
         "titleBarStyle": "Overlay"
-      },
-      {
-        "label": "toast",
-        "title": "AriaType Toast",
-        "url": "toast.html",
-        "width": 400,
-        "height": 80,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "focus": false,
-        "visible": false
       }
     ],
     "security": {

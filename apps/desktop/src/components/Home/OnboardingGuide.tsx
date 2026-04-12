@@ -17,12 +17,12 @@ import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
+import { showToast } from "@/lib/toast";
 import {
   systemCommands,
   modelCommands,
   events,
   audioCommands,
-  windowCommands,
   type RecommendedModel,
 } from "@/lib/tauri";
 import { useSettingsContext } from "@/contexts/SettingsContext";
@@ -320,11 +320,11 @@ function ModelStep({
             .recommendModelsByLanguage(language || "auto")
             .then(setModels)
             .catch((err: unknown) => logger.error("failed_to_refresh_models_after_download", { error: String(err) }));
-          const displayName = modelName === "sense-voice-small" ? "SenseVoice Small"
+const displayName = modelName === "sense-voice-small" ? "SenseVoice Small"
             : modelName === "whisper-base" ? "Whisper Base"
             : modelName === "whisper-small" ? "Whisper Small"
             : modelName;
-          await windowCommands.showToast(`${displayName} download complete`);
+           showToast(`${displayName} download complete`);
         },
       );
     };

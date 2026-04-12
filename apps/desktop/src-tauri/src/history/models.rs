@@ -1,5 +1,28 @@
 use serde::{Deserialize, Serialize};
 
+/// Status of a transcription entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EntryStatus {
+    Success,
+    Error,
+}
+
+impl EntryStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EntryStatus::Success => "success",
+            EntryStatus::Error => "error",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "error" => EntryStatus::Error,
+            _ => EntryStatus::Success,
+        }
+    }
+}
+
 /// A single transcription history entry stored in the database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionEntry {
@@ -17,6 +40,12 @@ pub struct TranscriptionEntry {
     pub polish_applied: bool,
     pub polish_engine: Option<String>,
     pub is_cloud: bool,
+    /// Path to the saved audio file (for retry functionality).
+    pub audio_path: Option<String>,
+    /// Status of the entry: "success" or "error".
+    pub status: String,
+    /// Error message if transcription failed.
+    pub error: Option<String>,
 }
 
 /// Parameters for saving a new transcription history entry.
@@ -34,6 +63,12 @@ pub struct NewTranscriptionEntry {
     pub polish_applied: bool,
     pub polish_engine: Option<String>,
     pub is_cloud: bool,
+    /// Path to the saved audio file (for retry functionality).
+    pub audio_path: Option<String>,
+    /// Status of the entry: "success" or "error".
+    pub status: String,
+    /// Error message if transcription failed.
+    pub error: Option<String>,
 }
 
 /// Summary statistics for the dashboard.
@@ -97,6 +132,8 @@ pub struct EngineUsage {
 pub struct HistoryFilter {
     pub search: Option<String>,
     pub engine: Option<String>,
+    /// Filter by status: "success", "error", or None for all.
+    pub status: Option<String>,
     pub date_from: Option<i64>,
     pub date_to: Option<i64>,
     pub limit: Option<i64>,

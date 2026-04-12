@@ -125,6 +125,7 @@ pub fn init_beep_player() {
             };
 
             info!(beep = %beep_name, "beep_playing");
+            sink.set_volume(0.6); // 60% volume for softer beeps
             sink.append(source);
             sink.sleep_until_end();
             info!(beep = %beep_name, "beep_completed");

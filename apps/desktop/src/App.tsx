@@ -1,4 +1,6 @@
+import { memo } from "react";
 import { Routes, Route } from "react-router-dom";
+import { Toaster } from "sonner";
 import { HomeLayout } from "./components/Home/HomeLayout";
 import { Dashboard } from "./components/Home/Dashboard";
 import { HistoryPage } from "./components/Home/HistoryPage";
@@ -13,21 +15,47 @@ import { PolishTemplatesPage } from "./components/Home/PolishTemplatesPage";
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<HomeLayout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="history" element={<HistoryPage />} />
-        <Route path="settings" element={<GeneralSettings />} />
-        <Route path="hotkey" element={<HotkeySettings />} />
-        <Route path="private-ai" element={<ModelSettings />} />
-        <Route path="cloud" element={<CloudService />} />
-        <Route path="polish-templates" element={<PolishTemplatesPage />} />
-        <Route path="permission" element={<PermissionSettings />} />
-        <Route path="logs" element={<LogViewer />} />
-        <Route path="about" element={<About />} />
-      </Route>
-    </Routes>
+    <>
+      {/* Toaster at root level - never re-mounts, stable across all route changes */}
+      <Toaster
+        position="top-center"
+        expand={false}
+        richColors={false}
+        closeButton={false}
+        duration={2000}
+        offset={16}
+        style={{
+          left: "calc(50% + 112px)",
+        }}
+        toastOptions={{
+          unstyled: true,
+          classNames: {
+            toast: "toast-base",
+            title: "toast-title",
+            description: "toast-description",
+            success: "toast-success",
+            error: "toast-error",
+            warning: "toast-warning",
+            info: "toast-info",
+          },
+        }}
+      />
+      <Routes>
+        <Route path="/" element={<HomeLayout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="history" element={<HistoryPage />} />
+          <Route path="settings" element={<GeneralSettings />} />
+          <Route path="hotkey" element={<HotkeySettings />} />
+          <Route path="private-ai" element={<ModelSettings />} />
+          <Route path="cloud" element={<CloudService />} />
+          <Route path="polish-templates" element={<PolishTemplatesPage />} />
+          <Route path="permission" element={<PermissionSettings />} />
+          <Route path="logs" element={<LogViewer />} />
+          <Route path="about" element={<About />} />
+        </Route>
+      </Routes>
+    </>
   );
 }
 
-export default App;
+export default memo(App);

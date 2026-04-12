@@ -9,8 +9,6 @@ use super::models::{
 };
 use crate::utils::AppPaths;
 
-const SCHEMA_VERSION: u32 = 1;
-
 const CREATE_TABLE_SQL: &str = "\
 CREATE TABLE IF NOT EXISTS transcription_history (\
     id TEXT PRIMARY KEY,\
@@ -26,7 +24,10 @@ CREATE TABLE IF NOT EXISTS transcription_history (\
     total_duration_ms INTEGER,\
     polish_applied INTEGER NOT NULL DEFAULT 0,\
     polish_engine TEXT,\
-    is_cloud INTEGER NOT NULL DEFAULT 0\
+    is_cloud INTEGER NOT NULL DEFAULT 0,\
+    audio_path TEXT,\
+    status TEXT NOT NULL DEFAULT 'success',\
+    error TEXT\
 )";
 
 const CREATE_INDEX_SQL: &str = "\
@@ -47,6 +48,19 @@ struct DashboardEntry {
     stt_engine: String,
 }
 
+/// Updates to apply to an entry after retry.
+#[derive(Debug, Clone)]
+pub struct EntryUpdates {
+    pub raw_text: String,
+    pub final_text: String,
+    pub stt_engine: String,
+    pub stt_model: Option<String>,
+    pub stt_duration_ms: Option<i64>,
+    pub polish_duration_ms: Option<i64>,
+    pub polish_applied: bool,
+    pub polish_engine: Option<String>,
+}
+
 impl HistoryStore {
     pub fn new() -> Result<Self, String> {
         let db_path = AppPaths::data_dir().join("transcription_history.db");
@@ -54,7 +68,7 @@ impl HistoryStore {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let conn =
-            Connection::open(&db_path).map_err(|e| format!("failed to open history db: {e}"))?;
+            Connection::open(&db_path).map_err(|e| format!("failed to open database: {e}"))?;
         Self::from_connection(conn)
     }
 
@@ -80,12 +94,40 @@ impl HistoryStore {
                     "BEGIN;
                      {CREATE_TABLE_SQL};
                      {CREATE_INDEX_SQL};
-                     PRAGMA user_version = {SCHEMA_VERSION};
+                     PRAGMA user_version = 1;
                      COMMIT;"
                 )
                 .as_str(),
             )
             .map_err(|e| format!("migration v1 failed: {e}"))?;
+        }
+
+        // Migration v2: Add audio_path, status, error columns (only if not present)
+        // These columns are now in CREATE_TABLE_SQL, but existing DBs may need migration
+        if current_version < 2 {
+            // Check if columns already exist (handles case where schema includes them)
+            let has_audio_path: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('transcription_history') WHERE name='audio_path'",
+                    [],
+                    |row| row.get::<_, i32>(0),
+                )
+                .unwrap_or(0) > 0;
+
+            if !has_audio_path {
+                conn.execute_batch(
+                    "BEGIN;
+                     ALTER TABLE transcription_history ADD COLUMN audio_path TEXT;
+                     ALTER TABLE transcription_history ADD COLUMN status TEXT NOT NULL DEFAULT 'success';
+                     ALTER TABLE transcription_history ADD COLUMN error TEXT;
+                     CREATE INDEX IF NOT EXISTS idx_history_status ON transcription_history(status);
+                     COMMIT;",
+                )
+                .map_err(|e| format!("migration v2 failed: {e}"))?;
+            }
+            // Always set version to 2 after schema is complete
+            conn.execute("PRAGMA user_version = 2", [])
+                .map_err(|e| format!("failed to set user_version: {e}"))?;
         }
 
         Ok(())
@@ -100,8 +142,8 @@ impl HistoryStore {
             "INSERT INTO transcription_history \
              (id, created_at, raw_text, final_text, stt_engine, stt_model, language, \
               audio_duration_ms, stt_duration_ms, polish_duration_ms, total_duration_ms, \
-              polish_applied, polish_engine, is_cloud) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+              polish_applied, polish_engine, is_cloud, audio_path, status, error) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 id,
                 created_at,
@@ -117,6 +159,9 @@ impl HistoryStore {
                 entry.polish_applied as i32,
                 entry.polish_engine,
                 entry.is_cloud as i32,
+                entry.audio_path,
+                entry.status,
+                entry.error,
             ],
         )
         .map_err(|e| format!("failed to insert history: {e}"))?;
@@ -128,7 +173,7 @@ impl HistoryStore {
         let mut sql = String::from(
             "SELECT id, created_at, raw_text, final_text, stt_engine, \
              stt_model, language, audio_duration_ms, stt_duration_ms, polish_duration_ms, \
-             total_duration_ms, polish_applied, polish_engine, is_cloud \
+             total_duration_ms, polish_applied, polish_engine, is_cloud, audio_path, status, error \
              FROM transcription_history WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -150,6 +195,12 @@ impl HistoryStore {
                 param_values.push(Box::new(engine.clone()));
                 param_idx += 1;
             }
+        }
+
+        if let Some(ref status) = filter.status {
+            sql.push_str(&format!(" AND status = ?{param_idx}"));
+            param_values.push(Box::new(status.clone()));
+            param_idx += 1;
         }
 
         if let Some(date_from) = filter.date_from {
@@ -201,6 +252,9 @@ impl HistoryStore {
                     polish_applied: row.get::<_, i32>(11)? != 0,
                     polish_engine: row.get(12)?,
                     is_cloud: row.get::<_, i32>(13)? != 0,
+                    audio_path: row.get(14)?,
+                    status: row.get::<_, String>(15)?,
+                    error: row.get(16)?,
                 })
             })
             .map_err(|e| format!("failed to query history: {e}"))?
@@ -211,12 +265,113 @@ impl HistoryStore {
     }
 
     pub fn delete_entry(&self, id: &str) -> Result<(), String> {
+        // First get the audio_path to delete the audio file
+        let audio_path = self.get_audio_path(id)?;
+        if let Some(path) = audio_path {
+            if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!(error = %e, path = %path, "audio_file_deletion_failed");
+            }
+        }
+
         let conn = self.conn.lock();
         conn.execute(
             "DELETE FROM transcription_history WHERE id = ?1",
             params![id],
         )
         .map_err(|e| format!("failed to delete history entry: {e}"))?;
+        Ok(())
+    }
+
+    /// Get a single entry by ID.
+    pub fn get_entry(&self, id: &str) -> Result<Option<TranscriptionEntry>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, created_at, raw_text, final_text, stt_engine, \
+                 stt_model, language, audio_duration_ms, stt_duration_ms, polish_duration_ms, \
+                 total_duration_ms, polish_applied, polish_engine, is_cloud, audio_path, status, error \
+                 FROM transcription_history WHERE id = ?1",
+            )
+            .map_err(|e| format!("failed to prepare query: {e}"))?;
+
+        let result = stmt.query_row(params![id], |row| {
+            Ok(TranscriptionEntry {
+                id: row.get(0)?,
+                created_at: row.get(1)?,
+                raw_text: row.get(2)?,
+                final_text: row.get(3)?,
+                stt_engine: row.get(4)?,
+                stt_model: row.get(5)?,
+                language: row.get(6)?,
+                audio_duration_ms: row.get(7)?,
+                stt_duration_ms: row.get(8)?,
+                polish_duration_ms: row.get(9)?,
+                total_duration_ms: row.get(10)?,
+                polish_applied: row.get::<_, i32>(11)? != 0,
+                polish_engine: row.get(12)?,
+                is_cloud: row.get::<_, i32>(13)? != 0,
+                audio_path: row.get(14)?,
+                status: row.get::<_, String>(15)?,
+                error: row.get(16)?,
+            })
+        });
+
+        match result {
+            Ok(entry) => Ok(Some(entry)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("failed to get entry: {e}")),
+        }
+    }
+
+    /// Get just the audio_path for an entry.
+    pub fn get_audio_path(&self, id: &str) -> Result<Option<String>, String> {
+        let conn = self.conn.lock();
+        let result: Result<Option<String>, rusqlite::Error> = conn.query_row(
+            "SELECT audio_path FROM transcription_history WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(path) => Ok(path),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("failed to get audio path: {e}")),
+        }
+    }
+
+    /// Update an entry after successful retry.
+    pub fn update_entry(&self, id: &str, updates: EntryUpdates) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE transcription_history SET \
+             raw_text = ?1, final_text = ?2, stt_engine = ?3, stt_model = ?4, \
+             stt_duration_ms = ?5, polish_duration_ms = ?6, polish_applied = ?7, \
+             polish_engine = ?8, status = 'success', error = NULL \
+             WHERE id = ?9",
+            params![
+                updates.raw_text,
+                updates.final_text,
+                updates.stt_engine,
+                updates.stt_model,
+                updates.stt_duration_ms,
+                updates.polish_duration_ms,
+                updates.polish_applied as i32,
+                updates.polish_engine,
+                id,
+            ],
+        )
+        .map_err(|e| format!("failed to update entry: {e}"))?;
+        Ok(())
+    }
+
+    /// Mark an entry as failed.
+    pub fn mark_error(&self, id: &str, error: &str) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE transcription_history SET status = 'error', error = ?1 WHERE id = ?2",
+            params![error, id],
+        )
+        .map_err(|e| format!("failed to mark entry as error: {e}"))?;
         Ok(())
     }
 
@@ -767,5 +922,110 @@ mod tests {
         assert_eq!(usage[1].engine, "Volcengine");
         assert_eq!(usage[1].count, 1);
         assert_eq!(usage[1].avg_stt_ms, Some(300));
+    }
+
+    /// Helper to insert an entry with error state for retry tests
+    fn insert_error_entry(
+        store: &HistoryStore,
+        id: &str,
+        created_at: i64,
+        audio_path: Option<&str>,
+    ) {
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT INTO transcription_history \
+             (id, created_at, raw_text, final_text, stt_engine, audio_path, status, error) \
+             VALUES (?1, ?2, '', '', 'Whisper', ?3, 'error', 'Initial failure')",
+            params![id, created_at, audio_path],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn mark_error_sets_status_and_error_message() {
+        let store = test_store();
+        insert_entry(
+            &store,
+            "entry-1",
+            timestamp_for_day_offset(0, 10),
+            "original text",
+            Some(10_000),
+            Some(500),
+            false,
+            false,
+            "Whisper",
+        );
+
+        // Mark as error
+        store
+            .mark_error("entry-1", "Transcription failed: empty result")
+            .unwrap();
+
+        // Verify status changed to error
+        let entry = store.get_entry("entry-1").unwrap().unwrap();
+        assert_eq!(entry.status, "error");
+        assert_eq!(
+            entry.error,
+            Some("Transcription failed: empty result".to_string())
+        );
+    }
+
+    #[test]
+    fn update_entry_clears_error_and_sets_success() {
+        let store = test_store();
+        insert_error_entry(
+            &store,
+            "entry-1",
+            timestamp_for_day_offset(0, 10),
+            Some("/tmp/audio.wav"),
+        );
+
+        // Verify initial state
+        let before = store.get_entry("entry-1").unwrap().unwrap();
+        assert_eq!(before.status, "error");
+        assert_eq!(before.error, Some("Initial failure".to_string()));
+
+        // Update after successful retry
+        let updates = EntryUpdates {
+            raw_text: "retry result".to_string(),
+            final_text: "Retry Result".to_string(),
+            stt_engine: "Whisper".to_string(),
+            stt_model: Some("base".to_string()),
+            stt_duration_ms: Some(450),
+            polish_duration_ms: Some(100),
+            polish_applied: true,
+            polish_engine: Some("cloud".to_string()),
+        };
+        store.update_entry("entry-1", updates).unwrap();
+
+        // Verify status changed to success
+        let after = store.get_entry("entry-1").unwrap().unwrap();
+        assert_eq!(after.status, "success");
+        assert_eq!(after.error, None);
+        assert_eq!(after.raw_text, "retry result");
+        assert_eq!(after.final_text, "Retry Result");
+        assert_eq!(after.stt_duration_ms, Some(450));
+    }
+
+    #[test]
+    fn get_entry_returns_none_for_nonexistent_id() {
+        let store = test_store();
+        let result = store.get_entry("nonexistent").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_entry_includes_audio_path_for_retry() {
+        let store = test_store();
+        insert_error_entry(
+            &store,
+            "entry-1",
+            timestamp_for_day_offset(0, 10),
+            Some("/path/to/audio.wav"),
+        );
+
+        let entry = store.get_entry("entry-1").unwrap().unwrap();
+        assert_eq!(entry.audio_path, Some("/path/to/audio.wav".to_string()));
+        assert_eq!(entry.status, "error");
     }
 }

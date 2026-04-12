@@ -2,18 +2,18 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  historyCommands,
-  TranscriptionEntry,
-  HistoryFilter,
-} from "@/lib/tauri";
+import { historyCommands, TranscriptionEntry, HistoryFilter } from "@/lib/tauri";
+import { showToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import {
   Search,
   Clock,
   ChevronLeft,
   ChevronRight,
-  X
+  X,
+  Copy,
+  AlertCircle,
+  RotateCcw,
 } from "lucide-react";
 import { logger } from "@/lib/logger";
 
@@ -37,20 +37,89 @@ function formatRelativeTime(timestamp: number, t: (key: string, options?: Record
 interface HistoryEntryCardProps {
   entry: TranscriptionEntry;
   t: (key: string, options?: Record<string, unknown>) => string;
+  onRetry: (id: string) => void;
+  retryingIds: Set<string>;
 }
 
-function HistoryEntryCard({ entry, t }: HistoryEntryCardProps) {
+function HistoryEntryCard({ entry, t, onRetry, retryingIds }: HistoryEntryCardProps) {
+  const [copied, setCopied] = useState(false);
+  const isRetrying = retryingIds.has(entry.id);
+  const isError = entry.status === "error";
+  const isSuccess = entry.status === "success" && entry.final_text && entry.final_text.length > 0;
+
+  const handleCopy = async () => {
+    if (!entry.final_text) return;
+    try {
+      await navigator.clipboard.writeText(entry.final_text);
+      setCopied(true);
+      showToast(t("history.copied"));
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      logger.error("failed_to_copy", { error: String(err) });
+    }
+  };
+
   return (
-    <div className="flex items-start justify-between gap-4 py-3 px-2 md:px-3 border-b border-border/40 last:border-0">
+    <div className={cn(
+      "group flex items-start justify-between gap-4 py-3 px-2 md:px-3 border-b border-border/40 last:border-0",
+      "hover:bg-secondary/30 transition-colors",
+      isRetrying && "opacity-70"
+    )}>
       {/* 文本列 (左侧) */}
       <div className="flex-1 min-w-0">
-        <p className="text-[14px] text-foreground leading-relaxed break-words">
-          {entry.final_text}
-        </p>
+        {isError ? (
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-1">
+              <p className="text-[14px] text-muted-foreground leading-relaxed">
+                {t("history.error.failed")}
+              </p>
+              {entry.error && (
+                <p className="text-xs text-destructive/70">
+                  {entry.error}
+                </p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className="text-[14px] text-foreground leading-relaxed break-words">
+            {entry.final_text || t("history.empty.description")}
+          </p>
+        )}
       </div>
 
-      {/* 时间列 (右侧) */}
-      <div className="shrink-0 pt-0.5">
+      {/* 操作列 (右侧) */}
+      <div className="shrink-0 flex items-center gap-2">
+        {/* 按钮 hover 时才显示 */}
+        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          {isSuccess && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={handleCopy}
+              title={t("history.copy")}
+            >
+              <Copy className={cn("h-3.5 w-3.5 pointer-events-none", copied && "text-primary")} />
+            </Button>
+          )}
+          {isError && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs gap-1"
+              onClick={() => onRetry(entry.id)}
+              disabled={isRetrying}
+              title={t("history.retry")}
+            >
+              <RotateCcw className={cn("h-3.5 w-3.5 pointer-events-none", isRetrying && "animate-spin")} />
+              <span className="pointer-events-none">
+                {isRetrying ? t("history.retrying") : t("history.retry")}
+              </span>
+            </Button>
+          )}
+        </div>
+        {/* 时间 */}
         <span className="text-[13px] font-medium font-mono tabular-nums tracking-tight text-muted-foreground/50">
           {formatRelativeTime(entry.created_at, t)}
         </span>
@@ -89,6 +158,7 @@ export function HistoryPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [searchDebounceTimer, setSearchDebounceTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [pendingSearch, setPendingSearch] = useState("");
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
 
   const fetchHistory = useCallback(async () => {
     setIsLoading(true);
@@ -120,6 +190,24 @@ export function HistoryPage() {
       setIsLoading(false);
     }
   }, [currentPage, engineFilter, pendingSearch]);
+
+  const handleRetry = useCallback(async (id: string) => {
+    setRetryingIds(prev => new Set(prev).add(id));
+    try {
+      const result = await historyCommands.retryTranscription(id);
+      logger.info("retry_success", { id, result });
+      // Refresh the list
+      await fetchHistory();
+    } catch (err) {
+      logger.error("retry_failed", { id, error: String(err) });
+    } finally {
+      setRetryingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }, [fetchHistory]);
 
   useEffect(() => {
     fetchHistory();
@@ -223,7 +311,13 @@ export function HistoryPage() {
         ) : entries.length > 0 ? (
           <div className="flex flex-col">
             {entries.map((entry) => (
-              <HistoryEntryCard key={entry.id} entry={entry} t={t} />
+              <HistoryEntryCard 
+                key={entry.id} 
+                entry={entry} 
+                t={t} 
+                onRetry={handleRetry}
+                retryingIds={retryingIds}
+              />
             ))}
           </div>
         ) : (

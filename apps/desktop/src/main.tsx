@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
-import { events, windowCommands, systemCommands } from "./lib/tauri";
+import { events, systemCommands } from "./lib/tauri";
+import { showToast } from "./lib/toast";
 import { logger } from "./lib/logger";
 import { initAnalytics } from "./lib/analytics";
 import { applyInitialTheme, applyTheme, type ThemeMode } from "./lib/theme";
@@ -51,7 +52,7 @@ function PermissionNotice() {
     events.onShortcutRegistrationFailed((error) => {
       logger.error("shortcut_registration_failed", { error });
       setShowPermissionPrompt(true);
-      windowCommands.showToast(t("permission.description"));
+      showToast(t("permission.description"));
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, [t]);

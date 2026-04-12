@@ -151,8 +151,6 @@ export const windowCommands = {
   hideMain: () => invokeWithLogging("hide_main_window"),
   showPill: () => invokeWithLogging("show_pill_window"),
   hidePill: () => invokeWithLogging("hide_pill_window"),
-  showToast: (message: string) => invokeWithLogging("show_toast", { message }),
-  hideToast: () => invokeWithLogging("hide_toast"),
   updatePillPosition: (x: number, y: number) =>
     invokeWithLogging("update_pill_position", { x, y }),
   getPillPosition: () => invokeWithLogging<Position | null>("get_pill_position"),
@@ -282,6 +280,12 @@ export interface TranscriptionEntry {
   polish_applied: boolean;
   polish_engine: string | null;
   is_cloud: boolean;
+  /** Path to the saved audio file (for retry functionality). */
+  audio_path: string | null;
+  /** Status of the entry: "success" or "error". */
+  status: string;
+  /** Error message if transcription failed. */
+  error: string | null;
 }
 
 export interface DashboardStats {
@@ -320,6 +324,8 @@ export interface EngineUsage {
 export interface HistoryFilter {
   search?: string;
   engine?: string;
+  /** Filter by status: "success", "error", or undefined for all. */
+  status?: string;
   date_from?: number;
   date_to?: number;
   limit?: number;
@@ -329,6 +335,8 @@ export interface HistoryFilter {
 export const historyCommands = {
   getHistory: (filter: HistoryFilter) =>
     invokeWithLogging<TranscriptionEntry[]>("get_transcription_history", { filter }),
+  getEntry: (id: string) =>
+    invokeWithLogging<TranscriptionEntry | null>("get_transcription_entry", { id }),
   getDashboardStats: () =>
     invokeWithLogging<DashboardStats>("get_dashboard_stats"),
   getDailyUsage: (days: number) =>
@@ -339,6 +347,8 @@ export const historyCommands = {
     invokeWithLogging<void>("delete_transcription_entry", { id }),
   clearAll: () =>
     invokeWithLogging<void>("clear_transcription_history"),
+  retryTranscription: (id: string) =>
+    invokeWithLogging<string>("retry_transcription", { id }),
 };
 
 export const events = {

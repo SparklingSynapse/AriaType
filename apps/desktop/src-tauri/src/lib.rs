@@ -123,6 +123,9 @@ pub fn run() {
 
     info!("app_started");
 
+    // Ensure all application directories exist (models, recordings, cache, etc.)
+    crate::utils::AppPaths::ensure_dirs();
+
     // Initialize the global beep player with settings
     let beep_enabled = crate::commands::settings::load_settings_from_disk().beep_on_record;
     crate::audio::beep::init_beep_player();
@@ -145,8 +148,6 @@ pub fn run() {
             window::hide_main_window,
             window::show_pill_window,
             window::hide_pill_window,
-            window::show_toast,
-            window::hide_toast,
             window::update_pill_position,
             window::get_pill_position,
             start_recording,
@@ -199,11 +200,13 @@ pub fn run() {
             model_cache::preload_polish_model,
             model_cache::unload_polish_model,
             history::get_transcription_history,
+            history::get_transcription_entry,
             history::get_dashboard_stats,
             history::get_daily_usage,
             history::get_engine_usage,
             history::delete_transcription_entry,
             history::clear_transcription_history,
+            history::retry_transcription,
             hotkey::start_hotkey_recording,
             hotkey::stop_hotkey_recording,
             hotkey::cancel_hotkey_recording,

@@ -118,6 +118,10 @@ mod tests {
         assert!(models.ends_with("models"));
         assert!(models.starts_with(&data));
 
+        let recordings = AppPaths::recordings_dir();
+        assert!(recordings.ends_with("recordings"));
+        assert!(recordings.starts_with(&data));
+
         let temp = AppPaths::temp_dir();
         assert!(temp.ends_with("temp"));
     }

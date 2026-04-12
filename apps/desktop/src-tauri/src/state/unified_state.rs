@@ -19,6 +19,14 @@ pub struct StreamingSttState {
     pub accumulated_text: String,
     pub task_id: u64,
     pub streaming_task: Arc<Mutex<Option<JoinHandle<()>>>>,
+    /// Path where the raw audio will be saved (for retry functionality).
+    pub audio_save_path: Option<std::path::PathBuf>,
+    /// Accumulated raw PCM samples (before VAD/processing) for saving to file.
+    pub raw_audio_buffer: Arc<Mutex<Vec<i16>>>,
+    /// Sample rate of the recording.
+    pub sample_rate: u32,
+    /// Number of channels.
+    pub channels: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, Default)]

@@ -114,7 +114,7 @@ export function PillWindow() {
       onMouseDown={handleDrag}
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
-      <AnimatePresence onExitComplete={handleExitComplete}>
+      <AnimatePresence initial={false} onExitComplete={handleExitComplete}>
         {showContent && (
           <motion.div
             key="pill"

@@ -1,7 +1,7 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use super::models::{HistoryFilter, NewTranscriptionEntry, TranscriptionEntry};
-use super::store::HistoryStore;
+use super::store::{EntryUpdates, HistoryStore};
 use crate::state::app_state::AppState;
 
 #[tauri::command]
@@ -11,6 +11,15 @@ pub fn get_transcription_history(
 ) -> Result<Vec<TranscriptionEntry>, String> {
     let store = state.history_store.lock();
     store.get_history(&filter)
+}
+
+#[tauri::command]
+pub fn get_transcription_entry(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Option<TranscriptionEntry>, String> {
+    let store = state.history_store.lock();
+    store.get_entry(&id)
 }
 
 #[tauri::command]
@@ -56,4 +65,29 @@ pub fn save_history_entry(
     entry: NewTranscriptionEntry,
 ) -> Result<String, String> {
     store.insert(entry)
+}
+
+/// Update a history entry after retry. Called internally.
+pub fn update_history_entry(
+    store: &HistoryStore,
+    id: &str,
+    updates: EntryUpdates,
+) -> Result<(), String> {
+    store.update_entry(id, updates)
+}
+
+/// Mark a history entry as failed. Called internally.
+pub fn mark_history_error(store: &HistoryStore, id: &str, error: &str) -> Result<(), String> {
+    store.mark_error(id, error)
+}
+
+/// Retry transcription for a failed entry.
+/// This is a Tauri command exposed to frontend.
+#[tauri::command]
+pub async fn retry_transcription(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<String, String> {
+    crate::commands::audio::retry_transcription_internal(app, state, id).await
 }

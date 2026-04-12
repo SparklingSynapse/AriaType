@@ -154,7 +154,7 @@ export function HomeLayout() {
             </div>
           </nav>
         </aside>
-        <main className="flex-1">
+        <main className="flex-1 relative">
           <OverlayScrollbarsComponent
             defer
             className="h-full"
