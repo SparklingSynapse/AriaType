@@ -167,8 +167,6 @@ pub struct AppState {
     pub is_recording: AtomicBool,
     pub is_transcribing: AtomicBool,
     pub output_path: Mutex<Option<String>>,
-    /// When true, the global hotkey should not trigger recording (e.g. user is setting a new hotkey)
-    pub hotkey_capture_mode: AtomicBool,
     /// Monotonically increasing task ID; incremented on each new recording session
     pub task_counter: AtomicU64,
     /// Timestamp (ms since UNIX epoch) when the current recording started; used to
@@ -191,6 +189,8 @@ pub struct AppState {
     pub streaming_stt: Mutex<Option<StreamingSttState>>,
     /// Transcription history store (SQLite)
     pub history_store: Mutex<crate::history::HistoryStore>,
+    /// Recording listener for hotkey recording UI (captures FN key)
+    pub hotkey_recording_listener: Mutex<Option<crate::shortcut::RecordingListener>>,
 }
 
 impl AppState {
@@ -221,7 +221,6 @@ impl AppState {
             is_recording: AtomicBool::new(false),
             is_transcribing: AtomicBool::new(false),
             output_path: Mutex::new(None),
-            hotkey_capture_mode: AtomicBool::new(false),
             task_counter: AtomicU64::new(0),
             recording_start_time: AtomicU64::new(0),
             level_monitor_tx: Mutex::new(Some(level_tx)),
@@ -235,6 +234,7 @@ impl AppState {
             history_store: Mutex::new(
                 crate::history::HistoryStore::new().expect("failed to initialize history store"),
             ),
+            hotkey_recording_listener: Mutex::new(None),
         }
     }
 

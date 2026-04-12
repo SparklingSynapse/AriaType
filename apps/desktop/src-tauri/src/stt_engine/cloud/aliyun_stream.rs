@@ -22,14 +22,16 @@ use futures_util::{SinkExt, Stream, StreamExt};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, Mutex, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_tungstenite::tungstenite::Error as WsError;
 use tokio_tungstenite::{connect_async_tls_with_config, tungstenite::protocol::Message};
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::commands::settings::CloudSttConfig;
-use crate::stt_engine::traits::{EngineType, PartialResult, PartialResultCallback, SttContext, TranscriptionResult};
+use crate::stt_engine::traits::{
+    EngineType, PartialResult, PartialResultCallback, SttContext, TranscriptionResult,
+};
 
 const QWEN_OMNI_REALTIME_ENDPOINT: &str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
 const QWEN_OMNI_REALTIME_MODEL: &str = "qwen3-asr-flash-realtime";
@@ -187,10 +189,7 @@ impl AliyunStreamClient {
 
         match tokio::time::timeout(SESSION_READY_TIMEOUT, session_ready_rx).await {
             Ok(Ok(Ok(()))) => {
-                info!(
-                    provider = "aliyun-stream",
-                    "session_update_acknowledged"
-                );
+                info!(provider = "aliyun-stream", "session_update_acknowledged");
             }
             Ok(Ok(Err(err))) => {
                 self.close().await;
@@ -199,7 +198,7 @@ impl AliyunStreamClient {
             Ok(Err(_)) => {
                 self.close().await;
                 return Err(
-                    "Aliyun Realtime connection closed before session was ready".to_string(),
+                    "Aliyun Realtime connection closed before session was ready".to_string()
                 );
             }
             Err(_) => {
@@ -464,10 +463,7 @@ impl AliyunStreamClient {
                                 }
                             }
                         } else {
-                            warn!(
-                                provider = "aliyun-stream",
-                                "connection_closed_no_frame"
-                            );
+                            warn!(provider = "aliyun-stream", "connection_closed_no_frame");
                             *tx.lock().await = None;
                             let mut last_error_guard = last_error.lock().await;
                             if last_error_guard.is_none() {
@@ -559,10 +555,7 @@ impl AliyunStreamClient {
         let task_handle = self.audio_sender_task.lock().await.take();
         if let Some(handle) = task_handle {
             match handle.await {
-                Ok(()) => debug!(
-                    provider = "aliyun-stream",
-                    "audio_sender_task_completed"
-                ),
+                Ok(()) => debug!(provider = "aliyun-stream", "audio_sender_task_completed"),
                 Err(e) => {
                     warn!(provider = "aliyun-stream", error = %e, "audio_sender_task_error")
                 }
@@ -595,10 +588,7 @@ impl AliyunStreamClient {
                 .await
                 .map_err(|e| format!("Failed to send session finish packet: {}", e))?;
 
-            debug!(
-                provider = "aliyun-stream",
-                "session_finish_packet_sent"
-            );
+            debug!(provider = "aliyun-stream", "session_finish_packet_sent");
         } else if let Some(err) = self.last_error.lock().await.clone() {
             return Err(err);
         } else {

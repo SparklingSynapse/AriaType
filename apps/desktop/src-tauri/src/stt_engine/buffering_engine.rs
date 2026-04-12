@@ -62,10 +62,9 @@ impl RecordingConsumer for BufferingConsumer {
 
         let samples: Vec<f32> = all_pcm.iter().map(|&s| s as f32 / 32768.0).collect();
 
-        let engine_type = crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(
-            &self.model_name,
-        )
-        .unwrap_or(crate::stt_engine::traits::EngineType::Whisper);
+        let engine_type =
+            crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&self.model_name)
+                .unwrap_or(crate::stt_engine::traits::EngineType::Whisper);
 
         let mut request = crate::stt_engine::traits::TranscriptionRequest::new(samples)
             .with_model(&self.model_name)

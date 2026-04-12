@@ -127,4 +127,6 @@ pub mod EventName {
     pub const SETTINGS_CHANGED: &str = "settings-changed";
     pub const TOAST_MESSAGE: &str = "toast-message";
     pub const SHORTCUT_REGISTRATION_FAILED: &str = "shortcut-registration-failed";
+    pub const SHORTCUT_TRIGGERED: &str = "shortcut-triggered";
+    pub const HOTKEY_CAPTURED: &str = "hotkey-captured";
 }

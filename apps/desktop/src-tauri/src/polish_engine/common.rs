@@ -377,19 +377,23 @@ mod tests {
             log_prefix: "test",
             strip_think_tags: true,
             prompt_format: PromptFormat::ChatMl,
+            min_model_size_mb: 100,
         };
         assert_eq!(config.log_prefix, "test");
         assert!(config.strip_think_tags);
         assert_eq!(config.prompt_format, PromptFormat::ChatMl);
+        assert_eq!(config.min_model_size_mb, 100);
 
         let config2 = EngineConfig {
             log_prefix: "another",
             strip_think_tags: false,
             prompt_format: PromptFormat::Gemma,
+            min_model_size_mb: 200,
         };
         assert_eq!(config2.log_prefix, "another");
         assert!(!config2.strip_think_tags);
         assert_eq!(config2.prompt_format, PromptFormat::Gemma);
+        assert_eq!(config2.min_model_size_mb, 200);
     }
 
     #[test]

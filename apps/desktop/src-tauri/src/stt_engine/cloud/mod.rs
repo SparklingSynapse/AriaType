@@ -5,8 +5,8 @@ pub mod volcengine_streaming;
 
 use crate::commands::settings::CloudSttConfig;
 use crate::stt_engine::traits::{PartialResultCallback, RecordingConsumer, SttContext};
-use async_trait::async_trait;
 use aliyun_stream::AliyunStreamClient;
+use async_trait::async_trait;
 use elevenlabs::ElevenLabsStreamingClient;
 use volcengine_streaming::VolcengineStreamingClient;
 

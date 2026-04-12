@@ -13,7 +13,17 @@ const MARGIN_LOGICAL: f64 = 20.0;
 pub fn update_pill_visibility(app: &AppHandle) {
     use tracing::info;
 
-    let state = app.state::<AppState>();
+    tracing::info!("update_pill_visibility_entered");
+
+    let state = app.try_state::<AppState>();
+    if state.is_none() {
+        tracing::error!("update_pill_visibility_app_state_not_available");
+        return;
+    }
+    let state = state.unwrap();
+
+    tracing::info!("update_pill_visibility_state_acquired");
+
     let settings = state.settings.lock();
     let indicator_mode = settings.pill_indicator_mode.clone();
     drop(settings);
@@ -23,15 +33,65 @@ pub fn update_pill_visibility(app: &AppHandle) {
         .is_transcribing
         .load(std::sync::atomic::Ordering::SeqCst);
 
-    if let Some(window) = app.get_webview_window("pill") {
-        match indicator_mode.as_str() {
-            "never" => {
-                let _ = window.hide();
-                info!(mode = "never", "pill_visibility_hidden");
-            }
-            "when_recording" => {
-                // Only SHOW from backend; frontend handles hiding via exit animation
-                if is_recording || is_transcribing {
+    tracing::info!(
+        indicator_mode = %indicator_mode,
+        is_recording,
+        is_transcribing,
+        "update_pill_visibility_state"
+    );
+
+    // Clone necessary values before dispatching to main thread
+    let indicator_mode_clone = indicator_mode.clone();
+    let app_clone = app.clone();
+
+    // Window operations on macOS must run on main thread.
+    // Use run_on_main_thread to safely dispatch.
+    let _ = app.run_on_main_thread(move || {
+        tracing::info!("update_pill_visibility_main_thread");
+
+        if let Some(window) = app_clone.get_webview_window("pill") {
+            tracing::info!("update_pill_visibility_window_found");
+            match indicator_mode_clone.as_str() {
+                "never" => {
+                    tracing::info!("update_pill_visibility_mode_never");
+                    let _ = window.hide();
+                    info!(mode = "never", "pill_visibility_hidden");
+                }
+                "when_recording" => {
+                    tracing::info!("update_pill_visibility_mode_when_recording");
+                    // Only SHOW from backend; frontend handles hiding via exit animation
+                    if is_recording || is_transcribing {
+                        tracing::info!("update_pill_visibility_showing_window");
+                        #[cfg(target_os = "macos")]
+                        {
+                            tracing::info!("update_pill_visibility_macos_show");
+                            use cocoa::base::id;
+                            use objc::{msg_send, sel, sel_impl};
+                            if let Ok(ns_window) = window.ns_window() {
+                                tracing::info!("update_pill_visibility_ns_window_ok");
+                                unsafe {
+                                    tracing::info!("update_pill_visibility_before_orderfront");
+                                    let ns_window = ns_window as id;
+                                    let _: () = msg_send![ns_window, orderFront: cocoa::base::nil];
+                                    tracing::info!("update_pill_visibility_after_orderfront");
+                                }
+                            } else {
+                                tracing::error!("update_pill_visibility_ns_window_failed");
+                            }
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            let _ = window.show();
+                        }
+                        info!(
+                            mode = "when_recording",
+                            is_recording, is_transcribing, "pill_visibility_shown"
+                        );
+                    }
+                }
+                _ => {
+                    tracing::info!("update_pill_visibility_mode_always");
+                    // "always" or any other value
                     #[cfg(target_os = "macos")]
                     {
                         use cocoa::base::id;
@@ -47,33 +107,14 @@ pub fn update_pill_visibility(app: &AppHandle) {
                     {
                         let _ = window.show();
                     }
-                    info!(
-                        mode = "when_recording",
-                        is_recording, is_transcribing, "pill_visibility_shown"
-                    );
+                    info!(mode = "always", "pill_visibility_shown");
                 }
             }
-            _ => {
-                // "always" or any other value
-                #[cfg(target_os = "macos")]
-                {
-                    use cocoa::base::id;
-                    use objc::{msg_send, sel, sel_impl};
-                    if let Ok(ns_window) = window.ns_window() {
-                        unsafe {
-                            let ns_window = ns_window as id;
-                            let _: () = msg_send![ns_window, orderFront: cocoa::base::nil];
-                        }
-                    }
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = window.show();
-                }
-                info!(mode = "always", "pill_visibility_shown");
-            }
+        } else {
+            tracing::warn!("update_pill_visibility_window_not_found");
         }
-    }
+        tracing::info!("update_pill_visibility_completed");
+    });
 }
 
 /// Get the monitor where the user is currently working.

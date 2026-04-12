@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod hotkey;
 pub mod model;
 pub mod model_cache;
 pub mod permissions;

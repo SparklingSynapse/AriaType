@@ -12,6 +12,7 @@ pub mod events;
 pub mod history;
 pub mod polish_engine;
 pub mod provider_schema;
+pub mod shortcut;
 pub mod state;
 pub mod stt_engine;
 pub mod text_injector;
@@ -22,7 +23,7 @@ use commands::audio::{
     get_audio_level, get_recording_state, start_audio_level_monitor, start_recording,
     stop_recording,
 };
-use commands::{model, model_cache, permissions, settings, system, text, window};
+use commands::{hotkey, model, model_cache, permissions, settings, system, text, window};
 use events::EventName;
 use state::app_state::AppState;
 
@@ -84,6 +85,40 @@ fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install panic hook BEFORE any other initialization
+    // This ensures panics are logged even if logging isn't fully initialized
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info
+            .location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "unknown_location".to_string());
+
+        let message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic payload".to_string()
+        };
+
+        // Capture backtrace for debugging
+        let backtrace = std::backtrace::Backtrace::capture();
+        let backtrace_str = match backtrace.status() {
+            std::backtrace::BacktraceStatus::Captured => format!("\nBacktrace:\n{}", backtrace),
+            _ => String::new(),
+        };
+
+        // Log to tracing (may work if logging is initialized)
+        tracing::error!(
+            location = %location,
+            message = %message,
+            "application_panic{}", backtrace_str
+        );
+
+        // Also write to stderr as a fallback
+        eprintln!("PANIC at {}: {}{}", location, message, backtrace_str);
+    }));
+
     let _log_guard = init_logging();
 
     info!("app_started");
@@ -95,7 +130,6 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_aptabase::Builder::new("A-US-3957940978").build())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
@@ -124,7 +158,6 @@ pub fn run() {
             text::restore_clipboard,
             settings::get_settings,
             settings::update_settings,
-            settings::set_hotkey_capture_mode,
             settings::get_glossary_content,
             settings::get_available_subdomains,
             settings::get_cloud_provider_schemas,
@@ -171,6 +204,10 @@ pub fn run() {
             history::get_engine_usage,
             history::delete_transcription_entry,
             history::clear_transcription_history,
+            hotkey::start_hotkey_recording,
+            hotkey::stop_hotkey_recording,
+            hotkey::cancel_hotkey_recording,
+            hotkey::peek_hotkey_recording,
         ])
         .setup(|app| {
             info!("setup_completed");
@@ -484,19 +521,33 @@ pub fn run() {
                 info!(status = %status, "accessibility_permission_checked");
             }
 
-            // Register global shortcut from settings
+            // Initialize ShortcutManager and register global shortcut from settings
             let hotkey = {
                 let state = app.state::<AppState>();
                 let hotkey = state.settings.lock().hotkey.clone();
                 hotkey
             };
-            match commands::settings::register_global_shortcut(app.handle(), &hotkey) {
-                Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
-                Err(e) => {
-                    warn!(error = %e, "shortcut_registration_failed");
-                    if let Err(emit_err) = app.emit(EventName::SHORTCUT_REGISTRATION_FAILED, e.to_string()) {
-                        tracing::warn!(error = %emit_err, "event_emit_failed-shortcut_registration");
+
+            // Create and start shortcut manager
+            let mut shortcut_manager = crate::shortcut::ShortcutManager::new()
+                .expect("shortcut manager creation should succeed");
+            match shortcut_manager.start(app.handle().clone()) {
+                Ok(_) => {
+                    // Register the initial hotkey
+                    match shortcut_manager.register(&hotkey) {
+                        Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
+                        Err(e) => {
+                            warn!(error = %e, "shortcut_registration_failed");
+                            if let Err(emit_err) = app.emit(EventName::SHORTCUT_REGISTRATION_FAILED, e) {
+                                tracing::warn!(error = %emit_err, "event_emit_failed-shortcut_registration");
+                            }
+                        }
                     }
+                    // Store manager in app state for later access
+                    app.manage(shortcut_manager);
+                }
+                Err(e) => {
+                    warn!(error = %e, "shortcut_manager_start_failed");
                 }
             }
 

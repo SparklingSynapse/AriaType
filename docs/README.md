@@ -54,6 +54,7 @@
 | [`spec/logs.md`](./spec/logs.md) | Logging standard, structured fields, anti-patterns |
 | [`spec/testing.md`](./spec/testing.md) | Test pyramid, coverage gates, verification commands |
 | [`spec/engine-api-contract.md`](./spec/engine-api-contract.md) | STT/Polish engine API contracts, unified interfaces |
+| [`spec/hotkey.md`](./spec/hotkey.md) | Global hotkey combinations, capture behavior, validation rules |
 
 ---
 
@@ -135,6 +136,7 @@ Active and completed execution plans.
 | Add a new Polish provider | [`guides/adding-polish-provider.md`](./guides/adding-polish-provider.md) |
 | Write and run tests | [`guides/testing.md`](./guides/testing.md) |
 | Understand logging requirements | [`spec/logs.md`](./spec/logs.md) |
+| Understand hotkey rules | [`spec/hotkey.md`](./spec/hotkey.md) |
 | Debug a production issue | [`guides/debugging.md`](./guides/debugging.md) |
 | Look up provider API details | [`reference/`](./reference/README.md) |
 | Understand a feature spec | `feat/<name>/<version>/prd/erd.md` |
@@ -175,7 +177,8 @@ docs/
 ├── spec/
 │   ├── logs.md                        # Logging standard
 │   ├── testing.md                     # Test pyramid and coverage gates
-│   └── engine-api-contract.md         # Engine API contract testing
+│   ├── engine-api-contract.md         # Engine API contract testing
+│   └── hotkey.md                      # Global hotkey specification
 │
 ├── conventions/
 │   ├── README.md                      # Conventions index

@@ -175,14 +175,19 @@ export const settingsCommands = {
   getSettings: () => invokeWithLogging<AppSettings>("get_settings"),
   updateSettings: (key: string, value: unknown) =>
     invokeWithLogging("update_settings", { key, value }),
-  setHotkeyCaptureMode: (enabled: boolean) =>
-    invokeWithLogging("set_hotkey_capture_mode", { enabled }),
   getGlossaryContent: (subdomain: string) =>
     invokeWithLogging<string>("get_glossary_content", { subdomain }),
   getAvailableSubdomains: (domain: string) =>
     invokeWithLogging<string[]>("get_available_subdomains", { domain }),
   getCloudProviderSchemas: () =>
     invokeWithLogging<CloudProviderSchemas>("get_cloud_provider_schemas"),
+};
+
+export const hotkeyCommands = {
+  startRecording: () => invokeWithLogging<void>("start_hotkey_recording"),
+  stopRecording: () => invokeWithLogging<string | null>("stop_hotkey_recording"),
+  cancelRecording: () => invokeWithLogging<void>("cancel_hotkey_recording"),
+  peekRecording: () => invokeWithLogging<string | null>("peek_hotkey_recording"),
 };
 
 export const systemCommands = {
@@ -447,6 +452,13 @@ export const events = {
     return listen<string>("shortcut-registration-failed", (event) => {
       const error = event.payload;
       logger.error("event_received-shortcut_registration_failed", { error });
+      callback(event.payload);
+    });
+  },
+  onHotkeyCaptured: (callback: (hotkey: string) => void) => {
+    return listen<string>("hotkey-captured", (event) => {
+      const hotkey = event.payload;
+      logger.info("event_received-hotkey_captured", { hotkey });
       callback(event.payload);
     });
   },

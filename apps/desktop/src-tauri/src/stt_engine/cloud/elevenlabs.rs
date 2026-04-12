@@ -27,7 +27,9 @@ use tokio_tungstenite::{connect_async_tls_with_config, tungstenite::protocol::Me
 use tracing::{debug, error, info, warn};
 
 use crate::commands::settings::CloudSttConfig;
-use crate::stt_engine::traits::{EngineType, PartialResult, PartialResultCallback, SttContext, TranscriptionResult};
+use crate::stt_engine::traits::{
+    EngineType, PartialResult, PartialResultCallback, SttContext, TranscriptionResult,
+};
 
 /// Eleven Labs Scribe v2 Realtime WebSocket endpoint
 const ELEVENLABS_REALTIME_ENDPOINT: &str = "wss://api.elevenlabs.io/v1/speech-to-text/realtime";

@@ -1,219 +1,129 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { settingsCommands } from "@/lib/tauri";
+import { hotkeyCommands, events } from "@/lib/tauri";
 
-const MODIFIER_CODES = new Set([
-  "MetaLeft", "MetaRight", "ControlLeft", "ControlRight",
-  "AltLeft", "AltRight", "ShiftLeft", "ShiftRight"
-]);
-
-const SPECIAL_KEYS: Record<string, string> = {
-  Space: "space", Enter: "enter", Backspace: "backspace", Tab: "tab",
-  Escape: "escape", ArrowUp: "arrowup", ArrowDown: "arrowdown",
-  ArrowLeft: "arrowleft", ArrowRight: "arrowright", Delete: "delete",
-  Home: "home", End: "end", PageUp: "pageup", PageDown: "pagedown",
-  Insert: "insert", CapsLock: "capslock", PrintScreen: "printscreen",
-  ScrollLock: "scrolllock", Pause: "pause", Minus: "minus",
-  Equal: "equal", BracketLeft: "bracketleft", BracketRight: "bracketright",
-  Backslash: "backslash", Semicolon: "semicolon", Quote: "quote",
-  Backquote: "backquote", Comma: "comma", Period: "period",
-  Slash: "slash", AudioVolumeDown: "audiovolumedown",
-  AudioVolumeUp: "audiovolumeup", AudioVolumeMute: "audiovolumemute",
-  MediaPlay: "mediaplay", MediaPause: "mediapause",
-  MediaPlayPause: "mediaplaypause", MediaStop: "mediastop",
-  MediaTrackNext: "mediatracknext", MediaTrackPrevious: "mediatrackprev",
-  NumpadAdd: "numpadadd", NumpadDecimal: "numpaddecimal",
-  NumpadDivide: "numpaddivide", NumpadEnter: "numpadenter",
-  NumpadEqual: "numpadequal", NumpadMultiply: "numpadmultiply",
-  NumpadSubtract: "numpadsubtract", NumLock: "numlock",
-};
-
-const MIN_KEYS = 1;
-const MAX_KEYS = 5;
-const VALID_MODIFIERS = ["ctrl", "alt", "shift", "cmd"];
-
-const MODIFIER_ONLY_KEYS = new Set([
-  "ctrl", "alt", "shift", "cmd", "command", "meta", "control",
-  "ctrlleft", "ctrlright", "controlleft", "controlright",
-  "altleft", "altright", "shiftleft", "shiftright",
-  "cmdleft", "cmdright", "metaleft", "metaright",
-]);
-
-const HOTKEY_MODIFIER_ONLY_ERROR = "Global shortcuts require a key (e.g., Space, A-Z, F1-F12). Modifier keys alone are not supported by the system.";
-const HOTKEY_UNSUPPORTED_KEY_ERROR = "This key is not supported for global shortcuts.";
-
+// Hotkey display labels - for UI formatting only
 const HOTKEY_LABELS: Record<string, string> = {
-  cmd: "Cmd",
+  cmd: "⌘",
+  cmdleft: "⌘",
+  cmdright: "⌘",
   ctrl: "Ctrl",
-  alt: "Alt",
-  shift: "Shift",
+  ctrlleft: "Ctrl",
+  ctrlright: "Ctrl",
+  alt: "⌥",
+  altleft: "⌥",
+  altright: "⌥",
+  opt: "⌥",
+  optleft: "⌥",
+  optright: "⌥",
+  shift: "⇧",
+  shiftleft: "⇧",
+  shiftright: "⇧",
+  fn: "Fn",
   space: "Space",
-  enter: "Enter",
-  backspace: "Backspace",
-  tab: "Tab",
-  escape: "Escape",
-  arrowup: "ArrowUp",
-  arrowdown: "ArrowDown",
-  arrowleft: "ArrowLeft",
-  arrowright: "ArrowRight",
-  delete: "Delete",
+  enter: "↵",
+  backspace: "⌫",
+  tab: "⇥",
+  escape: "Esc",
+  arrowup: "↑",
+  arrowdown: "↓",
+  arrowleft: "←",
+  arrowright: "→",
+  delete: "Del",
   home: "Home",
   end: "End",
-  pageup: "PageUp",
-  pagedown: "PageDown",
-  insert: "Insert",
-  capslock: "CapsLock",
-  printscreen: "PrintScreen",
-  scrolllock: "ScrollLock",
+  pageup: "PgUp",
+  pagedown: "PgDn",
+  insert: "Ins",
+  capslock: "⇪",
+  printscreen: "PrtSc",
+  scrolllock: "ScrLk",
   pause: "Pause",
-  minus: "Minus",
-  equal: "Equal",
-  bracketleft: "BracketLeft",
-  bracketright: "BracketRight",
-  backslash: "Backslash",
-  semicolon: "Semicolon",
-  quote: "Quote",
-  backquote: "Backquote",
-  comma: "Comma",
-  period: "Period",
-  slash: "Slash",
-  numlock: "NumLock",
-  numpadadd: "NumpadAdd",
-  numpaddecimal: "NumpadDecimal",
-  numpaddivide: "NumpadDivide",
-  numpadenter: "NumpadEnter",
-  numpadequal: "NumpadEqual",
-  numpadmultiply: "NumpadMultiply",
-  numpadsubtract: "NumpadSubtract",
-  audiovolumedown: "AudioVolumeDown",
-  audiovolumeup: "AudioVolumeUp",
-  audiovolumemute: "AudioVolumeMute",
-  mediaplay: "MediaPlay",
-  mediapause: "MediaPause",
-  mediaplaypause: "MediaPlayPause",
-  mediastop: "MediaStop",
-  mediatracknext: "MediaTrackNext",
-  mediatrackprev: "MediaTrackPrev",
+  minus: "-",
+  equal: "=",
+  bracketleft: "[",
+  bracketright: "]",
+  backslash: "\\",
+  semicolon: ";",
+  quote: "'",
+  backquote: "`",
+  comma: ",",
+  period: ".",
+  slash: "/",
+  numlock: "Num",
+  numpadadd: "+",
+  numpaddecimal: ".",
+  numpaddivide: "/",
+  numpadenter: "↵",
+  numpadequal: "=",
+  numpadmultiply: "*",
+  numpadsubtract: "-",
+  audiovolumedown: "🔉",
+  audiovolumeup: "🔊",
+  audiovolumemute: "🔇",
+  mediaplay: "▶",
+  mediapause: "⏸",
+  mediaplaypause: "⏯",
+  mediastop: "⏹",
+  mediatracknext: "⏭",
+  mediatrackprev: "⏮",
 };
 
-interface ValidationResult {
-  valid: boolean;
-  error?: string;
+/**
+ * Get display label for a single key part.
+ */
+function getKeyLabel(part: string): string {
+  const normalizedPart = part.toLowerCase();
+  if (HOTKEY_LABELS[normalizedPart]) {
+    return HOTKEY_LABELS[normalizedPart];
+  }
+  if (normalizedPart.length === 1) {
+    return normalizedPart.toUpperCase();
+  }
+  // Capitalize first letter for unknown keys
+  return normalizedPart.charAt(0).toUpperCase() + normalizedPart.slice(1);
 }
 
-function validateHotkeyString(hotkey: string | null): ValidationResult {
-  if (!hotkey) {
-    return { valid: false, error: "No keys pressed" };
-  }
-
-  const parts = hotkey.split("+").map((part) => part.trim());
-
-  if (parts.some((part) => part.length === 0)) {
-    return { valid: false, error: "Invalid hotkey format" };
-  }
-
-  if (parts.length < MIN_KEYS || parts.length > MAX_KEYS) {
-    return { valid: false, error: `Must have ${MIN_KEYS}-${MAX_KEYS} keys` };
-  }
-
-  const modifiers = parts.slice(0, -1);
-  const modifierSet = new Set<string>();
-
-  for (const mod of modifiers) {
-    const normalizedModifier = mod.toLowerCase();
-    if (modifierSet.has(normalizedModifier)) {
-      return { valid: false, error: `Duplicate modifier: ${mod}` };
-    }
-    if (!VALID_MODIFIERS.includes(normalizedModifier)) {
-      return { valid: false, error: `Unknown modifier: ${mod}` };
-    }
-    modifierSet.add(normalizedModifier);
-  }
-
-  const key = parts[parts.length - 1].toLowerCase();
-  if (MODIFIER_ONLY_KEYS.has(key)) {
-    return { 
-      valid: false, 
-      error: HOTKEY_MODIFIER_ONLY_ERROR,
-    };
-  }
-
-  if (!isSupportedHotkeyKey(key)) {
-    return {
-      valid: false,
-      error: HOTKEY_UNSUPPORTED_KEY_ERROR,
-    };
-  }
-
-  return { valid: true };
-}
-
-function eventToHotkeyString(e: React.KeyboardEvent): string | null {
-  if (MODIFIER_CODES.has(e.code)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  if (e.metaKey) parts.push("cmd");
-  if (e.ctrlKey) parts.push("ctrl");
-  if (e.altKey) parts.push("alt");
-  if (e.shiftKey) parts.push("shift");
-
-  const keyName = getKeyNameFromCode(e.code);
-  if (!keyName) {
-    return null;
-  }
-  parts.push(keyName);
-
-  return parts.length > 0 ? parts.join("+") : null;
-}
-
+/**
+ * Format hotkey string for UI display (text-only version).
+ * Used for accessibility and legacy display contexts.
+ */
 function formatHotkey(hotkey: string): string {
   return hotkey
     .split("+")
-    .map((part) => {
-      const normalizedPart = part.toLowerCase();
-      if (HOTKEY_LABELS[normalizedPart]) {
-        return HOTKEY_LABELS[normalizedPart];
-      }
-      if (normalizedPart.length === 1) {
-        return normalizedPart.toUpperCase();
-      }
-      return normalizedPart.charAt(0).toUpperCase() + normalizedPart.slice(1);
-    })
+    .map((part) => getKeyLabel(part))
     .join("+");
 }
 
-function getKeyNameFromCode(code: string): string | null {
-  if (SPECIAL_KEYS[code]) {
-    return SPECIAL_KEYS[code];
-  }
-
-  if (code.startsWith("Key") && code.length === 4) {
-    return code.slice(3).toLowerCase();
-  }
-
-  if (code.startsWith("Digit") && code.length === 6) {
-    return code.slice(5);
-  }
-
-  if (/^F([1-9]|1\d|2[0-4])$/.test(code)) {
-    return code.toLowerCase();
-  }
-
-  if (/^Numpad[0-9]$/.test(code)) {
-    return code.toLowerCase();
-  }
-
-  return null;
+/**
+ * Single hotkey key tag component.
+ * Displays one key with keyboard-like styling.
+ */
+function HotkeyTag({ keyLabel }: { keyLabel: string }) {
+  return (
+    <span
+      className="inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 
+                 rounded-md bg-secondary/40 border border-border/50 
+                 text-xs font-medium shadow-sm
+                 text-foreground/80"
+    >
+      {keyLabel}
+    </span>
+  );
 }
 
-function isSupportedHotkeyKey(key: string): boolean {
+/**
+ * Render hotkey as a series of styled key tags.
+ */
+function HotkeyTags({ hotkey }: { hotkey: string }) {
+  const keys = hotkey.split("+").map((part) => getKeyLabel(part));
+
   return (
-    key.length === 1 ||
-    /^f([1-9]|1\d|2[0-4])$/.test(key) ||
-    /^numpad[0-9]$/.test(key) ||
-    Boolean(HOTKEY_LABELS[key])
+    <div className="flex items-center gap-1">
+      {keys.map((key, index) => (
+        <HotkeyTag key={`${key}-${index}`} keyLabel={key} />
+      ))}
+    </div>
   );
 }
 
@@ -224,125 +134,149 @@ interface HotkeyInputProps {
   className?: string;
 }
 
+/**
+ * Hotkey input component.
+ *
+ * Flow:
+ * 1. User clicks input → enter capture mode (backend unregisters old hotkey)
+ * 2. User presses keys → backend captures and emits hotkey-captured event
+ * 3. Frontend receives event → calls stop_hotkey_recording to register new hotkey
+ * 4. Backend registers new hotkey, saves to settings
+ *
+ * Frontend only handles UI display, no validation.
+ */
 export function HotkeyInput({ value, onChange, placeholder, className }: HotkeyInputProps) {
   const [isRecording, setIsRecording] = useState(false);
-  const [recordedKey, setRecordedKey] = useState<string | null>(null);
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const [modifierPressed, setModifierPressed] = useState(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
   const stoppingRef = useRef(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Listen for hotkey-captured event from backend
+  // Backend has already validated - we just need to call stop_hotkey_recording
+  // to complete registration
+  useEffect(() => {
+    if (!isRecording) return;
+
+    const unlistenPromise = events.onHotkeyCaptured((_hotkey: string) => {
+      if (stoppingRef.current) return;
+
+      // Backend captured and validated - now call stop to register
+      stoppingRef.current = true;
+      setIsRecording(false);
+      setRegistrationError(null);
+
+      // Call stop_hotkey_recording to register the new hotkey
+      hotkeyCommands.stopRecording().then((registeredHotkey) => {
+        if (registeredHotkey) {
+          onChange(registeredHotkey);
+        }
+        containerRef.current?.blur();
+        stoppingRef.current = false;
+      });
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [isRecording, onChange]);
+
+  // Listen for registration failure event
+  useEffect(() => {
+    const unlistenPromise = events.onShortcutRegistrationFailed((error: string) => {
+      setRegistrationError(error);
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  // Clear error when value changes
+  useEffect(() => {
+    setRegistrationError(null);
+  }, [value]);
 
   const startRecording = async () => {
     if (isRecording) return;
-    setRecordedKey(null);
-    setValidationError(null);
-    setModifierPressed(false);
-    await settingsCommands.setHotkeyCaptureMode(true);
-    setIsRecording(true);
-  };
+    setRegistrationError(null);
 
-  const stopRecording = useCallback(async (keyToSave: string | null = null) => {
-    if (stoppingRef.current) return;
-    stoppingRef.current = true;
-    setIsRecording(false);
-    setRecordedKey(null);
-    await settingsCommands.setHotkeyCaptureMode(false);
-    
-    if (keyToSave) {
-      const validation = validateHotkeyString(keyToSave);
-      if (!validation.valid) {
-        setValidationError(validation.error || "Invalid hotkey");
-        stoppingRef.current = false;
-        return;
+    try {
+      await hotkeyCommands.startRecording();
+      setIsRecording(true);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      if (errorMsg.includes("already in progress")) {
+        await hotkeyCommands.cancelRecording();
+        try {
+          await hotkeyCommands.startRecording();
+          setIsRecording(true);
+        } catch {
+          // Silently fail
+        }
       }
-      setValidationError(null);
-      onChange(keyToSave);
-    }
-    stoppingRef.current = false;
-  }, [onChange]);
-
-  const handleKeyDown = async (e: React.KeyboardEvent) => {
-    if (!isRecording) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (e.code === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-      setValidationError(null);
-      setModifierPressed(false);
-      await stopRecording();
-      inputRef.current?.blur();
-      return;
-    }
-
-    const hotkey = eventToHotkeyString(e);
-    if (hotkey) {
-      const validation = validateHotkeyString(hotkey);
-      if (!validation.valid) {
-        setValidationError(validation.error || "Invalid hotkey");
-        return;
-      }
-      setValidationError(null);
-      setModifierPressed(false);
-      setRecordedKey(hotkey);
-    } else if (!MODIFIER_CODES.has(e.code)) {
-      setModifierPressed(false);
-      setValidationError(HOTKEY_UNSUPPORTED_KEY_ERROR);
-    } else {
-      setModifierPressed(true);
-      setValidationError(null);
-    }
-  };
-
-  const handleKeyUp = async () => {
-    if (!isRecording) return;
-
-    if (recordedKey) {
-      await stopRecording(recordedKey);
-      inputRef.current?.blur();
-    } else if (modifierPressed) {
-      setValidationError(HOTKEY_MODIFIER_ONLY_ERROR);
-      setModifierPressed(false);
     }
   };
 
   const handleBlur = async () => {
-    if (isRecording) await stopRecording(recordedKey);
+    if (isRecording && !stoppingRef.current) {
+      // Cancel recording on blur - backend will re-register old hotkey
+      await hotkeyCommands.cancelRecording();
+      setIsRecording(false);
+      stoppingRef.current = false;
+    }
   };
 
-  const isError = validationError && isRecording;
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (!isRecording) return;
+
+    if (e.code === "Escape") {
+      e.preventDefault();
+      // Cancel recording - backend will re-register old hotkey
+      await hotkeyCommands.cancelRecording();
+      setIsRecording(false);
+      stoppingRef.current = false;
+      containerRef.current?.blur();
+    }
+  };
+
+  const hasRegistrationError = registrationError && !isRecording;
 
   return (
     <div className="space-y-1">
-      <input
-        ref={inputRef}
-        value={isRecording
-          ? (recordedKey ? formatHotkey(recordedKey) : (placeholder || "Press keys..."))
-          : formatHotkey(value)}
+      <div
+        ref={containerRef}
+        tabIndex={0}
         onMouseDown={startRecording}
         onFocus={startRecording}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
-        onKeyUp={handleKeyUp}
-        readOnly
         className={cn(
-          "cursor-pointer font-mono transition-all w-full",
+          "cursor-pointer w-full h-10 flex items-center px-4 rounded-2xl",
+          "border border-border bg-background transition-all",
+          "focus-visible:outline-none",
           isRecording && "border-primary ring-2 ring-primary/20",
-          isError && "border-destructive focus-visible:ring-destructive",
+          hasRegistrationError && "border-destructive",
           className
         )}
-      />
-      {isError && (
-        <p className="text-xs text-destructive">{validationError}</p>
+        aria-label={`Hotkey: ${formatHotkey(value)}. Click to change.`}
+        role="button"
+      >
+        {isRecording ? (
+          <span className="text-sm text-muted-foreground">
+            {placeholder || "Press keys..."}
+          </span>
+        ) : (
+          <HotkeyTags hotkey={value} />
+        )}
+      </div>
+      {hasRegistrationError && (
+        <p className="text-xs text-destructive">{registrationError}</p>
+      )}
+      {isRecording && !hasRegistrationError && (
+        <p className="text-xs text-muted-foreground">Press a key combination... (ESC to cancel)</p>
       )}
     </div>
   );
 }
 
-export {
-  eventToHotkeyString,
-  formatHotkey,
-  validateHotkeyString,
-  HOTKEY_MODIFIER_ONLY_ERROR,
-  HOTKEY_UNSUPPORTED_KEY_ERROR,
-};
+export { formatHotkey, HotkeyTags };

@@ -14,9 +14,12 @@ export function HotkeySettings() {
 
   if (!settings) return null;
 
-  const saveHotkey = async (value: string) => {
+  // Note: HotkeyInput's onChange is called after backend has already
+  // registered the hotkey via stop_hotkey_recording. Backend emits
+  // SETTINGS_CHANGED which auto-refreshes UI via useSettings hook.
+  // We only track analytics, no updateSetting call.
+  const handleHotkeyChange = (value: string) => {
     analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "hotkey", value });
-    await updateSetting("hotkey", value);
   };
 
   const saveRecordingMode = async (value: string) => {
@@ -44,9 +47,8 @@ export function HotkeySettings() {
             <Label>{t("hotkey.recording.globalHotkey")}</Label>
             <HotkeyInput
               value={settings.hotkey}
-              onChange={saveHotkey}
+              onChange={handleHotkeyChange}
               placeholder={t("hotkey.recording.pressKeys")}
-              className="w-full px-4 py-2 h-10 text-sm rounded-2xl border border-border bg-background"
             />
             <p className="text-xs text-muted-foreground">
               {t("hotkey.recording.hint")}

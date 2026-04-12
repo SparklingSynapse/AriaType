@@ -454,16 +454,18 @@ function LanguageStep() {
 
 function HotkeyStep() {
   const { t } = useTranslation();
-  const { settings, updateSetting } = useSettingsContext();
+  const { settings } = useSettingsContext();
 
   if (!settings) return null;
 
-  const saveHotkey = async (value: string) => {
+  // Note: HotkeyInput's onChange is called after backend has already
+  // registered the hotkey. Backend emits SETTINGS_CHANGED which auto-refreshes UI.
+  // We only track analytics, no updateSetting call.
+  const handleHotkeyChange = (value: string) => {
     analytics.track(AnalyticsEvents.SETTING_CHANGED, {
       setting: "hotkey",
       value,
     });
-    await updateSetting("hotkey", value);
   };
 
   return (
@@ -477,9 +479,9 @@ function HotkeyStep() {
         <div className="flex justify-center">
           <HotkeyInput
             value={settings.hotkey}
-            onChange={saveHotkey}
+            onChange={handleHotkeyChange}
             placeholder={t("hotkey.recording.pressKeys")}
-            className="w-48 px-4 py-3 text-center text-lg rounded-2xl border bg-background"
+            className="w-48"
           />
         </div>
 

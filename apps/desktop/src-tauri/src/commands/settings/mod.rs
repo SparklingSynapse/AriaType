@@ -2,10 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tracing::{info, warn};
 
 use crate::commands::window::position_pill_window;
@@ -209,6 +206,23 @@ impl AppSettings {
 
 fn get_settings_path() -> PathBuf {
     AppPaths::data_dir().join("settings.json")
+}
+
+/// Save settings to disk without requiring a specific key update.
+/// Used by hotkey recording to persist the new hotkey.
+pub fn save_settings_internal(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let settings = state.settings.lock();
+
+    let path = get_settings_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(&*settings).map_err(|e| e.to_string())?;
+    fs::write(&path, json).map_err(|e| e.to_string())?;
+
+    info!("settings_saved_to_disk");
+    Ok(())
 }
 
 /// Migrate old cloud settings format to new per-provider format.
@@ -643,10 +657,21 @@ pub fn update_settings(
     }
 
     if let Some(hotkey) = hotkey_to_register {
-        let _ = app.global_shortcut().unregister_all();
-        match register_global_shortcut(&app, &hotkey) {
-            Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
-            Err(e) => tracing::error!(error = %e, "shortcut_registration_failed"),
+        if let Some(manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
+            // First unregister the old hotkey before registering new one
+            // This ensures the old hotkey is properly removed from the system
+            tracing::info!("unregistering_old_hotkey");
+            if let Err(e) = manager.unregister() {
+                tracing::warn!(error = %e, "old_hotkey_unregister_failed");
+            }
+
+            // Now register the new hotkey
+            match manager.register(&hotkey) {
+                Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
+                Err(e) => tracing::error!(error = %e, "shortcut_registration_failed"),
+            }
+        } else {
+            tracing::error!("shortcut_manager_not_available");
         }
     }
 
@@ -678,254 +703,6 @@ pub fn update_settings(
     }
 
     Ok(())
-}
-
-#[tauri::command]
-pub fn set_hotkey_capture_mode(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<(), String> {
-    state.hotkey_capture_mode.store(enabled, Ordering::SeqCst);
-
-    if enabled {
-        let _ = app.global_shortcut().unregister_all();
-        info!("shortcuts_unregistered-capture_mode");
-    } else {
-        let hotkey = state.settings.lock().hotkey.clone();
-        match register_global_shortcut(&app, &hotkey) {
-            Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
-            Err(e) => {
-                tracing::error!(error = %e, "shortcut_registration_failed");
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub fn parse_hotkey(hotkey: &str) -> Result<(Option<Modifiers>, Code), String> {
-    if hotkey.is_empty() {
-        return Err("Invalid hotkey '': must have 1-5 keys".to_string());
-    }
-
-    let parts: Vec<&str> = hotkey.split('+').map(str::trim).collect();
-
-    if parts.iter().any(|part| part.is_empty()) {
-        return Err(format!("Invalid hotkey '{}': invalid format", hotkey));
-    }
-
-    if parts.len() > 5 {
-        return Err(format!("Invalid hotkey '{}': must have 1-5 keys", hotkey));
-    }
-
-    let mut modifier_set = Modifiers::empty();
-    let mut seen_modifiers: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    for part in &parts[..parts.len() - 1] {
-        let normalized = part.to_lowercase();
-        if !seen_modifiers.insert(normalized.clone()) {
-            return Err(format!(
-                "Invalid hotkey '{}': duplicate modifier '{}'",
-                hotkey, part
-            ));
-        }
-        match normalized.as_str() {
-            "ctrl" => modifier_set |= Modifiers::CONTROL,
-            "shift" => modifier_set |= Modifiers::SHIFT,
-            "alt" => modifier_set |= Modifiers::ALT,
-            "cmd" | "command" | "meta" => modifier_set |= Modifiers::SUPER,
-            _ => {
-                return Err(format!(
-                    "Invalid hotkey '{}': unknown modifier '{}'",
-                    hotkey, part
-                ))
-            }
-        }
-    }
-
-    let modifiers = if modifier_set.is_empty() {
-        None
-    } else {
-        Some(modifier_set)
-    };
-
-    let key = parts
-        .last()
-        .ok_or_else(|| format!("Invalid hotkey '{}': missing key", hotkey))?;
-
-    let key_lower = key.to_lowercase();
-
-    let modifier_keys = [
-        "cmd",
-        "command",
-        "meta",
-        "ctrl",
-        "control",
-        "shift",
-        "alt",
-        "cmdleft",
-        "cmdright",
-        "metaleft",
-        "metaright",
-        "ctrlleft",
-        "ctrlright",
-        "controlleft",
-        "controlright",
-        "shiftleft",
-        "shiftright",
-        "altleft",
-        "altright",
-    ];
-    if modifier_keys.contains(&key_lower.as_str()) {
-        return Err(format!(
-            "Invalid hotkey '{}': Global shortcuts require a key (Space, A-Z, F1-F12). '{}' alone is not supported by the system.",
-            hotkey, key
-        ));
-    }
-
-    let code_name = match key_lower.as_str() {
-        "space" => "Space".to_string(),
-        "enter" => "Enter".to_string(),
-        "backspace" => "Backspace".to_string(),
-        "tab" => "Tab".to_string(),
-        "escape" => "Escape".to_string(),
-        "arrowup" => "ArrowUp".to_string(),
-        "arrowdown" => "ArrowDown".to_string(),
-        "arrowleft" => "ArrowLeft".to_string(),
-        "arrowright" => "ArrowRight".to_string(),
-        "delete" => "Delete".to_string(),
-        "home" => "Home".to_string(),
-        "end" => "End".to_string(),
-        "pageup" => "PageUp".to_string(),
-        "pagedown" => "PageDown".to_string(),
-        "insert" => "Insert".to_string(),
-        "capslock" => "CapsLock".to_string(),
-        "printscreen" => "PrintScreen".to_string(),
-        "scrolllock" => "ScrollLock".to_string(),
-        "pause" => "Pause".to_string(),
-        "minus" => "Minus".to_string(),
-        "equal" => "Equal".to_string(),
-        "bracketleft" => "BracketLeft".to_string(),
-        "bracketright" => "BracketRight".to_string(),
-        "backslash" => "Backslash".to_string(),
-        "semicolon" => "Semicolon".to_string(),
-        "quote" => "Quote".to_string(),
-        "backquote" => "Backquote".to_string(),
-        "comma" => "Comma".to_string(),
-        "period" => "Period".to_string(),
-        "slash" => "Slash".to_string(),
-        "numlock" => "NumLock".to_string(),
-        "numpadadd" => "NumpadAdd".to_string(),
-        "numpaddecimal" => "NumpadDecimal".to_string(),
-        "numpaddivide" => "NumpadDivide".to_string(),
-        "numpadenter" => "NumpadEnter".to_string(),
-        "numpadequal" => "NumpadEqual".to_string(),
-        "numpadmultiply" => "NumpadMultiply".to_string(),
-        "numpadsubtract" => "NumpadSubtract".to_string(),
-        "audiovolumedown" => "AudioVolumeDown".to_string(),
-        "audiovolumeup" => "AudioVolumeUp".to_string(),
-        "audiovolumemute" => "AudioVolumeMute".to_string(),
-        "mediaplay" => "MediaPlay".to_string(),
-        "mediapause" => "MediaPause".to_string(),
-        "mediaplaypause" => "MediaPlayPause".to_string(),
-        "mediastop" => "MediaStop".to_string(),
-        "mediatracknext" => "MediaTrackNext".to_string(),
-        "mediatrackprev" => "MediaTrackPrev".to_string(),
-        _ if key.len() == 1 && key.chars().next().unwrap().is_ascii_alphabetic() => {
-            format!("Key{}", key.to_uppercase())
-        }
-        _ if key.len() == 1 && key.chars().next().unwrap().is_ascii_digit() => {
-            format!("Digit{}", key)
-        }
-        _ if key_lower.starts_with("f") && key_lower[1..].chars().all(|ch| ch.is_ascii_digit()) => {
-            key_lower.to_uppercase()
-        }
-        _ if key_lower.starts_with("numpad")
-            && key_lower[6..].chars().all(|ch| ch.is_ascii_digit()) =>
-        {
-            format!("Numpad{}", &key_lower[6..])
-        }
-        _ => {
-            return Err(format!(
-                "Invalid hotkey '{}': unknown key '{}'",
-                hotkey, key
-            ))
-        }
-    };
-
-    let code = Code::from_str(&code_name)
-        .map_err(|_| format!("Invalid hotkey '{}': unknown key '{}'", hotkey, key))?;
-    Ok((modifiers, code))
-}
-
-pub fn register_global_shortcut(app: &AppHandle, hotkey: &str) -> Result<(), String> {
-    let (modifiers, code) = parse_hotkey(hotkey)?;
-
-    let shortcut = Shortcut::new(modifiers, code);
-    app.global_shortcut()
-        .on_shortcut(shortcut, |app, _shortcut, event| {
-            tracing::debug!("shortcut-triggered");
-
-            let state_result = app.try_state::<AppState>();
-            match state_result {
-                Some(state) => {
-                    if state.hotkey_capture_mode.load(Ordering::SeqCst) {
-                        tracing::debug!("shortcut_ignored-capture_mode");
-                        return;
-                    }
-
-                    let is_recording = state.is_recording.load(Ordering::SeqCst);
-                    let recording_mode = state.settings.lock().recording_mode.clone();
-
-                    match recording_mode.as_str() {
-                        "hold" => {
-                            // Hold mode: Press to start, Release to stop
-                            if event.state == ShortcutState::Pressed && !is_recording {
-                                match crate::commands::audio::start_recording_sync(app.clone()) {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        tracing::error!(error = %e, "recording_start_failed")
-                                    }
-                                }
-                            } else if event.state == ShortcutState::Released && is_recording {
-                                match crate::commands::audio::stop_recording_sync(app.clone()) {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        tracing::error!(error = %e, "recording_stop_failed")
-                                    }
-                                }
-                            }
-                        }
-                        _ => {
-                            // Toggle mode (default): Press to toggle
-                            if event.state == ShortcutState::Pressed {
-                                if is_recording {
-                                    match crate::commands::audio::stop_recording_sync(app.clone()) {
-                                        Ok(_) => {}
-                                        Err(e) => {
-                                            tracing::error!(error = %e, "recording_stop_failed")
-                                        }
-                                    }
-                                } else {
-                                    match crate::commands::audio::start_recording_sync(app.clone())
-                                    {
-                                        Ok(_) => {}
-                                        Err(e) => {
-                                            tracing::error!(error = %e, "recording_start_failed")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                None => {
-                    tracing::error!("app_state_unavailable");
-                }
-            }
-        })
-        .map_err(|e| e.to_string())
 }
 
 /// Returns the current process RSS memory in MB, or 0 if unavailable.

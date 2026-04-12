@@ -37,23 +37,35 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
 }
 
 pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
-    let state = app.state::<AppState>();
+    tracing::info!("start_recording_sync_entered");
+
+    // Use try_state to avoid panic if state not available
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "AppState not available".to_string())?;
+
+    tracing::info!("start_recording_sync_state_acquired");
 
     if state.is_recording.load(Ordering::SeqCst) {
+        tracing::warn!("start_recording_sync_already_recording");
         return Err("Already recording".to_string());
     }
 
     // Show pill immediately on hotkey press
+    tracing::info!("start_recording_sync_positioning_pill");
     {
         let settings = state.settings.lock();
         let preset = settings.pill_position.clone();
         drop(settings);
         crate::commands::window::position_pill_window(&app, &preset);
     }
+
+    tracing::info!("start_recording_sync_updating_visibility");
     state.is_recording.store(true, Ordering::SeqCst);
     state.is_transcribing.store(false, Ordering::SeqCst);
     crate::commands::window::update_pill_visibility(&app);
 
+    tracing::info!("start_recording_sync_playing_beep");
     {
         let settings = state.settings.lock();
         let beep_enabled = settings.beep_on_record;
@@ -66,6 +78,7 @@ pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
         }
     }
 
+    tracing::info!("start_recording_sync_reading_settings");
     let (cloud_stt_enabled, cloud_stt_config, language) = {
         let settings = state.settings.lock();
         (
@@ -76,7 +89,10 @@ pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
         )
     };
 
+    tracing::info!(cloud_stt_enabled, language = %language, "start_recording_sync_config");
+
     let task_id = state.task_counter.fetch_add(1, Ordering::SeqCst) + 1;
+    tracing::info!(task_id, "start_recording_sync_starting_session");
     state.start_session(task_id);
 
     let start_ms = std::time::SystemTime::now()
@@ -112,7 +128,9 @@ fn start_unified_recording(
     config: crate::commands::settings::CloudSttConfig,
     language: String,
 ) -> Result<(), String> {
-    let state = app.state::<AppState>();
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "AppState not available".to_string())?;
     let audio_device = {
         let settings = state.settings.lock();
         settings.audio_device.clone()
@@ -259,21 +277,20 @@ fn start_unified_recording(
                     .unwrap_or_else(|| "none".to_owned()),
             );
 
-            let client =
-                match StreamingSttClient::new(config, Some(&language), stt_context) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        error!(task_id, error = %e, "streaming_client_create_failed");
-                        let _ = app_clone.emit(
-                            EventName::RECORDING_STATE_CHANGED,
-                            RecordingStateEvent {
-                                status: "error".to_string(),
-                                task_id,
-                            },
-                        );
-                        return;
-                    }
-                };
+            let client = match StreamingSttClient::new(config, Some(&language), stt_context) {
+                Ok(c) => c,
+                Err(e) => {
+                    error!(task_id, error = %e, "streaming_client_create_failed");
+                    let _ = app_clone.emit(
+                        EventName::RECORDING_STATE_CHANGED,
+                        RecordingStateEvent {
+                            status: "error".to_string(),
+                            task_id,
+                        },
+                    );
+                    return;
+                }
+            };
             let provider_name = client.provider_name();
             info!(task_id, provider = %provider_name, domain, subdomain, glossary, "streaming_client_created");
 
@@ -475,7 +492,10 @@ fn await_streaming_task_in_background(task_id: u64, handle: tauri::async_runtime
 }
 
 pub fn stop_recording_sync(app: AppHandle) -> Result<Option<String>, String> {
-    let state = app.state::<AppState>();
+    // Use try_state to avoid panic if state not available
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "AppState not available".to_string())?;
 
     if !state.is_recording.load(Ordering::SeqCst) {
         return Ok(None);
@@ -831,7 +851,9 @@ pub fn start_audio_level_monitor(app: AppHandle) -> Result<(), String> {
 
     // cpal::Stream is !Send on macOS — it must live on this thread.
     // Commands (open/close) arrive via a channel sent from start/stop_recording_sync.
-    let state = app.state::<AppState>();
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "AppState not available".to_string())?;
 
     // Take the receiver out of AppState — it belongs to this thread from now on.
     let rx = state
