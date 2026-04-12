@@ -212,8 +212,8 @@ fn run_fn_emoji_blocker_tap(running: Arc<AtomicBool>, active: Arc<AtomicBool>) {
     let tap: Option<CFRetained<CFMachPort>> = unsafe {
         CGEvent::tap_create(
             CGEventTapLocation::SessionEventTap, // Session tap is allowed without root
-            tail_insert_tap, // TailInsert
-            CGEventTapOptions::Default, // Active tap
+            tail_insert_tap,                     // TailInsert
+            CGEventTapOptions::Default,          // Active tap
             event_mask,
             callback,
             state_ptr,
@@ -313,9 +313,7 @@ unsafe extern "C-unwind" fn fn_emoji_blocker_callback(
     event: NonNull<objc2_core_graphics::CGEvent>,
     user_info: *mut c_void,
 ) -> *mut objc2_core_graphics::CGEvent {
-    use objc2_core_graphics::{
-        CGEvent, CGEventField, CGEventFlags,
-    };
+    use objc2_core_graphics::{CGEvent, CGEventField, CGEventFlags};
 
     let state = &*(user_info as *const FnEmojiBlockerState);
     let cg_event = event.as_ref();
@@ -342,7 +340,7 @@ unsafe extern "C-unwind" fn fn_emoji_blocker_callback(
                     *state.fn_release_time.lock() = None;
                     tracing::debug!("fn_key_pressed_tracking_started");
                 }
-                
+
                 // Do NOT block the FN event itself, let handy-keys process it
                 false
             } else {

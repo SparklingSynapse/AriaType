@@ -193,17 +193,20 @@ body {
 }
 
 /* Toast styles - minimal, elegant, with smooth transitions */
-/* Toast positioning styles */
+/* Toast styles - inverted design for better visibility */
 [data-sonner-toaster] {
-  /* Theme tokens */
-  --toast-bg: var(--card);
-  --toast-border: var(--border);
-  --toast-text: var(--foreground);
-  --toast-muted: var(--muted-foreground);
-  --toast-success: var(--accent-green);
-  --toast-error: var(--destructive);
-  --toast-warning: var(--accent-amber);
-  --toast-info: var(--accent-blue);
+  /* Fixed colors - inverted from theme for prominence */
+  --toast-bg-light: #1a1a1a;
+  --toast-bg-dark: #ffffff;
+  --toast-text-light: #ffffff;
+  --toast-text-dark: #171717;
+  --toast-shadow-light: 0 4px 20px rgba(0, 0, 0, 0.15);
+  --toast-shadow-dark: 0 4px 20px rgba(0, 0, 0, 0.25);
+  /* Status colors - same in both modes */
+  --toast-success: #22c55e;
+  --toast-error: #ef4444;
+  --toast-warning: #f59e0b;
+  --toast-info: #3b82f6;
 }
 
 /* Hide sonner's default icon - we use CSS ::before instead */
@@ -211,82 +214,75 @@ body {
   display: none;
 }
 
-/* Toast base - clean minimal style, no custom animation */
+/* Toast base - light mode: black background */
 .toast-base {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 20px;
-  background: var(--toast-bg);
-  border: 1px solid var(--toast-border);
-  border-radius: 1.5rem;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--toast-bg-light);
+  border: none;
+  border-radius: 12px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--toast-text);
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.08),
-    0 4px 12px rgba(0, 0, 0, 0.04);
+  color: var(--toast-text-light);
+  box-shadow: var(--toast-shadow-light);
+  min-width: 200px;
+}
+
+/* Toast base - dark mode: white background */
+.dark .toast-base {
+  background: var(--toast-bg-dark);
+  color: var(--toast-text-dark);
+  box-shadow: var(--toast-shadow-dark);
 }
 
 .toast-base:hover {
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.12),
-    0 6px 16px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
 }
 
 .toast-title {
   font-size: 13px;
   font-weight: 500;
-  color: var(--toast-text);
+  color: inherit;
   letter-spacing: -0.01em;
 }
 
 .toast-description {
   font-size: 12px;
-  color: var(--toast-muted);
+  opacity: 0.8;
   letter-spacing: -0.01em;
 }
 
-/* Icon container - larger to match app's rounded-full aesthetic */
+/* Icon container - rounded, status-colored background */
 .toast-base::before {
   content: "";
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   font-size: 12px;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
-/* Success - green accent */
-.toast-success {
-  border-color: color-mix(in srgb, var(--toast-success) 25%, var(--toast-border));
-}
-
+/* Success - green icon */
 .toast-success::before {
   content: "✓";
   background: var(--toast-success);
   color: white;
 }
 
-/* Error - red accent */
-.toast-error {
-  border-color: color-mix(in srgb, var(--toast-error) 25%, var(--toast-border));
-}
-
+/* Error - red icon */
 .toast-error::before {
   content: "✕";
   background: var(--toast-error);
   color: white;
 }
 
-/* Warning - amber accent */
-.toast-warning {
-  border-color: color-mix(in srgb, var(--toast-warning) 25%, var(--toast-border));
-}
-
+/* Warning - amber/orange icon */
 .toast-warning::before {
   content: "!";
   background: var(--toast-warning);
@@ -294,11 +290,7 @@ body {
   font-weight: 700;
 }
 
-/* Info - blue accent */
-.toast-info {
-  border-color: color-mix(in srgb, var(--toast-info) 25%, var(--toast-border));
-}
-
+/* Info - blue icon */
 .toast-info::before {
   content: "i";
   background: var(--toast-info);

@@ -105,9 +105,12 @@ function HistoryEntryCard({ entry, t, onRetry, retryingIds }: HistoryEntryCardPr
           )}
           {isError && (
             <Button
-              variant="ghost"
+              variant={isRetrying ? "outline" : "ghost"}
               size="sm"
-              className="h-7 px-2 text-xs gap-1"
+              className={cn(
+                "h-7 px-2 text-xs gap-1",
+                isRetrying && "cursor-wait bg-accent/50"
+              )}
               onClick={() => onRetry(entry.id)}
               disabled={isRetrying}
               title={t("history.retry")}
@@ -192,6 +195,7 @@ export function HistoryPage() {
   }, [currentPage, engineFilter, pendingSearch]);
 
   const handleRetry = useCallback(async (id: string) => {
+    const startTime = Date.now();
     setRetryingIds(prev => new Set(prev).add(id));
     try {
       const result = await historyCommands.retryTranscription(id);
@@ -201,6 +205,15 @@ export function HistoryPage() {
     } catch (err) {
       logger.error("retry_failed", { id, error: String(err) });
     } finally {
+      // Ensure loading shows for at least 1 second
+      const elapsed = Date.now() - startTime;
+      const minDisplayTime = 1000;
+      const remainingTime = Math.max(0, minDisplayTime - elapsed);
+      
+      if (remainingTime > 0) {
+        await new Promise(resolve => setTimeout(resolve, remainingTime));
+      }
+      
       setRetryingIds(prev => {
         const next = new Set(prev);
         next.delete(id);

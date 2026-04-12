@@ -4,3 +4,4 @@ pub mod level_meter;
 pub mod recorder;
 pub mod resampler;
 pub mod stream_processor;
+pub mod wav_writer;

@@ -159,6 +159,7 @@ export const windowCommands = {
 export const audioCommands = {
   startRecording: () => invokeWithLogging<string>("start_recording"),
   stopRecording: () => invokeWithLogging<string | null>("stop_recording"),
+  cancelRecording: () => invokeWithLogging<void>("cancel_recording"),
   getAudioLevel: () => invokeWithLogging<number>("get_audio_level"),
   getRecordingState: () => invokeWithLogging<RecordingState>("get_recording_state"),
 };

@@ -21,55 +21,6 @@ use crate::utils::AppPaths;
 const AUDIO_ACTIVITY_ON_THRESHOLD: u32 = 40;
 const AUDIO_ACTIVITY_OFF_THRESHOLD: u32 = 25;
 
-/// Save raw audio buffer to WAV file.
-/// Returns the path to the saved file, or None if no audio was recorded.
-fn save_raw_audio_to_file(
-    streaming_state: &StreamingSttState,
-    sample_rate: u32,
-    channels: u16,
-) -> Option<String> {
-    let path = streaming_state.audio_save_path.as_ref()?;
-    let buffer = streaming_state.raw_audio_buffer.lock();
-    
-    if buffer.is_empty() {
-        warn!("raw_audio_buffer_empty-no_file_saved");
-        return None;
-    }
-    
-    if sample_rate == 0 || channels == 0 {
-        warn!(sample_rate, channels, "audio_params_not_set-cannot_save_file");
-        return None;
-    }
-    
-    let spec = hound::WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    
-    match hound::WavWriter::create(path, spec) {
-        Ok(mut writer) => {
-            for sample in buffer.iter() {
-                if let Err(e) = writer.write_sample(*sample) {
-                    warn!(error = %e, "wav_write_failed");
-                    return None;
-                }
-            }
-            if let Err(e) = writer.finalize() {
-                warn!(error = %e, "wav_finalize_failed");
-                return None;
-            }
-            info!(path = %path.display(), samples = buffer.len(), sample_rate, channels, "raw_audio_saved");
-            Some(path.to_string_lossy().to_string())
-        }
-        Err(e) => {
-            warn!(error = %e, path = %path.display(), "wav_create_failed");
-            None
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingState {
     pub is_recording: bool,
@@ -100,6 +51,9 @@ pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
         tracing::warn!("start_recording_sync_already_recording");
         return Err("Already recording".to_string());
     }
+
+    // Clear any previous cancellation request
+    state.clear_cancellation();
 
     // Show pill immediately on hotkey press
     tracing::info!("start_recording_sync_positioning_pill");
@@ -166,6 +120,85 @@ pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
         },
     );
 
+    // Register cancel hotkey
+    if let Some(shortcut_manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
+        let _ = shortcut_manager.register_cancel();
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_recording(app: AppHandle) -> Result<(), String> {
+    cancel_recording_sync(app)
+}
+
+pub fn cancel_recording_sync(app: AppHandle) -> Result<(), String> {
+    cancel_recording_internal(app, true)
+}
+
+pub fn cancel_recording_from_hotkey_sync(app: AppHandle) -> Result<(), String> {
+    cancel_recording_internal(app, false)
+}
+
+fn cancel_recording_internal(
+    app: AppHandle,
+    unregister_cancel_hotkey_immediately: bool,
+) -> Result<(), String> {
+    tracing::info!("cancel_recording_sync_entered");
+
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "AppState not available".to_string())?;
+
+    // Hotkey-triggered cancellation must keep the hotkey registered until ESC is released.
+    if unregister_cancel_hotkey_immediately {
+        if let Some(shortcut_manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
+            let _ = shortcut_manager.unregister_cancel();
+        }
+    }
+
+    // We should cancel if we are recording OR transcribing
+    let is_recording = state.is_recording.load(Ordering::SeqCst);
+    let is_transcribing = state.is_transcribing.load(Ordering::SeqCst);
+
+    if !is_recording && !is_transcribing {
+        return Ok(());
+    }
+
+    // Stop the recorder if it's running
+    if is_recording {
+        let recorder = state.recorder.lock();
+        let _ = recorder.stop();
+    }
+
+    // Request cancellation to abort STT streaming tasks
+    state.request_cancellation();
+
+    // Update states
+    state.is_recording.store(false, Ordering::SeqCst);
+    state.is_transcribing.store(false, Ordering::SeqCst);
+
+    if let Some(tx) = state.level_monitor_tx.lock().as_ref() {
+        let _ = tx.send(false);
+    }
+
+    let task_id = state.task_counter.load(Ordering::SeqCst);
+    state.clear_session();
+
+    // Close pill window
+    crate::commands::window::update_pill_visibility(&app);
+
+    // Emit cancellation event as 'idle' to ensure frontend correctly hides pill window
+    let _ = app.emit(
+        EventName::RECORDING_STATE_CHANGED,
+        RecordingStateEvent {
+            status: "idle".to_string(),
+            task_id,
+        },
+    );
+
+    tracing::info!(task_id, "recording_canceled");
     Ok(())
 }
 
@@ -221,16 +254,17 @@ fn start_unified_recording(
     let (app_tx, mut app_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(100);
 
     // Create audio save path for retry functionality
-    let audio_save_path = AppPaths::recordings_dir().join(format!("{}_{}.wav", 
-        chrono::Utc::now().format("%Y%m%d_%H%M%S"), 
+    let audio_save_path = AppPaths::recordings_dir().join(format!(
+        "{}_{}.wav",
+        chrono::Utc::now().format("%Y%m%d_%H%M%S"),
         task_id
     ));
-    
+
     // Ensure recordings directory exists
     if let Err(e) = std::fs::create_dir_all(AppPaths::recordings_dir()) {
         warn!(error = %e, "recordings_directory_creation_failed");
     }
-    
+
     // Raw audio buffer for saving original recording (before VAD/processing)
     let raw_audio_buffer: Arc<ParkingMutex<Vec<i16>>> = Arc::new(ParkingMutex::new(Vec::new()));
     let raw_audio_buffer_clone = raw_audio_buffer.clone();
@@ -243,7 +277,7 @@ fn start_unified_recording(
         audio_save_path: Some(audio_save_path.clone()),
         raw_audio_buffer: raw_audio_buffer.clone(),
         sample_rate: 0, // Will be set after recorder starts
-        channels: 0, // Will be set after recorder starts
+        channels: 0,    // Will be set after recorder starts
     });
 
     let device_name = if audio_device == "default" {
@@ -342,7 +376,7 @@ fn start_unified_recording(
 
     let sr_for_async = sr;
     let ch_for_async = ch;
-    
+
     let app_clone = app.clone();
     let handle = tauri::async_runtime::spawn(async move {
         let consumer: Box<dyn RecordingConsumer> = if cloud_stt_enabled {
@@ -467,15 +501,31 @@ fn start_unified_recording(
                 task_id,
             },
         );
+        app_clone
+            .state::<AppState>()
+            .is_transcribing
+            .store(true, Ordering::SeqCst);
 
         debug!(task_id, "consumer_finish_invoked");
         let text_result: Result<String, String> = consumer.finish().await;
+
+        let state_inner = app_clone.state::<AppState>();
+        if state_inner.is_cancellation_requested() {
+            tracing::info!(task_id, "recording_canceled_discarding_result");
+            state_inner.is_transcribing.store(false, Ordering::SeqCst);
+            if let Some(sm) = app_clone.try_state::<crate::shortcut::ShortcutManager>() {
+                let _ = sm.unregister_cancel();
+            }
+            return;
+        }
 
         // Save raw audio to file regardless of success or failure
         let audio_path = {
             let state = app_clone.state::<AppState>();
             let streaming_stt = state.streaming_stt.lock();
-            streaming_stt.as_ref().and_then(|s| save_raw_audio_to_file(s, sr_for_async, ch_for_async))
+            streaming_stt.as_ref().and_then(|s| {
+                crate::audio::wav_writer::save_raw_audio_to_file(s, sr_for_async, ch_for_async)
+            })
         };
 
         match text_result {
@@ -496,7 +546,7 @@ fn start_unified_recording(
                 );
 
                 if !final_text.is_empty() {
-                    save_to_history(
+                    crate::history::commands::save_to_history(
                         &state,
                         &raw_text,
                         &final_text,
@@ -535,7 +585,11 @@ fn start_unified_recording(
                 } else {
                     // Empty result - still save failed entry with audio for potential retry
                     let state = app_clone.state::<AppState>();
-                    save_failed_history(&state, audio_path, "Empty transcription result");
+                    crate::history::commands::save_failed_history(
+                        &state,
+                        audio_path,
+                        "Empty transcription result",
+                    );
                     let _ = app_clone.emit(
                         EventName::RECORDING_STATE_CHANGED,
                         RecordingStateEvent {
@@ -549,10 +603,10 @@ fn start_unified_recording(
             Err(e) => {
                 let state = app_clone.state::<AppState>();
                 error!(task_id, error = %e, "stt_finish_failed");
-                
+
                 // Save failed entry with audio for retry functionality
-                save_failed_history(&state, audio_path, &e);
-                
+                crate::history::commands::save_failed_history(&state, audio_path, &e);
+
                 let _ = app_clone.emit(
                     EventName::RECORDING_STATE_CHANGED,
                     RecordingStateEvent {
@@ -562,6 +616,13 @@ fn start_unified_recording(
                 );
                 let _ = state.finish_session(task_id);
             }
+        }
+
+        // Clean up transcribing state and hotkey after everything is done
+        let final_state = app_clone.state::<AppState>();
+        final_state.is_transcribing.store(false, Ordering::SeqCst);
+        if let Some(sm) = app_clone.try_state::<crate::shortcut::ShortcutManager>() {
+            let _ = sm.unregister_cancel();
         }
     });
 
@@ -741,163 +802,6 @@ struct LocalPolishContext {
     language: String,
     model_id: String,
     log_context: &'static str,
-}
-
-fn save_to_history(
-    state: &AppState,
-    raw_text: &str,
-    final_text: &str,
-    stt_duration_ms: Option<i64>,
-    polish_duration_ms: Option<i64>,
-    polish_applied: bool,
-    audio_path: Option<String>,
-) {
-    let (stt_engine, stt_model, language, is_cloud) = {
-        let settings = state.settings.lock();
-        let cloud_config = settings.get_active_cloud_stt_config();
-        let is_cloud = cloud_config.enabled;
-        let engine_str = if is_cloud {
-            format!("cloud-{}", cloud_config.provider_type)
-        } else {
-            crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&settings.model)
-                .map(|et| et.as_str().to_string())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
-        (
-            engine_str,
-            if is_cloud {
-                Some(cloud_config.model.clone())
-            } else {
-                Some(settings.model.clone())
-            },
-            if settings.stt_engine_language.is_empty() {
-                None
-            } else {
-                Some(settings.stt_engine_language.clone())
-            },
-            is_cloud,
-        )
-    };
-
-    let recording_duration_ms = {
-        let start = state
-            .recording_start_time
-            .load(std::sync::atomic::Ordering::SeqCst);
-        if start > 0 {
-            Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as i64
-                    - start as i64,
-            )
-        } else {
-            None
-        }
-    };
-
-    let total_ms = match (stt_duration_ms, polish_duration_ms) {
-        (Some(stt), Some(pol)) => Some(stt + pol),
-        (Some(stt), None) => Some(stt),
-        _ => None,
-    };
-
-    let entry = crate::history::NewTranscriptionEntry {
-        raw_text: raw_text.to_string(),
-        final_text: final_text.to_string(),
-        stt_engine,
-        stt_model,
-        language,
-        audio_duration_ms: recording_duration_ms,
-        stt_duration_ms,
-        polish_duration_ms,
-        total_duration_ms: total_ms,
-        polish_applied,
-        polish_engine: None,
-        is_cloud,
-        audio_path,
-        status: "success".to_string(),
-        error: None,
-    };
-
-    let store = state.history_store.lock();
-    if let Err(e) = crate::history::save_history_entry(&store, entry) {
-        tracing::warn!(error = %e, "failed_to_save_history");
-    }
-}
-
-/// Save a failed recording entry to history.
-pub fn save_failed_history(
-    state: &AppState,
-    audio_path: Option<String>,
-    error: &str,
-) {
-    let (stt_engine, stt_model, language, is_cloud) = {
-        let settings = state.settings.lock();
-        let cloud_config = settings.get_active_cloud_stt_config();
-        let is_cloud = cloud_config.enabled;
-        let engine_str = if is_cloud {
-            format!("cloud-{}", cloud_config.provider_type)
-        } else {
-            crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&settings.model)
-                .map(|et| et.as_str().to_string())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
-        (
-            engine_str,
-            if is_cloud {
-                Some(cloud_config.model.clone())
-            } else {
-                Some(settings.model.clone())
-            },
-            if settings.stt_engine_language.is_empty() {
-                None
-            } else {
-                Some(settings.stt_engine_language.clone())
-            },
-            is_cloud,
-        )
-    };
-
-    let recording_duration_ms = {
-        let start = state
-            .recording_start_time
-            .load(std::sync::atomic::Ordering::SeqCst);
-        if start > 0 {
-            Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as i64
-                    - start as i64,
-            )
-        } else {
-            None
-        }
-    };
-
-    let entry = crate::history::NewTranscriptionEntry {
-        raw_text: String::new(),
-        final_text: String::new(),
-        stt_engine,
-        stt_model,
-        language,
-        audio_duration_ms: recording_duration_ms,
-        stt_duration_ms: None,
-        polish_duration_ms: None,
-        total_duration_ms: None,
-        polish_applied: false,
-        polish_engine: None,
-        is_cloud,
-        audio_path,
-        status: "error".to_string(),
-        error: Some(error.to_string()),
-    };
-
-    let store = state.history_store.lock();
-    if let Err(e) = crate::history::save_history_entry(&store, entry) {
-        tracing::warn!(error = %e, "failed_to_save_failed_history");
-    }
 }
 
 #[instrument(skip(app, state, accumulated_text), fields(task_id))]
@@ -1349,10 +1253,7 @@ pub async fn retry_transcription_internal(
 }
 
 /// Transcribe an audio file for retry.
-async fn transcribe_audio_file(
-    state: &AppState,
-    audio_path: &str,
-) -> Result<String, String> {
+async fn transcribe_audio_file(state: &AppState, audio_path: &str) -> Result<String, String> {
     let (model_name, lang) = {
         let settings = state.settings.lock();
         (settings.model.clone(), settings.stt_engine_language.clone())
@@ -1363,10 +1264,7 @@ async fn transcribe_audio_file(
         .map_err(|e| format!("Failed to open audio file: {}", e))?;
 
     let spec = reader.spec();
-    let samples: Vec<i16> = reader
-        .into_samples()
-        .filter_map(|s| s.ok())
-        .collect();
+    let samples: Vec<i16> = reader.into_samples().filter_map(|s| s.ok()).collect();
 
     if samples.is_empty() {
         return Err("Audio file is empty".to_string());
@@ -1380,7 +1278,7 @@ async fn transcribe_audio_file(
         samples_f32
             .chunks(2)
             .map(|chunk| {
-                let left = chunk.get(0).copied().unwrap_or(0.0);
+                let left = chunk.first().copied().unwrap_or(0.0);
                 let right = chunk.get(1).copied().unwrap_or(0.0);
                 (left + right) / 2.0
             })
@@ -1411,10 +1309,9 @@ async fn transcribe_audio_file(
         .engine_manager
         .resolve_available_model(&model_name, &lang);
 
-    let engine_type = crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(
-        &resolved_model_name,
-    )
-    .ok_or_else(|| "Unknown engine type".to_string())?;
+    let engine_type =
+        crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&resolved_model_name)
+            .ok_or_else(|| "Unknown engine type".to_string())?;
 
     // Create transcription request
     let request = crate::stt_engine::traits::TranscriptionRequest::new(samples_16k_f32)

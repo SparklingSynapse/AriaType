@@ -20,8 +20,8 @@ pub mod tray;
 pub mod utils;
 
 use commands::audio::{
-    get_audio_level, get_recording_state, start_audio_level_monitor, start_recording,
-    stop_recording,
+    cancel_recording, get_audio_level, get_recording_state, start_audio_level_monitor,
+    start_recording, stop_recording,
 };
 use commands::{hotkey, model, model_cache, permissions, settings, system, text, window};
 use events::EventName;
@@ -152,6 +152,7 @@ pub fn run() {
             window::get_pill_position,
             start_recording,
             stop_recording,
+            cancel_recording,
             get_audio_level,
             get_recording_state,
             text::insert_text,

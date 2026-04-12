@@ -24,14 +24,18 @@ use super::FnEmojiBlocker;
 enum ShortcutCommand {
     Register(String),
     Unregister,
+    RegisterCancel,
+    UnregisterCancel,
 }
 
 /// Internal state shared between main thread and background thread.
 struct ManagerState {
-    /// Command to execute on next cycle.
-    pending_command: Mutex<Option<ShortcutCommand>>,
+    /// Commands to execute on next cycle.
+    pending_commands: Mutex<Vec<ShortcutCommand>>,
     /// Current registered hotkey ID (stored directly as HotkeyId which is Copy).
     current_id: Mutex<Option<handy_keys::HotkeyId>>,
+    /// Cancel hotkey IDs. Hold mode may need modifier-aware Escape variants.
+    cancel_ids: Mutex<Vec<handy_keys::HotkeyId>>,
     /// Signal to shut down the background thread.
     shutdown: AtomicBool,
 }
@@ -65,8 +69,9 @@ impl ShortcutManager {
         let (event_tx, event_rx) = std::sync::mpsc::channel();
 
         let state = Arc::new(ManagerState {
-            pending_command: Mutex::new(None),
+            pending_commands: Mutex::new(Vec::new()),
             current_id: Mutex::new(None),
+            cancel_ids: Mutex::new(Vec::new()),
             shutdown: AtomicBool::new(false),
         });
 
@@ -127,8 +132,8 @@ impl ShortcutManager {
     /// Stores in shared state; background thread will pick it up.
     pub fn register(&self, hotkey: &str) -> Result<(), String> {
         // Store in pending state; background thread will pick it up
-        let mut pending = self.state.pending_command.lock();
-        *pending = Some(ShortcutCommand::Register(hotkey.to_string()));
+        let mut pending = self.state.pending_commands.lock();
+        pending.push(ShortcutCommand::Register(hotkey.to_string()));
 
         tracing::info!(hotkey = %hotkey, "shortcut_register_requested");
         Ok(())
@@ -136,10 +141,26 @@ impl ShortcutManager {
 
     /// Unregister the current hotkey.
     pub fn unregister(&self) -> Result<(), String> {
-        let mut pending = self.state.pending_command.lock();
-        *pending = Some(ShortcutCommand::Unregister);
+        let mut pending = self.state.pending_commands.lock();
+        pending.push(ShortcutCommand::Unregister);
 
         tracing::info!("shortcut_unregister_requested");
+        Ok(())
+    }
+
+    /// Register the cancel hotkey (ESC).
+    pub fn register_cancel(&self) -> Result<(), String> {
+        let mut pending = self.state.pending_commands.lock();
+        pending.push(ShortcutCommand::RegisterCancel);
+        tracing::info!("shortcut_register_cancel_requested");
+        Ok(())
+    }
+
+    /// Unregister the cancel hotkey.
+    pub fn unregister_cancel(&self) -> Result<(), String> {
+        let mut pending = self.state.pending_commands.lock();
+        pending.push(ShortcutCommand::UnregisterCancel);
+        tracing::info!("shortcut_unregister_cancel_requested");
         Ok(())
     }
 
@@ -218,15 +239,21 @@ fn run_hotkey_loop(
 
         // Check for pending command
         {
-            let mut pending = state.pending_command.lock();
-            if let Some(command) = pending.take() {
+            let mut pending = state.pending_commands.lock();
+            let commands: Vec<ShortcutCommand> = pending.drain(..).collect();
+            drop(pending);
+
+            for command in commands {
                 match command {
                     ShortcutCommand::Register(hotkey_str) => {
                         // Unregister old hotkey if exists (using stored HotkeyId)
                         {
                             let mut current = state.current_id.lock();
                             if let Some(old_id) = current.take() {
-                                tracing::info!(old_id = old_id.as_u32(), "unregistering_old_hotkey");
+                                tracing::info!(
+                                    old_id = old_id.as_u32(),
+                                    "unregistering_old_hotkey"
+                                );
                                 if let Err(e) = manager.unregister(old_id) {
                                     tracing::warn!(error = ?e, "old_hotkey_unregister_failed");
                                 } else {
@@ -243,10 +270,20 @@ fn run_hotkey_loop(
                             Ok(m) => m,
                             Err(e) => {
                                 tracing::error!(error = %e, "hotkey_manager_recreation_failed");
-                                let _ = event_tx.send(ShortcutEvent::RegistrationFailed { error: e.to_string() });
+                                let _ = event_tx.send(ShortcutEvent::RegistrationFailed {
+                                    error: e.to_string(),
+                                });
                                 return;
                             }
                         };
+
+                        // Re-register cancel hotkey if it was active
+                        let mut cancel_lock = state.cancel_ids.lock();
+                        if !cancel_lock.is_empty() {
+                            let cancel_hotkeys = build_cancel_hotkeys_for_app(&app_handle);
+                            *cancel_lock = register_cancel_hotkeys(&manager, &cancel_hotkeys);
+                        }
+                        drop(cancel_lock);
 
                         // Parse and register new hotkey
                         match register_hotkey(&manager, &hotkey_str) {
@@ -258,8 +295,8 @@ fn run_hotkey_loop(
                             Err(e) => {
                                 tracing::error!(hotkey = %hotkey_str, error = %e, "hotkey_registration_failed");
                                 // Emit failure event
-                                let _ =
-                                    event_tx.send(ShortcutEvent::RegistrationFailed { error: e.clone() });
+                                let _ = event_tx
+                                    .send(ShortcutEvent::RegistrationFailed { error: e.clone() });
                                 // Also emit to frontend via Tauri
                                 let _ = app_handle.emit(EventName::SHORTCUT_REGISTRATION_FAILED, e);
                             }
@@ -268,13 +305,26 @@ fn run_hotkey_loop(
                     ShortcutCommand::Unregister => {
                         let mut current = state.current_id.lock();
                         if let Some(old_id) = current.take() {
-                            tracing::info!(old_id = old_id.as_u32(), "unregistering_old_hotkey_explicit");
+                            tracing::info!(
+                                old_id = old_id.as_u32(),
+                                "unregistering_old_hotkey_explicit"
+                            );
                             if let Err(e) = manager.unregister(old_id) {
                                 tracing::warn!(error = ?e, "old_hotkey_unregister_failed_explicit");
                             } else {
                                 tracing::info!("old_hotkey_unregistered_explicit");
                             }
                         }
+                    }
+                    ShortcutCommand::RegisterCancel => {
+                        let mut current = state.cancel_ids.lock();
+                        unregister_cancel_hotkeys(&manager, &mut current);
+                        let cancel_hotkeys = build_cancel_hotkeys_for_app(&app_handle);
+                        *current = register_cancel_hotkeys(&manager, &cancel_hotkeys);
+                    }
+                    ShortcutCommand::UnregisterCancel => {
+                        let mut current = state.cancel_ids.lock();
+                        unregister_cancel_hotkeys(&manager, &mut current);
                     }
                 }
             }
@@ -290,16 +340,19 @@ fn run_hotkey_loop(
                     handy_keys::HotkeyState::Released => ShortcutState::Released,
                 };
 
-                tracing::info!(state = %state_enum.as_str(), "hotkey_triggered");
+                let current_id = *state.current_id.lock();
+                let cancel_ids = state.cancel_ids.lock().clone();
 
-                // Emit event to main thread
-                let _ = event_tx.send(ShortcutEvent::Triggered { state: state_enum });
-
-                // Emit to frontend for recording trigger
-                let _ = app_handle.emit(EventName::SHORTCUT_TRIGGERED, state_enum.as_str());
-
-                // Handle recording trigger based on recording mode
-                handle_recording_trigger(&app_handle, state_enum);
+                if Some(event.id) == current_id {
+                    tracing::info!(state = %state_enum.as_str(), "hotkey_triggered");
+                    let _ = event_tx.send(ShortcutEvent::Triggered { state: state_enum });
+                    let _ = app_handle.emit(EventName::SHORTCUT_TRIGGERED, state_enum.as_str());
+                    handle_recording_trigger(&app_handle, state_enum);
+                } else if cancel_ids.contains(&event.id) {
+                    tracing::info!(state = %state_enum.as_str(), "cancel_hotkey_triggered");
+                    let _ = event_tx.send(ShortcutEvent::CancelTriggered { state: state_enum });
+                    handle_cancel_trigger(&app_handle, state_enum);
+                }
             }
             None => {
                 // No event available, check shutdown and sleep briefly
@@ -314,6 +367,77 @@ fn run_hotkey_loop(
     }
 
     tracing::info!("hotkey_manager_loop_exited");
+}
+
+fn handle_cancel_trigger(app_handle: &tauri::AppHandle, state: ShortcutState) {
+    match state {
+        ShortcutState::Pressed => {
+            tracing::info!("cancel_hotkey_pressed, canceling recording");
+            let _ = crate::commands::audio::cancel_recording_from_hotkey_sync(app_handle.clone());
+        }
+        ShortcutState::Released => {
+            let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>()
+            else {
+                return;
+            };
+
+            let is_recording = app_state.is_recording.load(Ordering::SeqCst);
+            let is_transcribing = app_state.is_transcribing.load(Ordering::SeqCst);
+
+            if !is_recording && !is_transcribing {
+                tracing::info!("cancel_hotkey_released_after_cancel, unregistering_cancel_hotkey");
+                if let Some(shortcut_manager) =
+                    app_handle.try_state::<crate::shortcut::ShortcutManager>()
+                {
+                    let _ = shortcut_manager.unregister_cancel();
+                }
+            }
+        }
+    }
+}
+
+fn build_cancel_hotkeys_for_app(app_handle: &tauri::AppHandle) -> Vec<String> {
+    let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() else {
+        return vec!["Escape".to_string()];
+    };
+
+    let settings = app_state.settings.lock();
+    build_cancel_hotkeys(&settings.recording_mode, &settings.hotkey)
+}
+
+fn register_cancel_hotkeys(
+    manager: &handy_keys::HotkeyManager,
+    hotkeys: &[String],
+) -> Vec<handy_keys::HotkeyId> {
+    let mut ids = Vec::new();
+
+    for hotkey in hotkeys {
+        match register_hotkey(manager, hotkey) {
+            Ok(id) => {
+                tracing::info!(hotkey = %hotkey, id = id.as_u32(), "cancel_hotkey_registered");
+                ids.push(id);
+            }
+            Err(e) => {
+                tracing::error!(hotkey = %hotkey, error = %e, "cancel_hotkey_registration_failed");
+            }
+        }
+    }
+
+    ids
+}
+
+fn unregister_cancel_hotkeys(
+    manager: &handy_keys::HotkeyManager,
+    current: &mut Vec<handy_keys::HotkeyId>,
+) {
+    for old_id in current.drain(..) {
+        tracing::info!(old_id = old_id.as_u32(), "unregistering_cancel_hotkey");
+        if let Err(e) = manager.unregister(old_id) {
+            tracing::warn!(error = ?e, "cancel_hotkey_unregister_failed");
+        } else {
+            tracing::info!("cancel_hotkey_unregistered");
+        }
+    }
 }
 
 /// Handle recording trigger based on hotkey state and recording mode.
@@ -434,6 +558,54 @@ fn register_hotkey(
     Ok(id)
 }
 
+fn build_cancel_hotkeys(recording_mode: &str, hotkey: &str) -> Vec<String> {
+    let mut cancel_hotkeys = vec!["Escape".to_string()];
+
+    if recording_mode.eq_ignore_ascii_case("hold") {
+        let modifiers = hotkey
+            .split('+')
+            .map(str::trim)
+            .filter(|token| !token.is_empty() && is_modifier_token(token))
+            .collect::<Vec<_>>();
+
+        if !modifiers.is_empty() {
+            let modifier_escape = format!("{}+Escape", modifiers.join("+"));
+            if !cancel_hotkeys.contains(&modifier_escape) {
+                cancel_hotkeys.push(modifier_escape);
+            }
+        }
+    }
+
+    cancel_hotkeys
+}
+
+fn is_modifier_token(token: &str) -> bool {
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "cmd"
+            | "command"
+            | "meta"
+            | "super"
+            | "win"
+            | "ctrl"
+            | "control"
+            | "opt"
+            | "option"
+            | "alt"
+            | "shift"
+            | "fn"
+            | "function"
+            | "cmdleft"
+            | "cmdright"
+            | "ctrlleft"
+            | "ctrlright"
+            | "optleft"
+            | "optright"
+            | "shiftleft"
+            | "shiftright"
+    )
+}
+
 /// FN/Globe key name constant
 const FN_KEY_NAME: &str = "fn";
 
@@ -459,8 +631,8 @@ mod tests {
         let result = manager.register("Shift+Space");
         assert!(result.is_ok());
 
-        let pending = manager.state.pending_command.lock();
-        if let Some(ShortcutCommand::Register(ref h)) = *pending {
+        let pending = manager.state.pending_commands.lock();
+        if let Some(ShortcutCommand::Register(ref h)) = pending.last() {
             assert_eq!(h, "Shift+Space");
         } else {
             panic!("Expected ShortcutCommand::Register");
@@ -472,5 +644,29 @@ mod tests {
         let mut manager = ShortcutManager::new().unwrap();
         let result = manager.stop();
         assert!(result.is_ok()); // Should handle gracefully
+    }
+
+    #[test]
+    fn test_cancel_hotkeys_toggle_mode_uses_plain_escape_only() {
+        assert_eq!(
+            build_cancel_hotkeys("toggle", "Shift+Space"),
+            vec!["Escape".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_cancel_hotkeys_hold_mode_includes_active_modifiers() {
+        assert_eq!(
+            build_cancel_hotkeys("hold", "Cmd+Shift+Space"),
+            vec!["Escape".to_string(), "Cmd+Shift+Escape".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_cancel_hotkeys_hold_mode_ignores_non_modifier_key() {
+        assert_eq!(
+            build_cancel_hotkeys("hold", "F13"),
+            vec!["Escape".to_string()]
+        );
     }
 }

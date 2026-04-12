@@ -74,6 +74,8 @@ pub enum ShortcutCommand {
 pub enum ShortcutEvent {
     /// Hotkey was triggered with the given state.
     Triggered { state: ShortcutState },
+    /// Cancel hotkey (ESC) was triggered.
+    CancelTriggered { state: ShortcutState },
     /// Hotkey registration failed with an error message.
     RegistrationFailed { error: String },
 }

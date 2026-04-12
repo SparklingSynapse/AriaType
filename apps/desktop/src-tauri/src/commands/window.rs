@@ -1,8 +1,6 @@
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
-
-use crate::events::EventName;
 use crate::state::app_state::AppState;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager};
 
 const PILL_W_LOGICAL: f64 = 140.0;
 const PILL_H_LOGICAL: f64 = 80.0;
