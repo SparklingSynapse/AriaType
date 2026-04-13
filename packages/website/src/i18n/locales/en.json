@@ -16,7 +16,7 @@
   "hero.typewriter5": "Works Offline",
   "hero.typewriter6": "20+ Languages",
   "hero.description": "Press a hotkey, speak, and your words appear at the cursor. Local-first, privacy-first, and works offline.",
-  "hero.cta": "Download for macOS",
+  "hero.cta": "Download",
   "hero.ctaSecondary": "See features",
   "hero.demoAlt": "AriaType demo video",
   "hero.recording": "Recording",
@@ -56,7 +56,7 @@
   "features.step2Description": "Release the hotkey and your words are typed directly at the cursor. No copy-paste, no switching windows.",
   "features.ctaTitle": "Ready to Boost Your Productivity?",
   "features.ctaSubtitle": "Free download. No account. Works offline.",
-  "features.ctaButton": "Download for macOS",
+  "features.ctaButton": "Download",
   "download.title": "Download AriaType",
   "download.subtitle": "Free to download. No account.",
   "download.currentVersion": "Latest version",
@@ -286,5 +286,5 @@
   "home.feature0Item1Label": "Global Hotkey",
   "home.feature0Item1Desc": "Customize trigger",
   "home.feature0Item2Label": "Cross-App Insert",
-  "home.feature0Item2Desc": "Works in any macOS app"
+  "home.feature0Item2Desc": "Works in any app on macOS or Windows"
 }

@@ -160,6 +160,8 @@ pub struct StreamAudioProcessor {
     vad: Option<ThreadSafeVad>,
     stats: StreamProcessorStats,
     last_send_time: Option<Instant>,
+    #[cfg(test)]
+    forced_vad_result: Option<bool>,
 }
 
 impl StreamAudioProcessor {
@@ -200,7 +202,19 @@ impl StreamAudioProcessor {
             vad,
             stats: StreamProcessorStats::default(),
             last_send_time: None,
+            #[cfg(test)]
+            forced_vad_result: None,
         }
+    }
+
+    #[cfg(test)]
+    pub fn force_vad_result_for_test(&mut self, forced_vad_result: bool) {
+        self.forced_vad_result = Some(forced_vad_result);
+    }
+
+    #[cfg(test)]
+    pub fn set_last_send_time_for_test(&mut self, last_send_time: Instant) {
+        self.last_send_time = Some(last_send_time);
     }
 
     /// Process a mono f32 audio chunk at the given sample rate.
@@ -209,6 +223,29 @@ impl StreamAudioProcessor {
     /// When `has_speech` is false, the chunk can be safely skipped
     /// for cloud STT to save tokens/bandwidth.
     pub fn process_chunk(&mut self, audio_f32: &[f32], sample_rate: u32) -> ProcessedChunk {
+        self.process_chunk_inner(audio_f32, sample_rate, false)
+    }
+
+    /// Process the final buffered audio chunk before an explicit stop.
+    ///
+    /// Stop-triggered flushing keeps the same resample/denoise pipeline as normal
+    /// streaming chunks, but it bypasses VAD gating so the trailing remainder is
+    /// still delivered to STT even when the final speech fragment is too short for
+    /// the usual streaming decision path.
+    pub fn process_chunk_for_stop_flush(
+        &mut self,
+        audio_f32: &[f32],
+        sample_rate: u32,
+    ) -> ProcessedChunk {
+        self.process_chunk_inner(audio_f32, sample_rate, true)
+    }
+
+    fn process_chunk_inner(
+        &mut self,
+        audio_f32: &[f32],
+        sample_rate: u32,
+        force_send: bool,
+    ) -> ProcessedChunk {
         self.stats.total_chunks += 1;
 
         if audio_f32.is_empty() {
@@ -230,13 +267,28 @@ impl StreamAudioProcessor {
             audio_f32.to_vec()
         };
 
-        let vad_result = if self.vad_enabled {
-            match self.vad.as_mut() {
-                Some(vad) => vad.detect_speech(&audio_16khz),
-                None => true,
+        let vad_result = {
+            #[cfg(test)]
+            if let Some(forced_vad_result) = self.forced_vad_result {
+                forced_vad_result
+            } else if self.vad_enabled {
+                match self.vad.as_mut() {
+                    Some(vad) => vad.detect_speech(&audio_16khz),
+                    None => true,
+                }
+            } else {
+                true
             }
-        } else {
-            true
+
+            #[cfg(not(test))]
+            if self.vad_enabled {
+                match self.vad.as_mut() {
+                    Some(vad) => vad.detect_speech(&audio_16khz),
+                    None => true,
+                }
+            } else {
+                true
+            }
         };
 
         // Keepalive: periodic chunk during silence prevents cloud STT disconnection
@@ -247,7 +299,7 @@ impl StreamAudioProcessor {
                 .last_send_time
                 .is_none_or(|t| now.duration_since(t).as_secs() >= KEEPALIVE_INTERVAL_SECS);
 
-        let has_speech = vad_result || needs_keepalive;
+        let has_speech = force_send || vad_result || needs_keepalive;
 
         if has_speech {
             self.last_send_time = Some(now);

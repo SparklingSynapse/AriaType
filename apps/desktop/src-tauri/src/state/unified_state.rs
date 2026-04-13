@@ -1,6 +1,7 @@
 use parking_lot::Mutex;
+use std::collections::HashSet;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64},
     mpsc, Arc,
 };
 use tauri::async_runtime::JoinHandle;
@@ -23,6 +24,10 @@ pub struct StreamingSttState {
     pub audio_save_path: Option<std::path::PathBuf>,
     /// Accumulated raw PCM samples (before VAD/processing) for saving to file.
     pub raw_audio_buffer: Arc<Mutex<Vec<i16>>>,
+    /// Buffered raw device PCM that has not yet reached the chunk threshold.
+    pub chunk_buffer: Arc<Mutex<Vec<i16>>>,
+    /// Streaming processor used for chunk preprocessing and VAD.
+    pub processor: Arc<Mutex<crate::audio::stream_processor::StreamAudioProcessor>>,
     /// Sample rate of the recording.
     pub sample_rate: u32,
     /// Number of channels.
@@ -161,7 +166,7 @@ impl Default for UnifiedRecordingState {
 pub struct AppState {
     pub recording_state: UnifiedRecordingState,
     pub recording_mode: Mutex<RecordingMode>,
-    pub should_cancel: AtomicBool,
+    pub canceled_tasks: Mutex<HashSet<u64>>,
     pub current_recording_path: Mutex<Option<std::path::PathBuf>>,
     pub transcription_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     pub audio_level: std::sync::atomic::AtomicU32,
@@ -218,7 +223,7 @@ impl AppState {
         Self {
             recording_state: UnifiedRecordingState::new(),
             recording_mode: Mutex::new(RecordingMode::Toggle),
-            should_cancel: AtomicBool::new(false),
+            canceled_tasks: Mutex::new(HashSet::new()),
             current_recording_path: Mutex::new(None),
             transcription_task: Mutex::new(None),
             audio_level: std::sync::atomic::AtomicU32::new(0),
@@ -246,16 +251,16 @@ impl AppState {
         }
     }
 
-    pub fn request_cancellation(&self) {
-        self.should_cancel.store(true, Ordering::SeqCst);
+    pub fn request_cancellation(&self, task_id: u64) {
+        self.canceled_tasks.lock().insert(task_id);
     }
 
-    pub fn clear_cancellation(&self) {
-        self.should_cancel.store(false, Ordering::SeqCst);
+    pub fn clear_cancellation(&self, task_id: u64) {
+        self.canceled_tasks.lock().remove(&task_id);
     }
 
-    pub fn is_cancellation_requested(&self) -> bool {
-        self.should_cancel.load(Ordering::SeqCst)
+    pub fn is_cancellation_requested(&self, task_id: u64) -> bool {
+        self.canceled_tasks.lock().contains(&task_id)
     }
 
     pub fn get_current_state(&self) -> RecordingState {
@@ -313,3 +318,30 @@ impl Default for AppState {
 
 unsafe impl Send for AppState {}
 unsafe impl Sync for AppState {}
+
+#[cfg(test)]
+mod tests {
+    use super::AppState;
+
+    #[test]
+    fn cancellation_is_tracked_per_task() {
+        let state = AppState::new();
+
+        state.request_cancellation(7);
+
+        assert!(state.is_cancellation_requested(7));
+        assert!(!state.is_cancellation_requested(8));
+    }
+
+    #[test]
+    fn clearing_one_task_cancellation_does_not_affect_others() {
+        let state = AppState::new();
+
+        state.request_cancellation(3);
+        state.request_cancellation(4);
+        state.clear_cancellation(3);
+
+        assert!(!state.is_cancellation_requested(3));
+        assert!(state.is_cancellation_requested(4));
+    }
+}

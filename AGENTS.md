@@ -56,6 +56,38 @@ Code churn without stronger evidence is not progress.
 
 ---
 
+## Architecture Principles
+
+### Headless Backend Architecture
+
+The application follows a strict **backend-driven architecture** where the Rust backend is the complete product implementation:
+
+| Layer | Responsibility | Constraint |
+|-------|----------------|------------|
+| **Backend (Headless)** | Complete product logic, all functionality, state management, business rules | Must work independently without frontend. Given correct config files, the backend should be fully functional. |
+| **Frontend (UI Layer)** | State display, user interaction, visual feedback | Only renders what backend emits. No business logic, no state decisions, no functional control flow. |
+
+**Implications:**
+
+1. **Backend owns all state** — Recording state, transcription state, settings, history, and any product state must be managed entirely in Rust. Frontend only observes via IPC events and queries.
+2. **Backend owns all control** — Recording start/stop/cancel, transcription retry, model download, settings changes — all triggered via IPC commands, executed entirely in backend.
+3. **Frontend is reactive** — UI components respond to backend events (`RECORDING_STATE_CHANGED`, `TRANSCRIPTION_COMPLETE`, etc.) and render accordingly. No proactive state mutations.
+4. **CLI/Headless capability** — The backend should be usable from CLI or scripts without any frontend process. All features accessible via Tauri commands alone.
+5. **Config-driven independence** — Given a valid config file and environment, backend should produce correct behavior without frontend guidance.
+
+**Anti-patterns to avoid:**
+
+- Frontend deciding "recording is too short, skip saving" → Backend should handle this.
+- Frontend calculating "next retry delay" → Backend decides retry policy.
+- Frontend managing "current hotkey state" → Backend tracks hotkey registration lifecycle.
+- Frontend interpreting "error means show retry button" → Backend emits structured events, frontend renders.
+
+**Verification:**
+
+When adding a new feature, ask: "Can this work from CLI/headless mode?" If no, the logic belongs in frontend and violates this architecture.
+
+---
+
 ## Non-Negotiable Rules
 
 | # | Rule | Enforcement |

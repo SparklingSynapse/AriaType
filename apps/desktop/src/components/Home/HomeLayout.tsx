@@ -95,11 +95,6 @@ export function HomeLayout() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      {/* Drag region for the overlay title bar */}
-      <div
-        className="h-7 flex-shrink-0 top-0 left-0 right-0 absolute"
-        data-tauri-drag-region
-      />
       <div className="flex flex-1 overflow-hidden ">
         <OnboardingGuide isOpen={isOpen} onClose={handleOnboardingClose} />
         <aside className="w-56 border-r border-border bg-card pt-7">

@@ -16,7 +16,7 @@
   "hero.typewriter5": "离线运行",
   "hero.typewriter6": "支持 20+ 语言",
   "hero.description": "按下快捷键，说话，文字直接出现在光标处。本地优先、隐私优先——无需账号，离线可用。",
-  "hero.cta": "下载 macOS 版",
+  "hero.cta": "下载",
   "hero.ctaSecondary": "查看功能",
   "hero.demoAlt": "AriaType 演示视频",
   "hero.recording": "录音中",
@@ -56,7 +56,7 @@
   "features.step2Description": "松开快捷键，文字直接输入到光标位置。无需复制粘贴，无需切换窗口。",
   "features.ctaTitle": "准备好提速了吗？",
   "features.ctaSubtitle": "免费下载，无需账号，离线可用。",
-  "features.ctaButton": "下载 macOS 版",
+  "features.ctaButton": "下载",
   "download.title": "下载 AriaType",
   "download.subtitle": "免费下载，无需注册账号。",
   "download.currentVersion": "最新版本",
@@ -286,5 +286,5 @@
   "home.feature0Item1Label": "全局快捷键",
   "home.feature0Item1Desc": "自定义触发方式",
   "home.feature0Item2Label": "跨应用插入",
-  "home.feature0Item2Desc": "支持任意 macOS 应用"
+  "home.feature0Item2Desc": "支持 macOS 和 Windows 的任意应用"
 }

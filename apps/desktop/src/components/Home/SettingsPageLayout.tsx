@@ -14,7 +14,7 @@ export function SettingsPageLayout({
   className = "",
 }: SettingsPageLayoutProps) {
   return (
-    <div className={`mx-auto max-w-6xl p-12 ${className}`}>
+    <div className={`mx-auto max-w-6xl p-10 ${className}`}>
       {(title || description) && (
         <div className="mb-6 md:mb-8">
           {title && (

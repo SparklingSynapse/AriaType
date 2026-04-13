@@ -24,8 +24,8 @@ use super::FnEmojiBlocker;
 enum ShortcutCommand {
     Register(String),
     Unregister,
-    RegisterCancel,
-    UnregisterCancel,
+    RegisterCancel { owner_task_id: u64 },
+    UnregisterCancel { owner_task_id: Option<u64> },
 }
 
 /// Internal state shared between main thread and background thread.
@@ -36,6 +36,10 @@ struct ManagerState {
     current_id: Mutex<Option<handy_keys::HotkeyId>>,
     /// Cancel hotkey IDs. Hold mode may need modifier-aware Escape variants.
     cancel_ids: Mutex<Vec<handy_keys::HotkeyId>>,
+    /// Task that currently owns the cancel hotkey registration.
+    cancel_owner_task_id: Mutex<Option<u64>>,
+    /// Task whose cancel hotkey should be unregistered after ESC is released.
+    pending_cancel_release_owner_task_id: Mutex<Option<u64>>,
     /// Signal to shut down the background thread.
     shutdown: AtomicBool,
 }
@@ -72,6 +76,8 @@ impl ShortcutManager {
             pending_commands: Mutex::new(Vec::new()),
             current_id: Mutex::new(None),
             cancel_ids: Mutex::new(Vec::new()),
+            cancel_owner_task_id: Mutex::new(None),
+            pending_cancel_release_owner_task_id: Mutex::new(None),
             shutdown: AtomicBool::new(false),
         });
 
@@ -149,18 +155,33 @@ impl ShortcutManager {
     }
 
     /// Register the cancel hotkey (ESC).
-    pub fn register_cancel(&self) -> Result<(), String> {
+    pub fn register_cancel(&self, owner_task_id: u64) -> Result<(), String> {
         let mut pending = self.state.pending_commands.lock();
-        pending.push(ShortcutCommand::RegisterCancel);
-        tracing::info!("shortcut_register_cancel_requested");
+        pending.push(ShortcutCommand::RegisterCancel { owner_task_id });
+        tracing::info!(owner_task_id, "shortcut_register_cancel_requested");
         Ok(())
     }
 
     /// Unregister the cancel hotkey.
     pub fn unregister_cancel(&self) -> Result<(), String> {
         let mut pending = self.state.pending_commands.lock();
-        pending.push(ShortcutCommand::UnregisterCancel);
+        pending.push(ShortcutCommand::UnregisterCancel {
+            owner_task_id: None,
+        });
         tracing::info!("shortcut_unregister_cancel_requested");
+        Ok(())
+    }
+
+    /// Unregister the cancel hotkey only if the calling task still owns it.
+    pub fn unregister_cancel_for_task(&self, owner_task_id: u64) -> Result<(), String> {
+        let mut pending = self.state.pending_commands.lock();
+        pending.push(ShortcutCommand::UnregisterCancel {
+            owner_task_id: Some(owner_task_id),
+        });
+        tracing::info!(
+            owner_task_id,
+            "shortcut_unregister_cancel_requested_for_task"
+        );
         Ok(())
     }
 
@@ -216,7 +237,7 @@ fn run_hotkey_loop(
     app_handle: tauri::AppHandle,
 ) {
     // Create the hotkey manager
-    let mut manager = match handy_keys::HotkeyManager::new() {
+    let mut manager = match create_hotkey_manager() {
         Ok(m) => m,
         Err(e) => {
             tracing::error!(error = %e, "hotkey_manager_creation_failed");
@@ -266,7 +287,7 @@ fn run_hotkey_loop(
                         // This fixes an issue where the recording listener's tap blocks the key-down
                         // but allows the key-up, causing the manager's internal modifier state to invert.
                         tracing::info!("recreating_hotkey_manager_to_reset_state");
-                        manager = match handy_keys::HotkeyManager::new() {
+                        manager = match create_hotkey_manager() {
                             Ok(m) => m,
                             Err(e) => {
                                 tracing::error!(error = %e, "hotkey_manager_recreation_failed");
@@ -316,15 +337,28 @@ fn run_hotkey_loop(
                             }
                         }
                     }
-                    ShortcutCommand::RegisterCancel => {
+                    ShortcutCommand::RegisterCancel { owner_task_id } => {
+                        *state.cancel_owner_task_id.lock() = Some(owner_task_id);
                         let mut current = state.cancel_ids.lock();
                         unregister_cancel_hotkeys(&manager, &mut current);
                         let cancel_hotkeys = build_cancel_hotkeys_for_app(&app_handle);
                         *current = register_cancel_hotkeys(&manager, &cancel_hotkeys);
                     }
-                    ShortcutCommand::UnregisterCancel => {
-                        let mut current = state.cancel_ids.lock();
-                        unregister_cancel_hotkeys(&manager, &mut current);
+                    ShortcutCommand::UnregisterCancel { owner_task_id } => {
+                        let mut cancel_owner_task_id = state.cancel_owner_task_id.lock();
+                        if should_unregister_cancel_hotkeys(*cancel_owner_task_id, owner_task_id) {
+                            *cancel_owner_task_id = None;
+                            drop(cancel_owner_task_id);
+
+                            let mut current = state.cancel_ids.lock();
+                            unregister_cancel_hotkeys(&manager, &mut current);
+                        } else {
+                            tracing::info!(
+                                current_owner_task_id = ?*cancel_owner_task_id,
+                                requested_owner_task_id = ?owner_task_id,
+                                "stale_cancel_hotkey_unregister_ignored"
+                            );
+                        }
                     }
                 }
             }
@@ -369,9 +403,31 @@ fn run_hotkey_loop(
     tracing::info!("hotkey_manager_loop_exited");
 }
 
+fn create_hotkey_manager() -> Result<handy_keys::HotkeyManager, handy_keys::Error> {
+    // The blocking constructor is required so the active app does not also receive
+    // the shortcut's key events, such as Slash in Cmd+Slash.
+    handy_keys::HotkeyManager::new_with_blocking()
+}
+
 fn handle_cancel_trigger(app_handle: &tauri::AppHandle, state: ShortcutState) {
     match state {
         ShortcutState::Pressed => {
+            if let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() {
+                let is_recording = app_state.is_recording.load(Ordering::SeqCst);
+                let is_transcribing = app_state.is_transcribing.load(Ordering::SeqCst);
+                let task_id = app_state.task_counter.load(Ordering::SeqCst);
+
+                if let Some(shortcut_manager) =
+                    app_handle.try_state::<crate::shortcut::ShortcutManager>()
+                {
+                    *shortcut_manager
+                        .state
+                        .pending_cancel_release_owner_task_id
+                        .lock() =
+                        capture_cancel_hotkey_release_owner(is_recording, is_transcribing, task_id);
+                }
+            }
+
             tracing::info!("cancel_hotkey_pressed, canceling recording");
             let _ = crate::commands::audio::cancel_recording_from_hotkey_sync(app_handle.clone());
         }
@@ -384,15 +440,41 @@ fn handle_cancel_trigger(app_handle: &tauri::AppHandle, state: ShortcutState) {
             let is_recording = app_state.is_recording.load(Ordering::SeqCst);
             let is_transcribing = app_state.is_transcribing.load(Ordering::SeqCst);
 
-            if !is_recording && !is_transcribing {
+            let pending_owner_task_id = app_handle
+                .try_state::<crate::shortcut::ShortcutManager>()
+                .and_then(|shortcut_manager| {
+                    shortcut_manager
+                        .state
+                        .pending_cancel_release_owner_task_id
+                        .lock()
+                        .take()
+                });
+
+            if let Some(owner_task_id) = cancel_hotkey_release_unregister_owner(
+                is_recording,
+                is_transcribing,
+                pending_owner_task_id,
+            ) {
                 tracing::info!("cancel_hotkey_released_after_cancel, unregistering_cancel_hotkey");
                 if let Some(shortcut_manager) =
                     app_handle.try_state::<crate::shortcut::ShortcutManager>()
                 {
-                    let _ = shortcut_manager.unregister_cancel();
+                    let _ = shortcut_manager.unregister_cancel_for_task(owner_task_id);
                 }
             }
         }
+    }
+}
+
+fn capture_cancel_hotkey_release_owner(
+    is_recording: bool,
+    is_transcribing: bool,
+    task_id: u64,
+) -> Option<u64> {
+    if is_recording || is_transcribing {
+        Some(task_id)
+    } else {
+        None
     }
 }
 
@@ -437,6 +519,25 @@ fn unregister_cancel_hotkeys(
         } else {
             tracing::info!("cancel_hotkey_unregistered");
         }
+    }
+}
+
+fn should_unregister_cancel_hotkeys(
+    current_owner_task_id: Option<u64>,
+    requested_owner_task_id: Option<u64>,
+) -> bool {
+    requested_owner_task_id.is_none() || current_owner_task_id == requested_owner_task_id
+}
+
+fn cancel_hotkey_release_unregister_owner(
+    is_recording: bool,
+    is_transcribing: bool,
+    pending_owner_task_id: Option<u64>,
+) -> Option<u64> {
+    if is_recording || is_transcribing {
+        None
+    } else {
+        pending_owner_task_id
     }
 }
 
@@ -667,6 +768,70 @@ mod tests {
         assert_eq!(
             build_cancel_hotkeys("hold", "F13"),
             vec!["Escape".to_string()]
+        );
+    }
+
+    #[test]
+    fn stale_unregister_does_not_clear_new_cancel_owner() {
+        let mut cancel_owner_task_id = Some(2);
+
+        if should_unregister_cancel_hotkeys(cancel_owner_task_id, Some(1)) {
+            cancel_owner_task_id = None;
+        }
+
+        assert_eq!(cancel_owner_task_id, Some(2));
+    }
+
+    #[test]
+    fn matching_unregister_clears_current_cancel_owner() {
+        let mut cancel_owner_task_id = Some(3);
+
+        if should_unregister_cancel_hotkeys(cancel_owner_task_id, Some(3)) {
+            cancel_owner_task_id = None;
+        }
+
+        assert_eq!(cancel_owner_task_id, None);
+    }
+
+    #[test]
+    fn unconditional_unregister_still_clears_current_cancel_owner() {
+        let mut cancel_owner_task_id = Some(4);
+
+        if should_unregister_cancel_hotkeys(cancel_owner_task_id, None) {
+            cancel_owner_task_id = None;
+        }
+
+        assert_eq!(cancel_owner_task_id, None);
+    }
+
+    #[test]
+    fn cancel_hotkey_press_captures_owner_only_while_session_is_active() {
+        assert_eq!(capture_cancel_hotkey_release_owner(true, false, 8), Some(8));
+        assert_eq!(capture_cancel_hotkey_release_owner(false, true, 8), Some(8));
+        assert_eq!(capture_cancel_hotkey_release_owner(false, false, 8), None);
+    }
+
+    #[test]
+    fn cancel_hotkey_release_unregisters_the_observed_task_only_when_idle() {
+        assert_eq!(
+            cancel_hotkey_release_unregister_owner(false, false, Some(7)),
+            Some(7)
+        );
+        assert_eq!(
+            cancel_hotkey_release_unregister_owner(true, false, Some(7)),
+            None
+        );
+        assert_eq!(
+            cancel_hotkey_release_unregister_owner(false, true, Some(7)),
+            None
+        );
+    }
+
+    #[test]
+    fn cancel_hotkey_release_drops_when_no_cancel_owner_was_captured() {
+        assert_eq!(
+            cancel_hotkey_release_unregister_owner(false, false, None),
+            None
         );
     }
 }

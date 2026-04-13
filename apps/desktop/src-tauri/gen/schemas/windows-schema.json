@@ -2840,7 +2840,7 @@
       "description": "Platform target.",
       "oneOf": [
         {
-          "description": "MacOS.",
+          "description": "macOS.",
           "type": "string",
           "enum": [
             "macOS"

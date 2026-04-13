@@ -57,7 +57,7 @@ Current shortcut system has architectural issues:
 
 - handy-keys docs: https://docs.rs/handy-keys/latest/handy_keys/
 - handy-keys repo: https://github.com/handy-computer/handy-keys
-- API: `HotkeyManager::new()`, `manager.register(hotkey)`, `"Ctrl+Space".parse()`, `KeyboardListener` for recording
+- API: `HotkeyManager::new_with_blocking()`, `manager.register(hotkey)`, `"Ctrl+Space".parse()`, `KeyboardListener` for recording
 
 ### Institutional Learnings
 
@@ -126,7 +126,7 @@ apps/desktop/src-tauri/src/shortcut/
 │                    Background Thread                             │
 ├─────────────────────────────────────────────────────────────────┤
 │  ShortcutManager thread                                          │
-│    - HotkeyManager::new() + recv() loop                         │
+│    - HotkeyManager::new_with_blocking() + recv() loop           │
 │    - On ShortcutCommand::Register: manager.register(hotkey)     │
 │    - On HotkeyEvent: send to event_tx                           │
 │                                                                  │
@@ -220,7 +220,7 @@ apps/desktop/src-tauri/src/shortcut/
 - Test: `apps/desktop/src-tauri/src/shortcut/__test__/manager_test.rs`
 
 **Approach:**
-- `ShortcutManager::init()` spawns thread with `HotkeyManager::new()`
+- `ShortcutManager::init()` spawns thread with `HotkeyManager::new_with_blocking()`
 - Thread runs `manager.recv()` loop, maps `HotkeyEvent` to `ShortcutEvent`
 - Accept `ShortcutCommand` via channel for register/unregister
 - Store current `HotkeyId` for unregister before re-register

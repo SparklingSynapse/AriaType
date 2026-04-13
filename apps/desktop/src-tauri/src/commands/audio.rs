@@ -20,6 +20,7 @@ use crate::utils::AppPaths;
 // OFF: ~-45 dB, provides hysteresis
 const AUDIO_ACTIVITY_ON_THRESHOLD: u32 = 40;
 const AUDIO_ACTIVITY_OFF_THRESHOLD: u32 = 25;
+const RECORDING_CHUNK_DURATION_MS: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingState {
@@ -51,9 +52,6 @@ pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
         tracing::warn!("start_recording_sync_already_recording");
         return Err("Already recording".to_string());
     }
-
-    // Clear any previous cancellation request
-    state.clear_cancellation();
 
     // Show pill immediately on hotkey press
     tracing::info!("start_recording_sync_positioning_pill");
@@ -122,7 +120,7 @@ pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
 
     // Register cancel hotkey
     if let Some(shortcut_manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
-        let _ = shortcut_manager.register_cancel();
+        let _ = shortcut_manager.register_cancel(task_id);
     }
 
     Ok(())
@@ -151,10 +149,12 @@ fn cancel_recording_internal(
         .try_state::<AppState>()
         .ok_or_else(|| "AppState not available".to_string())?;
 
+    let task_id = state.task_counter.load(Ordering::SeqCst);
+
     // Hotkey-triggered cancellation must keep the hotkey registered until ESC is released.
     if unregister_cancel_hotkey_immediately {
         if let Some(shortcut_manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
-            let _ = shortcut_manager.unregister_cancel();
+            let _ = shortcut_manager.unregister_cancel_for_task(task_id);
         }
     }
 
@@ -172,8 +172,9 @@ fn cancel_recording_internal(
         let _ = recorder.stop();
     }
 
-    // Request cancellation to abort STT streaming tasks
-    state.request_cancellation();
+    // Request cancellation for this specific task so stale async work
+    // cannot publish results after a newer session starts.
+    state.request_cancellation(task_id);
 
     // Update states
     state.is_recording.store(false, Ordering::SeqCst);
@@ -183,8 +184,13 @@ fn cancel_recording_internal(
         let _ = tx.send(false);
     }
 
-    let task_id = state.task_counter.load(Ordering::SeqCst);
     state.clear_session();
+
+    if let Some(stt) = state.streaming_stt.lock().take() {
+        if let Some(handle) = stt.streaming_task.lock().take() {
+            await_streaming_task_in_background(task_id, handle);
+        }
+    }
 
     // Close pill window
     crate::commands::window::update_pill_visibility(&app);
@@ -269,17 +275,6 @@ fn start_unified_recording(
     let raw_audio_buffer: Arc<ParkingMutex<Vec<i16>>> = Arc::new(ParkingMutex::new(Vec::new()));
     let raw_audio_buffer_clone = raw_audio_buffer.clone();
 
-    *state.streaming_stt.lock() = Some(StreamingSttState {
-        audio_tx: app_tx.clone(),
-        accumulated_text: String::new(),
-        task_id,
-        streaming_task: Arc::new(ParkingMutex::new(None)),
-        audio_save_path: Some(audio_save_path.clone()),
-        raw_audio_buffer: raw_audio_buffer.clone(),
-        sample_rate: 0, // Will be set after recorder starts
-        channels: 0,    // Will be set after recorder starts
-    });
-
     let device_name = if audio_device == "default" {
         None
     } else {
@@ -312,6 +307,19 @@ fn start_unified_recording(
             ),
         ));
 
+    *state.streaming_stt.lock() = Some(StreamingSttState {
+        audio_tx: app_tx.clone(),
+        accumulated_text: String::new(),
+        task_id,
+        streaming_task: Arc::new(ParkingMutex::new(None)),
+        audio_save_path: Some(audio_save_path.clone()),
+        raw_audio_buffer: raw_audio_buffer.clone(),
+        chunk_buffer: chunk_buffer.clone(),
+        processor: processor.clone(),
+        sample_rate: 0, // Will be set after recorder starts
+        channels: 0,    // Will be set after recorder starts
+    });
+
     let (sr, ch) = {
         let recorder = state.recorder.lock();
         recorder
@@ -327,7 +335,7 @@ fn start_unified_recording(
                 let mut buffer = chunk_buffer.lock();
                 buffer.extend_from_slice(pcm);
 
-                let chunk_size = (sr as f32 * ch as f32 * 0.5) as usize;
+                let chunk_size = recording_chunk_size_samples(sr, ch);
 
                 if buffer.len() >= chunk_size {
                     let chunk_data = buffer.drain(..).collect::<Vec<i16>>();
@@ -510,12 +518,8 @@ fn start_unified_recording(
         let text_result: Result<String, String> = consumer.finish().await;
 
         let state_inner = app_clone.state::<AppState>();
-        if state_inner.is_cancellation_requested() {
-            tracing::info!(task_id, "recording_canceled_discarding_result");
-            state_inner.is_transcribing.store(false, Ordering::SeqCst);
-            if let Some(sm) = app_clone.try_state::<crate::shortcut::ShortcutManager>() {
-                let _ = sm.unregister_cancel();
-            }
+        if state_inner.is_cancellation_requested(task_id) {
+            discard_canceled_result(&state_inner, task_id, None);
             return;
         }
 
@@ -532,11 +536,20 @@ fn start_unified_recording(
             Ok(text) => {
                 let raw_text = text.clone();
                 let state = app_clone.state::<AppState>();
+                if state.is_cancellation_requested(task_id) {
+                    discard_canceled_result(&state, task_id, audio_path.as_ref());
+                    return;
+                }
                 let (final_text, polish_time_ms) = if text.is_empty() {
                     (String::new(), 0)
                 } else {
                     maybe_polish_transcription_text(Some(&app_clone), &state, task_id, text).await
                 };
+
+                if state.is_cancellation_requested(task_id) {
+                    discard_canceled_result(&state, task_id, audio_path.as_ref());
+                    return;
+                }
 
                 info!(
                     task_id,
@@ -602,6 +615,10 @@ fn start_unified_recording(
             }
             Err(e) => {
                 let state = app_clone.state::<AppState>();
+                if state.is_cancellation_requested(task_id) {
+                    discard_canceled_result(&state, task_id, audio_path.as_ref());
+                    return;
+                }
                 error!(task_id, error = %e, "stt_finish_failed");
 
                 // Save failed entry with audio for retry functionality
@@ -621,8 +638,16 @@ fn start_unified_recording(
         // Clean up transcribing state and hotkey after everything is done
         let final_state = app_clone.state::<AppState>();
         final_state.is_transcribing.store(false, Ordering::SeqCst);
-        if let Some(sm) = app_clone.try_state::<crate::shortcut::ShortcutManager>() {
-            let _ = sm.unregister_cancel();
+        let active_task_id = final_state.task_counter.load(Ordering::SeqCst);
+        let cancellation_requested = final_state.is_cancellation_requested(task_id);
+        if should_unregister_cancel_hotkey_after_async_cleanup(
+            active_task_id,
+            task_id,
+            cancellation_requested,
+        ) {
+            if let Some(sm) = app_clone.try_state::<crate::shortcut::ShortcutManager>() {
+                let _ = sm.unregister_cancel_for_task(task_id);
+            }
         }
     });
 
@@ -656,6 +681,74 @@ fn await_streaming_task_in_background(task_id: u64, handle: tauri::async_runtime
             error!(task_id, error = %e, "streaming_stt_task_panicked");
         }
     });
+}
+
+fn discard_canceled_result(state: &AppState, task_id: u64, audio_path: Option<&String>) {
+    tracing::info!(task_id, "recording_canceled_discarding_result");
+
+    if let Some(path) = audio_path {
+        if let Err(e) = std::fs::remove_file(path) {
+            warn!(task_id, error = %e, path = %path, "canceled_audio_cleanup_failed");
+        }
+    }
+
+    state.is_transcribing.store(false, Ordering::SeqCst);
+    let _ = state.finish_session(task_id);
+    state.clear_cancellation(task_id);
+}
+
+fn recording_chunk_size_samples(sample_rate: u32, channels: u16) -> usize {
+    (sample_rate as usize * channels as usize * RECORDING_CHUNK_DURATION_MS) / 1000
+}
+
+fn flush_pending_chunk_for_stop(
+    chunk_buffer: &Arc<ParkingMutex<Vec<i16>>>,
+    processor: &Arc<ParkingMutex<crate::audio::stream_processor::StreamAudioProcessor>>,
+    sample_rate: u32,
+    channels: u16,
+) -> Option<Vec<i16>> {
+    let pending_pcm = {
+        let mut buffer = chunk_buffer.lock();
+        if buffer.is_empty() || sample_rate == 0 || channels == 0 {
+            return None;
+        }
+        buffer.drain(..).collect::<Vec<i16>>()
+    };
+
+    let audio_f32: Vec<f32> = pending_pcm.iter().map(|&s| s as f32 / 32768.0).collect();
+
+    let mono_f32 = if channels == 2 {
+        audio_f32
+            .chunks(2)
+            .map(|stereo| (stereo[0] + stereo.get(1).copied().unwrap_or(0.0)) / 2.0)
+            .collect()
+    } else {
+        audio_f32
+    };
+
+    let result = processor
+        .lock()
+        .process_chunk_for_stop_flush(&mono_f32, sample_rate);
+    if result.pcm_16khz_mono.is_empty() {
+        None
+    } else {
+        Some(result.pcm_16khz_mono)
+    }
+}
+
+async fn send_flushed_chunk_for_stop(
+    audio_tx: &tokio::sync::mpsc::Sender<Vec<i16>>,
+    chunk: Vec<i16>,
+) -> Result<(), tokio::sync::mpsc::error::SendError<Vec<i16>>> {
+    audio_tx.send(chunk).await
+}
+
+fn should_unregister_cancel_hotkey_after_async_cleanup(
+    active_task_id: u64,
+    cleanup_task_id: u64,
+    cancellation_requested: bool,
+) -> bool {
+    active_task_id == cleanup_task_id && !cancellation_requested
 }
 
 pub fn stop_recording_sync(app: AppHandle) -> Result<Option<String>, String> {
@@ -695,6 +788,22 @@ pub fn stop_recording_sync(app: AppHandle) -> Result<Option<String>, String> {
 
     let streaming_state = state.streaming_stt.lock().take();
     if let Some(stt) = streaming_state {
+        if let Some(flushed_chunk) = flush_pending_chunk_for_stop(
+            &stt.chunk_buffer,
+            &stt.processor,
+            stt.sample_rate,
+            stt.channels,
+        ) {
+            if let Err(e) = tauri::async_runtime::block_on(send_flushed_chunk_for_stop(
+                &stt.audio_tx,
+                flushed_chunk,
+            )) {
+                warn!(task_id, error = %e, "audio_tail_flush_enqueue_failed");
+            } else {
+                info!(task_id, "audio_tail_flushed_before_finish");
+            }
+        }
+
         info!(task_id, "stt_stopping-awaiting_final");
         if let Some(handle) = stt.streaming_task.lock().take() {
             await_streaming_task_in_background(task_id, handle);
@@ -1330,12 +1439,22 @@ async fn transcribe_audio_file(state: &AppState, audio_path: &str) -> Result<Str
 
 #[cfg(test)]
 mod tests {
-    use super::{await_streaming_task_in_background, maybe_polish_transcription_text};
+    use super::{
+        await_streaming_task_in_background, discard_canceled_result,
+        flush_pending_chunk_for_stop, maybe_polish_transcription_text,
+        recording_chunk_size_samples,
+        send_flushed_chunk_for_stop,
+        should_unregister_cancel_hotkey_after_async_cleanup,
+    };
     use crate::commands::settings::CloudProviderConfig;
     use crate::state::app_state::AppState;
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
     use wiremock::matchers::{body_partial_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    type ParkingMutex<T> = parking_lot::Mutex<T>;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn waiting_for_streaming_task_does_not_block_the_active_runtime() {
@@ -1422,5 +1541,88 @@ mod tests {
             maybe_polish_transcription_text(None, &state, 1, "User text here".to_string()).await;
 
         assert_eq!(final_text, "Polished streaming text");
+    }
+
+    #[test]
+    fn async_cleanup_keeps_cancel_hotkey_while_hotkey_cancel_is_still_active() {
+        assert!(!should_unregister_cancel_hotkey_after_async_cleanup(1, 1, true));
+    }
+
+    #[test]
+    fn async_cleanup_ignores_stale_task_after_a_new_recording_starts() {
+        assert!(!should_unregister_cancel_hotkey_after_async_cleanup(2, 1, false));
+    }
+
+    #[test]
+    fn async_cleanup_unregisters_cancel_hotkey_only_for_current_non_canceled_task() {
+        assert!(should_unregister_cancel_hotkey_after_async_cleanup(3, 3, false));
+    }
+
+    #[test]
+    fn recording_chunk_size_uses_200ms_of_device_audio() {
+        assert_eq!(recording_chunk_size_samples(16_000, 1), 3_200);
+        assert_eq!(recording_chunk_size_samples(48_000, 2), 19_200);
+    }
+
+    #[test]
+    fn flush_pending_chunk_for_stop_processes_sub_threshold_tail_audio() {
+        let chunk_buffer = Arc::new(ParkingMutex::new(vec![1_000; 1_600]));
+        let processor = Arc::new(ParkingMutex::new(
+            crate::audio::stream_processor::StreamAudioProcessor::new("off", false, None),
+        ));
+
+        let flushed = flush_pending_chunk_for_stop(&chunk_buffer, &processor, 16_000, 1);
+
+        assert_eq!(flushed, Some(vec![999; 1_600]));
+        assert!(chunk_buffer.lock().is_empty());
+    }
+
+    #[test]
+    fn flush_pending_chunk_for_stop_does_not_drop_tail_when_vad_rejects_it() {
+        let chunk_buffer = Arc::new(ParkingMutex::new(vec![1_000; 1_600]));
+        let processor = Arc::new(ParkingMutex::new(
+            crate::audio::stream_processor::StreamAudioProcessor::new("off", true, None),
+        ));
+        {
+            let mut processor_guard = processor.lock();
+            processor_guard.force_vad_result_for_test(false);
+            processor_guard.set_last_send_time_for_test(std::time::Instant::now());
+        }
+
+        let flushed = flush_pending_chunk_for_stop(&chunk_buffer, &processor, 16_000, 1);
+
+        assert_eq!(flushed, Some(vec![999; 1_600]));
+        assert!(chunk_buffer.lock().is_empty());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn send_flushed_chunk_for_stop_waits_for_capacity_when_channel_is_full() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        tx.send(vec![1]).await.unwrap();
+
+        let send_task = tokio::spawn({
+            let tx = tx.clone();
+            async move { send_flushed_chunk_for_stop(&tx, vec![2]).await }
+        });
+
+        assert_eq!(rx.recv().await, Some(vec![1]));
+        send_task.await.unwrap().unwrap();
+        assert_eq!(rx.recv().await, Some(vec![2]));
+    }
+
+    #[test]
+    fn discarding_a_canceled_result_only_clears_that_task() {
+        let state = AppState::new();
+        state.request_cancellation(5);
+        state.request_cancellation(6);
+        state.start_session(5);
+        state.is_transcribing.store(true, Ordering::SeqCst);
+
+        discard_canceled_result(&state, 5, None);
+
+        assert!(!state.is_cancellation_requested(5));
+        assert!(state.is_cancellation_requested(6));
+        assert!(!state.is_transcribing.load(Ordering::SeqCst));
+        assert!(state.get_session_text(5).is_none());
     }
 }

@@ -6,7 +6,7 @@ Welcome to AriaType. This guide helps you (human contributor or AI agent) quickl
 
 ## What is AriaType?
 
-AriaType is a **local-first voice keyboard for macOS**. Hold a hotkey, speak naturally, and release—the app transcribes your speech and types it into any active application. Powered by optimized local AI models for STT (Whisper, SenseVoice) and text polish.
+AriaType is a **local-first voice keyboard for macOS and Windows**. Hold a hotkey, speak naturally, and release—the app transcribes your speech and types it into any active application. Powered by optimized local AI models for STT (Whisper, SenseVoice) and text polish.
 
 **Tech stack**: Tauri v2 (Rust backend + React 19 frontend), strict TypeScript, Tailwind CSS, zero runtime dependencies in shared package.
 

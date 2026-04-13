@@ -60,7 +60,7 @@ We use aggressive rounding to achieve the approachable, soft aesthetic. *Note: A
 
 We use a strict **4px grid** for padding, margins, and sizing, utilizing Tailwind's spacing scale (`1` = `4px`).
 
-- **Page Layout**: `mx-auto max-w-6xl p-12` (Unified across Dashboard, Settings, History).
+- **Page Layout**: `mx-auto max-w-6xl p-10` (Unified across Dashboard, Settings, History).
 - **Card Inner Padding**: `p-5 md:p-6` (Note: Card Content/Footer usually remove top padding `pt-0` when following a Header).
 - **Tight / Internal**: `p-3` (12px), `gap-1`, `gap-2` for compact elements within cards.
 

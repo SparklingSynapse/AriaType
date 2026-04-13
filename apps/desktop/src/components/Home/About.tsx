@@ -94,17 +94,12 @@ export function About() {
   return (
     <SettingsPageLayout>
       <div className="text-center py-8">
-        <div className="relative inline-block mb-6">
-          <div className="relative">
-            <img
-              src={logo}
-              alt="AriaType"
-              className="h-24 w-24 rounded-3xl shadow-xl ring-1 ring-border"
-            />
-            <div className="absolute -bottom-2 -right-2 bg-primary rounded-2xl p-2">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
-            </div>
-          </div>
+        <div className="inline-block mb-6">
+          <img
+            src={logo}
+            alt="AriaType"
+            className="h-24 w-24 rounded-3xl shadow-xl ring-1 ring-border"
+          />
         </div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground font-serif italic">
           {t("app.name")}

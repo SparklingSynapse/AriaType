@@ -40,6 +40,11 @@ function App() {
           },
         }}
       />
+      {/* Drag region for overlay title bar - must be at root level with highest z-index */}
+      <div
+        className="fixed top-0 left-0 right-0 h-7 z-[9999]"
+        data-tauri-drag-region
+      />
       <Routes>
         <Route path="/" element={<HomeLayout />}>
           <Route index element={<Dashboard />} />

@@ -177,7 +177,37 @@ pub fn save_to_history(
 }
 
 /// Save a failed recording entry to history.
+/// Only saves if recording duration >= 500ms to avoid noise from accidental short recordings.
 pub fn save_failed_history(state: &AppState, audio_path: Option<String>, error: &str) {
+    let recording_duration_ms = {
+        let start = state
+            .recording_start_time
+            .load(std::sync::atomic::Ordering::SeqCst);
+        if start > 0 {
+            Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64
+                    - start as i64,
+            )
+        } else {
+            None
+        }
+    };
+
+    // Skip saving if recording was too short (< 500ms)
+    // This prevents noise from accidental brief recordings
+    if let Some(duration) = recording_duration_ms {
+        if duration < 500 {
+            tracing::info!(
+                duration_ms = duration,
+                "recording_to_short-skipping_history_save"
+            );
+            return;
+        }
+    }
+
     let (stt_engine, stt_model, language, is_cloud) = {
         let settings = state.settings.lock();
         let cloud_config = settings.get_active_cloud_stt_config();
@@ -203,23 +233,6 @@ pub fn save_failed_history(state: &AppState, audio_path: Option<String>, error: 
             },
             is_cloud,
         )
-    };
-
-    let recording_duration_ms = {
-        let start = state
-            .recording_start_time
-            .load(std::sync::atomic::Ordering::SeqCst);
-        if start > 0 {
-            Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as i64
-                    - start as i64,
-            )
-        } else {
-            None
-        }
     };
 
     let entry = NewTranscriptionEntry {

@@ -20,29 +20,6 @@ import {
 import i18n from "@/i18n";
 import { logger } from "@/lib/logger";
 
-import headerLight1 from "@/assets/illustrations/dashboard/header-light-1.webp";
-import headerDark1 from "@/assets/illustrations/dashboard/header-dark-1.webp";
-
-const HEADER_IMAGES = {
-  light: [headerLight1],
-  dark: [headerDark1],
-};
-
-function preloadHeaderImages() {
-  if (typeof Image === "undefined") {
-    return;
-  }
-
-  Object.values(HEADER_IMAGES)
-    .flat()
-    .forEach((src) => {
-      const image = new Image();
-      image.src = src;
-    });
-}
-
-preloadHeaderImages();
-
 type TrendPoint = DailyUsage & {
   short_date: string;
   avg_audio_seconds: number;
@@ -101,23 +78,15 @@ function useDashboardPalette() {
         border: "rgba(255,255,255,0.075)",
       }
     : {
-        primary: "#1e3a8a", // Blue-900 (Deep navy blue, rich but dark)
-        secondary: "#065f46", // Emerald-800 (Deep forest green)
-        tertiary: "#701a75", // Fuchsia-900 (Deep berry/purple)
+        primary: "#3b82f6", // Blue-500 (Clear, visible blue)
+        secondary: "#10b981", // Emerald-500 (Clear, visible green)
+        tertiary: "#a855f7", // Purple-500 (Clear, visible purple)
         textMuted: "#a3a3a3",
         grid: "rgba(0,0,0,0.04)",
         panel: "rgba(17,17,17,0.022)",
         panelStrong: "rgba(17,17,17,0.045)",
         border: "rgba(17,17,17,0.07)",
       };
-}
-
-function buildHeroFallbackBackground(palette: ChartPalette) {
-  return [
-    `radial-gradient(circle at 18% 22%, ${palette.panelStrong} 0%, transparent 34%)`,
-    `radial-gradient(circle at 82% 18%, ${palette.panel} 0%, transparent 30%)`,
-    `linear-gradient(180deg, ${palette.panelStrong} 0%, transparent 52%)`,
-  ].join(", ");
 }
 
 function ActivityRow({ label, value }: ActivityRowProps) {
@@ -338,7 +307,6 @@ export function Dashboard() {
   const [engineUsage, setEngineUsage] = useState<EngineUsage[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
-  const [randomImageIndex] = useState(() => Math.floor(Math.random() * 2));
 
   useEffect(() => {
     const fetchData = async () => {
@@ -395,98 +363,12 @@ export function Dashboard() {
   const isFocusedTrendWindow = visibleTrendData.length !== trendData.length;
 
   if (isLoading) {
-    return <div className="mx-auto max-w-6xl p-12 min-h-[calc(100vh-4rem)]" />;
+    return <div className="mx-auto max-w-6xl p-10 min-h-[calc(100vh-4rem)]" />;
   }
 
   return (
-    <div className="mx-auto max-w-6xl p-12">
+    <div className="mx-auto max-w-6xl p-10">
       <div className="space-y-5 md:space-y-6">
-        <section
-          className="relative overflow-hidden rounded-[2.5rem] border border-border/60 bg-card px-6 py-10 md:px-10 md:py-12 xl:px-12 xl:py-14"
-          style={{
-            borderColor: palette.border,
-            backgroundImage: buildHeroFallbackBackground(palette),
-          }}
-        >
-          {/* Header Background Images */}
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{ backgroundImage: buildHeroFallbackBackground(palette) }}
-          />
-          <div className="pointer-events-none absolute inset-0 bg-secondary/5 dark:bg-black/10" />
-          <img
-            src={HEADER_IMAGES.light[randomImageIndex]}
-            alt=""
-            className="pointer-events-none absolute left-1/2 top-0 min-h-full min-w-full -translate-x-1/2 object-cover dark:hidden"
-          />
-          <img
-            src={HEADER_IMAGES.dark[randomImageIndex]}
-            alt=""
-            className="pointer-events-none absolute left-1/2 top-0 hidden min-h-full min-w-full -translate-x-1/2 object-cover dark:block"
-          />
-
-          <div className="relative z-10 flex flex-col items-center text-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/50 px-3 py-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground backdrop-blur-sm">
-              <span className="text-sm">👋</span>
-              <span>{getGreeting(t)}</span>
-            </div>
-
-            <h2 className="mt-6 text-[clamp(2.5rem,5vw,4.5rem)] font-bold leading-[1.05] tracking-normal text-foreground">
-              {t("dashboard.title")}
-            </h2>
-
-            <p className="mt-4 max-w-[60ch] text-base leading-relaxed text-muted-foreground md:text-lg">
-              {t("dashboard.description")}
-            </p>
-
-            <div className="mt-8 md:mt-12 grid w-full max-w-4xl mx-auto gap-3 md:gap-5 grid-cols-4">
-              {/* Stat Card 1 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
-                <div className="text-2xl md:text-3xl">📝</div>
-                <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
-                  {formatCompactNumber(displayStats.today_count)}
-                </div>
-                <div className="text-[10px] md:text-xs font-medium text-muted-foreground leading-tight">
-                  {t("dashboard.stats.today")}
-                </div>
-              </div>
-
-              {/* Stat Card 2 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
-                <div className="text-2xl md:text-3xl">🔥</div>
-                <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
-                  {formatDayCount(t, displayStats.current_streak_days)}
-                </div>
-                <div className="text-[10px] md:text-xs font-medium text-muted-foreground leading-tight">
-                  {t("dashboard.hero.currentStreak")}
-                </div>
-              </div>
-
-              {/* Stat Card 3 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
-                <div className="text-2xl md:text-3xl">✨</div>
-                <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
-                  {formatCompactNumber(displayStats.total_count)}
-                </div>
-                <div className="text-[10px] md:text-xs font-medium text-muted-foreground leading-tight">
-                  {t("dashboard.stats.totalTranscriptions")}
-                </div>
-              </div>
-
-              {/* Stat Card 4 */}
-              <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 md:gap-2 rounded-2xl md:rounded-[1.5rem] border border-border/40 bg-background/40 p-3 text-center backdrop-blur-xl shadow-sm transition-all hover:bg-background/50">
-                <div className="text-2xl md:text-3xl">⏱️</div>
-                <div className="mt-1 text-xl md:text-2xl font-bold text-foreground">
-                  {formatLongDuration(t, displayStats.total_audio_ms)}
-                </div>
-                <div className="text-[10px] md:text-xs font-medium text-muted-foreground leading-tight">
-                  {t("dashboard.hero.totalTime")}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.42fr)_minmax(17rem,0.84fr)]">
           <div
             className="rounded-3xl border border-border bg-card px-5 py-5 md:px-6 md:py-6"
@@ -495,19 +377,15 @@ export function Dashboard() {
               backgroundImage: `linear-gradient(180deg, ${palette.panel}, transparent 36%)`,
             }}
           >
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(14rem,15rem)] xl:items-end">
-              <div>
+            <div>
                 <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                   {t("dashboard.chart.usageTitle")}
                 </div>
                 <h3 className="mt-3 max-w-[20ch] text-[1.7rem] font-semibold  text-foreground">
-                  {t("dashboard.chart.usageDesc")}
-                </h3>
-                <p className="mt-2 max-w-[58ch] text-sm leading-7 text-muted-foreground">
                   {isFocusedTrendWindow
-                    ? t("dashboard.chart.focusRecent")
-                    : t("dashboard.chart.focusFull")}
-                </p>
+                    ? t("dashboard.chart.titleRecent")
+                    : t("dashboard.chart.titleFull")}
+                </h3>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <LegendPill
                     color={palette.primary}
@@ -523,7 +401,6 @@ export function Dashboard() {
                     label={t("dashboard.chart.avgOutput")}
                   />
                 </div>
-              </div>
             </div>
 
             <div
@@ -534,7 +411,7 @@ export function Dashboard() {
                 className="pointer-events-none absolute inset-x-10 top-0 h-24 rounded-full blur-3xl"
                 style={{ backgroundColor: palette.panelStrong }}
               />
-              <div className="relative h-[240px] md:h-[280px]">
+              <div className="relative h-[200px] md:h-[220px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart
                     data={visibleTrendData}
@@ -646,13 +523,10 @@ export function Dashboard() {
             <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
               {t("dashboard.activity.title")}
             </div>
-            <h3 className="mt-3 max-w-[18ch] text-[1.7rem] font-semibold  text-foreground">
-              {t("dashboard.activity.desc")}
-            </h3>
 
             <div className="mt-6">
               <ActivityRow
-                label={t("dashboard.hero.activeDays")}
+                label={t("dashboard.stats.activeDays")}
                 value={formatDayCount(t, displayStats.active_days)}
               />
               <ActivityRow
@@ -713,24 +587,6 @@ function formatCompactNumber(value: number | null) {
   }).format(value);
 }
 
-function formatLongDuration(
-  t: ReturnType<typeof useTranslation>["t"],
-  milliseconds: number | null,
-) {
-  if (!milliseconds || milliseconds <= 0) {
-    return t("dashboard.time.none");
-  }
-
-  const minutes = milliseconds / 60_000;
-
-  if (minutes >= 60) {
-    const hours = minutes / 60;
-    return `${hours.toFixed(1)}h`;
-  }
-
-  return `${minutes.toFixed(1)}m`;
-}
-
 function formatCompactDuration(
   t: ReturnType<typeof useTranslation>["t"],
   milliseconds: number | null,
@@ -759,20 +615,4 @@ function formatDayCount(
   });
 }
 
-function getGreeting(t: ReturnType<typeof useTranslation>["t"]) {
-  const hour = new Date().getHours();
 
-  if (hour < 6) {
-    return t("dashboard.greeting.evening");
-  }
-
-  if (hour < 12) {
-    return t("dashboard.greeting.morning");
-  }
-
-  if (hour < 18) {
-    return t("dashboard.greeting.afternoon");
-  }
-
-  return t("dashboard.greeting.evening");
-}
