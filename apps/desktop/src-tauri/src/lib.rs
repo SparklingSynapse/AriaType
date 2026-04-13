@@ -12,6 +12,7 @@ pub mod events;
 pub mod history;
 pub mod polish_engine;
 pub mod provider_schema;
+pub mod services;
 pub mod shortcut;
 pub mod state;
 pub mod stt_engine;

@@ -97,7 +97,8 @@ pnpm --filter @ariatype/desktop build
 | `audio/` | Recording, resampling, VAD, beep, level meter |
 | `stt_engine/` | Whisper, SenseVoice, cloud STT (Volcengine, Deepgram, etc.) |
 | `polish_engine/` | Local LFM, Qwen polish; cloud polish (Anthropic, OpenAI) |
-| `commands/` | Tauri IPC handlers—thin layer, delegates to services |
+| `services/` | Backend use cases and orchestration; may depend on state/history/engines but never on Tauri commands |
+| `commands/` | Tauri IPC handlers and adapters—thin layer, delegates to services and performs side effects |
 | `state/` | `unified_state.rs`—single source of runtime truth |
 | `text_injector/` | Platform-specific text insertion (macOS keyboard simulation) |
 | `events/` | Backend → frontend event emission |

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { historyCommands, TranscriptionEntry, HistoryFilter } from "@/lib/tauri";
+import { events, historyCommands, TranscriptionEntry, HistoryFilter } from "@/lib/tauri";
 import { showToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import {
@@ -224,6 +224,48 @@ export function HistoryPage() {
 
   useEffect(() => {
     fetchHistory();
+  }, [fetchHistory]);
+
+  useEffect(() => {
+    let unlistenRetryState: (() => void) | undefined;
+    let unlistenRetryComplete: (() => void) | undefined;
+    let unlistenRetryError: (() => void) | undefined;
+
+    const setupListeners = async () => {
+      unlistenRetryState = await events.onRetryStateChanged((event) => {
+        logger.info("history_retry_state_changed", {
+          entry_id: event.entry_id,
+          task_id: event.task_id,
+          status: event.status,
+        });
+      });
+
+      unlistenRetryComplete = await events.onRetryComplete((event) => {
+        logger.info("history_retry_completed", {
+          entry_id: event.entry_id,
+          task_id: event.task_id,
+          text_len: event.text.length,
+        });
+        void fetchHistory();
+      });
+
+      unlistenRetryError = await events.onRetryError((event) => {
+        logger.error("history_retry_failed_event", {
+          entry_id: event.entry_id,
+          task_id: event.task_id,
+          error: event.error,
+        });
+        void fetchHistory();
+      });
+    };
+
+    void setupListeners();
+
+    return () => {
+      unlistenRetryState?.();
+      unlistenRetryComplete?.();
+      unlistenRetryError?.();
+    };
   }, [fetchHistory]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {

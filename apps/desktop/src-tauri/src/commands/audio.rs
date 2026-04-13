@@ -7,7 +7,20 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::events::{
-    EventName, RecordingStateEvent, TranscriptionCompleteEvent, TranscriptionPartialEvent,
+    emit_recording_state, emit_retry_complete, emit_retry_error, emit_retry_state, EventName,
+    RecordingStatus, RetryStatus, TranscriptionPartialEvent,
+};
+use crate::services::recording_lifecycle::{
+    prepare_recording_cancellation, prepare_recording_start, prepare_recording_stop,
+    RecordingStartGuard,
+};
+use crate::services::retry_transcription::{
+    build_retry_entry_updates, cleanup_retry_audio_file, mark_retry_entry_error,
+    prepare_retry_transcription, transcribe_retry_audio_file, update_retry_entry_success,
+};
+use crate::services::transcription_finalize::{
+    finalize_empty_transcription, finalize_failed_transcription,
+    finalize_successful_transcription, FinalizeResult,
 };
 use crate::state::app_state::AppState;
 use crate::state::unified_state::StreamingSttState;
@@ -28,6 +41,61 @@ pub struct RecordingState {
     pub is_transcribing: bool,
     pub audio_level: u32,
     pub output_path: Option<String>,
+}
+
+async fn apply_finalize_result(app: &AppHandle, task_id: u64, result: FinalizeResult) {
+    match result {
+        FinalizeResult::DeliverText(text) => {
+            let _ = app.emit(
+                EventName::TRANSCRIPTION_COMPLETE,
+                crate::events::TranscriptionCompleteEvent {
+                    text: text.clone(),
+                    task_id,
+                },
+            );
+            emit_recording_state(app, RecordingStatus::Idle, task_id);
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            crate::text_injector::insert_text(&text);
+        }
+        FinalizeResult::TransitionToIdle => {
+            emit_recording_state(app, RecordingStatus::Idle, task_id);
+        }
+        FinalizeResult::TransitionToError => {
+            emit_recording_state(app, RecordingStatus::Error, task_id);
+        }
+    }
+}
+
+async fn apply_retry_success(app: &AppHandle, entry_id: &str, task_id: u64, text: &str) {
+    emit_retry_complete(app, entry_id, task_id, text);
+    emit_retry_state(app, entry_id, RetryStatus::Completed, task_id);
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    crate::text_injector::insert_text(text);
+}
+
+fn apply_retry_error(app: &AppHandle, entry_id: &str, task_id: u64, error: &str) {
+    emit_retry_error(app, entry_id, task_id, error);
+    emit_retry_state(app, entry_id, RetryStatus::Error, task_id);
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug)]
+enum ProcessingEventTarget<'a> {
+    None,
+    Recording(&'a AppHandle),
+    Retry { app: &'a AppHandle, entry_id: &'a str },
+}
+
+impl ProcessingEventTarget<'_> {
+    fn emit_polishing(&self, task_id: u64) {
+        match self {
+            Self::None => {}
+            Self::Recording(app) => emit_recording_state(app, RecordingStatus::Polishing, task_id),
+            Self::Retry { app, entry_id } => {
+                emit_retry_state(app, entry_id, RetryStatus::Polishing, task_id);
+            }
+        }
+    }
 }
 
 #[tauri::command]
@@ -81,46 +149,44 @@ pub fn start_recording_sync(app: AppHandle) -> Result<(), String> {
     }
 
     tracing::info!("start_recording_sync_reading_settings");
-    let (cloud_stt_enabled, cloud_stt_config, language) = {
-        let settings = state.settings.lock();
-        (
-            #[allow(deprecated)]
-            settings.is_volcengine_streaming_active(),
-            settings.get_active_cloud_stt_config(),
-            settings.stt_engine_language.clone(),
-        )
-    };
+    let prepared = prepare_recording_start(&state);
+    tracing::info!(
+        cloud_stt_enabled = prepared.cloud_stt_enabled,
+        language = %prepared.language,
+        "start_recording_sync_config"
+    );
+    tracing::info!(
+        task_id = prepared.task_id,
+        "start_recording_sync_starting_session"
+    );
 
-    tracing::info!(cloud_stt_enabled, language = %language, "start_recording_sync_config");
-
-    let task_id = state.task_counter.fetch_add(1, Ordering::SeqCst) + 1;
-    tracing::info!(task_id, "start_recording_sync_starting_session");
-    state.start_session(task_id);
-
-    let start_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    state.recording_start_time.store(start_ms, Ordering::SeqCst);
-
-    start_unified_recording(&app, task_id, cloud_stt_enabled, cloud_stt_config, language)?;
+    let mut start_guard = RecordingStartGuard::new(&state, prepared.task_id);
+    if let Err(err) = start_unified_recording(
+        &app,
+        prepared.task_id,
+        prepared.cloud_stt_enabled,
+        prepared.cloud_stt_config,
+        prepared.language,
+    ) {
+        crate::commands::window::update_pill_visibility(&app);
+        return Err(err);
+    }
+    start_guard.commit();
 
     if let Some(tx) = state.level_monitor_tx.lock().as_ref() {
         let _ = tx.send(true);
     }
 
-    info!(task_id, streaming = cloud_stt_enabled, "recording_started");
-    let _ = app.emit(
-        EventName::RECORDING_STATE_CHANGED,
-        RecordingStateEvent {
-            status: "recording".to_string(),
-            task_id,
-        },
+    info!(
+        task_id = prepared.task_id,
+        streaming = prepared.cloud_stt_enabled,
+        "recording_started"
     );
+    emit_recording_state(&app, RecordingStatus::Recording, prepared.task_id);
 
     // Register cancel hotkey
     if let Some(shortcut_manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
-        let _ = shortcut_manager.register_cancel(task_id);
+        let _ = shortcut_manager.register_cancel(prepared.task_id);
     }
 
     Ok(())
@@ -149,46 +215,28 @@ fn cancel_recording_internal(
         .try_state::<AppState>()
         .ok_or_else(|| "AppState not available".to_string())?;
 
-    let task_id = state.task_counter.load(Ordering::SeqCst);
+    let active_task_id = state.task_counter.load(Ordering::SeqCst);
 
     // Hotkey-triggered cancellation must keep the hotkey registered until ESC is released.
     if unregister_cancel_hotkey_immediately {
         if let Some(shortcut_manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
-            let _ = shortcut_manager.unregister_cancel_for_task(task_id);
+            let _ = shortcut_manager.unregister_cancel_for_task(active_task_id);
         }
     }
 
-    // We should cancel if we are recording OR transcribing
-    let is_recording = state.is_recording.load(Ordering::SeqCst);
-    let is_transcribing = state.is_transcribing.load(Ordering::SeqCst);
-
-    if !is_recording && !is_transcribing {
+    let Some(prepared) = prepare_recording_cancellation(&state) else {
         return Ok(());
-    }
+    };
 
     // Stop the recorder if it's running
-    if is_recording {
+    if prepared.should_stop_recorder {
         let recorder = state.recorder.lock();
         let _ = recorder.stop();
     }
 
-    // Request cancellation for this specific task so stale async work
-    // cannot publish results after a newer session starts.
-    state.request_cancellation(task_id);
-
-    // Update states
-    state.is_recording.store(false, Ordering::SeqCst);
-    state.is_transcribing.store(false, Ordering::SeqCst);
-
-    if let Some(tx) = state.level_monitor_tx.lock().as_ref() {
-        let _ = tx.send(false);
-    }
-
-    state.clear_session();
-
     if let Some(stt) = state.streaming_stt.lock().take() {
         if let Some(handle) = stt.streaming_task.lock().take() {
-            await_streaming_task_in_background(task_id, handle);
+            await_streaming_task_in_background(prepared.task_id, handle);
         }
     }
 
@@ -196,15 +244,9 @@ fn cancel_recording_internal(
     crate::commands::window::update_pill_visibility(&app);
 
     // Emit cancellation event as 'idle' to ensure frontend correctly hides pill window
-    let _ = app.emit(
-        EventName::RECORDING_STATE_CHANGED,
-        RecordingStateEvent {
-            status: "idle".to_string(),
-            task_id,
-        },
-    );
+    emit_recording_state(&app, RecordingStatus::Idle, prepared.task_id);
 
-    tracing::info!(task_id, "recording_canceled");
+    tracing::info!(task_id = prepared.task_id, "recording_canceled");
     Ok(())
 }
 
@@ -407,13 +449,7 @@ fn start_unified_recording(
                 Ok(c) => c,
                 Err(e) => {
                     error!(task_id, error = %e, "streaming_client_create_failed");
-                    let _ = app_clone.emit(
-                        EventName::RECORDING_STATE_CHANGED,
-                        RecordingStateEvent {
-                            status: "error".to_string(),
-                            task_id,
-                        },
-                    );
+                    emit_recording_state(&app_clone, RecordingStatus::Error, task_id);
                     return;
                 }
             };
@@ -441,13 +477,7 @@ fn start_unified_recording(
                 }
                 Err(e) => {
                     error!(task_id, provider = %provider_name, error = %e, "streaming_consumer_connect_failed");
-                    let _ = app_clone.emit(
-                        EventName::RECORDING_STATE_CHANGED,
-                        RecordingStateEvent {
-                            status: "error".to_string(),
-                            task_id,
-                        },
-                    );
+                    emit_recording_state(&app_clone, RecordingStatus::Error, task_id);
                     return;
                 }
             }
@@ -502,13 +532,7 @@ fn start_unified_recording(
         }
         info!(task_id, total_chunks = chunks_sent, "audio_chunks_all_sent");
 
-        let _ = app_clone.emit(
-            EventName::RECORDING_STATE_CHANGED,
-            RecordingStateEvent {
-                status: "transcribing".to_string(),
-                task_id,
-            },
-        );
+        emit_recording_state(&app_clone, RecordingStatus::Transcribing, task_id);
         app_clone
             .state::<AppState>()
             .is_transcribing
@@ -543,7 +567,13 @@ fn start_unified_recording(
                 let (final_text, polish_time_ms) = if text.is_empty() {
                     (String::new(), 0)
                 } else {
-                    maybe_polish_transcription_text(Some(&app_clone), &state, task_id, text).await
+                    maybe_polish_transcription_text(
+                        &ProcessingEventTarget::Recording(&app_clone),
+                        &state,
+                        task_id,
+                        text,
+                    )
+                    .await
                 };
 
                 if state.is_cancellation_requested(task_id) {
@@ -558,60 +588,19 @@ fn start_unified_recording(
                     "transcription_final_received"
                 );
 
-                if !final_text.is_empty() {
-                    crate::history::commands::save_to_history(
+                let action = if !final_text.is_empty() {
+                    finalize_successful_transcription(
                         &state,
                         &raw_text,
                         &final_text,
-                        None,
-                        if polish_time_ms > 0 {
-                            Some(polish_time_ms as i64)
-                        } else {
-                            None
-                        },
-                        polish_time_ms > 0,
+                        polish_time_ms,
                         audio_path.clone(),
-                    );
-                    // Clean up audio file after successful save
-                    if let Some(ref path) = audio_path {
-                        if let Err(e) = std::fs::remove_file(path) {
-                            warn!(error = %e, path = %path, "audio_cleanup_failed");
-                        }
-                    }
-                    let _ = app_clone.emit(
-                        EventName::TRANSCRIPTION_COMPLETE,
-                        TranscriptionCompleteEvent {
-                            text: final_text.clone(),
-                            task_id,
-                        },
-                    );
-                    let _ = app_clone.emit(
-                        EventName::RECORDING_STATE_CHANGED,
-                        RecordingStateEvent {
-                            status: "idle".to_string(),
-                            task_id,
-                        },
-                    );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    let _ =
-                        crate::commands::text::do_insert_text(app_clone.clone(), final_text).await;
+                    )
                 } else {
-                    // Empty result - still save failed entry with audio for potential retry
-                    let state = app_clone.state::<AppState>();
-                    crate::history::commands::save_failed_history(
-                        &state,
-                        audio_path,
-                        "Empty transcription result",
-                    );
-                    let _ = app_clone.emit(
-                        EventName::RECORDING_STATE_CHANGED,
-                        RecordingStateEvent {
-                            status: "idle".to_string(),
-                            task_id,
-                        },
-                    );
-                }
+                    finalize_empty_transcription(&state, audio_path)
+                };
                 let _ = state.finish_session(task_id);
+                apply_finalize_result(&app_clone, task_id, action).await;
             }
             Err(e) => {
                 let state = app_clone.state::<AppState>();
@@ -621,17 +610,9 @@ fn start_unified_recording(
                 }
                 error!(task_id, error = %e, "stt_finish_failed");
 
-                // Save failed entry with audio for retry functionality
-                crate::history::commands::save_failed_history(&state, audio_path, &e);
-
-                let _ = app_clone.emit(
-                    EventName::RECORDING_STATE_CHANGED,
-                    RecordingStateEvent {
-                        status: "error".to_string(),
-                        task_id,
-                    },
-                );
+                let action = finalize_failed_transcription(&state, audio_path, &e);
                 let _ = state.finish_session(task_id);
+                apply_finalize_result(&app_clone, task_id, action).await;
             }
         }
 
@@ -757,21 +738,13 @@ pub fn stop_recording_sync(app: AppHandle) -> Result<Option<String>, String> {
         .try_state::<AppState>()
         .ok_or_else(|| "AppState not available".to_string())?;
 
-    if !state.is_recording.load(Ordering::SeqCst) {
+    let Some(prepared) = prepare_recording_stop(&state) else {
         return Ok(None);
-    }
+    };
 
     {
         let recorder = state.recorder.lock();
         recorder.stop().map_err(|e| e.to_string())?;
-    }
-
-    let task_id = state.task_counter.load(Ordering::SeqCst);
-
-    state.is_recording.store(false, Ordering::SeqCst);
-
-    if let Some(tx) = state.level_monitor_tx.lock().as_ref() {
-        let _ = tx.send(false);
     }
 
     {
@@ -798,32 +771,32 @@ pub fn stop_recording_sync(app: AppHandle) -> Result<Option<String>, String> {
                 &stt.audio_tx,
                 flushed_chunk,
             )) {
-                warn!(task_id, error = %e, "audio_tail_flush_enqueue_failed");
+                warn!(task_id = prepared.task_id, error = %e, "audio_tail_flush_enqueue_failed");
             } else {
-                info!(task_id, "audio_tail_flushed_before_finish");
+                info!(
+                    task_id = prepared.task_id,
+                    "audio_tail_flushed_before_finish"
+                );
             }
         }
 
-        info!(task_id, "stt_stopping-awaiting_final");
+        info!(task_id = prepared.task_id, "stt_stopping-awaiting_final");
         if let Some(handle) = stt.streaming_task.lock().take() {
-            await_streaming_task_in_background(task_id, handle);
+            await_streaming_task_in_background(prepared.task_id, handle);
         }
     } else {
-        warn!(task_id, "streaming_state_missing-recording_interrupted");
-        let _ = app.emit(
-            EventName::RECORDING_STATE_CHANGED,
-            RecordingStateEvent {
-                status: "idle".to_string(),
-                task_id,
-            },
+        warn!(
+            task_id = prepared.task_id,
+            "streaming_state_missing-recording_interrupted"
         );
+        emit_recording_state(&app, RecordingStatus::Idle, prepared.task_id);
     }
 
     Ok(None)
 }
 
 async fn run_local_polish(
-    app: Option<&AppHandle>,
+    event_target: &ProcessingEventTarget<'_>,
     state: &AppState,
     task_id: u64,
     accumulated_text: String,
@@ -856,15 +829,7 @@ async fn run_local_polish(
                 )
                 .with_model(model_filename);
 
-                if let Some(app_handle) = app {
-                    let _ = app_handle.emit(
-                        EventName::RECORDING_STATE_CHANGED,
-                        RecordingStateEvent {
-                            status: "polishing".to_string(),
-                            task_id,
-                        },
-                    );
-                }
+                event_target.emit_polishing(task_id);
 
                 match state.polish_manager.polish(engine_type, request).await {
                     Ok(result) if !result.text.is_empty() => {
@@ -913,9 +878,9 @@ struct LocalPolishContext {
     log_context: &'static str,
 }
 
-#[instrument(skip(app, state, accumulated_text), fields(task_id))]
+#[instrument(skip(state, accumulated_text), fields(task_id))]
 async fn maybe_polish_transcription_text(
-    app: Option<&AppHandle>,
+    event_target: &ProcessingEventTarget<'_>,
     state: &AppState,
     task_id: u64,
     accumulated_text: String,
@@ -949,7 +914,7 @@ async fn maybe_polish_transcription_text(
             warn!(task_id, provider = %cloud_polish_config.provider_type, api_key_empty = cloud_polish_config.api_key.is_empty(), model_empty = cloud_polish_config.model.is_empty(), "cloud_polish_config_incomplete-fallback_local");
 
             return run_local_polish(
-                app,
+                event_target,
                 state,
                 task_id,
                 accumulated_text,
@@ -971,15 +936,7 @@ async fn maybe_polish_transcription_text(
             polish_language,
         );
 
-        if let Some(app_handle) = app {
-            let _ = app_handle.emit(
-                EventName::RECORDING_STATE_CHANGED,
-                RecordingStateEvent {
-                    status: "polishing".to_string(),
-                    task_id,
-                },
-            );
-        }
+        event_target.emit_polishing(task_id);
 
         return match state
             .polish_manager
@@ -1014,7 +971,7 @@ async fn maybe_polish_transcription_text(
     }
 
     run_local_polish(
-        app,
+        event_target,
         state,
         task_id,
         accumulated_text,
@@ -1205,251 +1162,88 @@ pub async fn retry_transcription_internal(
     };
 
     let entry = entry.ok_or_else(|| "Entry not found".to_string())?;
+    let prepared_retry = prepare_retry_transcription(&state, id, entry)?;
+    let entry_id = prepared_retry.entry_id.clone();
+    let audio_path = prepared_retry.audio_path.clone();
+    let retry_task_id = prepared_retry.task_id;
 
-    // Check if entry is in error state
-    if entry.status != "error" {
-        return Err("Entry is not in error state".to_string());
-    }
-
-    // Get audio path
-    let audio_path = entry
-        .audio_path
-        .ok_or_else(|| "No audio file saved for this entry".to_string())?;
-
-    // Check if audio file exists
-    if !std::path::Path::new(&audio_path).exists() {
-        return Err(format!("Audio file not found: {}", audio_path));
-    }
-
-    info!(entry_id = %id, audio_path = %audio_path, "retry_transcription_started");
-
-    // Emit transcribing status
-    let _ = app.emit(
-        EventName::RECORDING_STATE_CHANGED,
-        RecordingStateEvent {
-            status: "transcribing".to_string(),
-            task_id: 0, // No task_id for retry
-        },
+    info!(
+        entry_id = %entry_id,
+        audio_path = %audio_path,
+        task_id = retry_task_id,
+        "retry_transcription_started"
     );
 
+    emit_retry_state(&app, &entry_id, RetryStatus::Transcribing, retry_task_id);
+
     // Transcribe the audio file
-    let text_result = transcribe_audio_file(&state, &audio_path).await;
+    let text_result = transcribe_retry_audio_file(&state, &prepared_retry).await;
 
     match text_result {
-        Ok(raw_text) => {
+        Ok(output) => {
             let app_clone = app.clone();
             // Apply polish if enabled
-            let (final_text, polish_time_ms) = if raw_text.is_empty() {
+            let (final_text, polish_time_ms) = if output.raw_text.is_empty() {
                 (String::new(), 0)
             } else {
-                maybe_polish_transcription_text(Some(&app), &state, 0, raw_text.clone()).await
+                maybe_polish_transcription_text(
+                    &ProcessingEventTarget::Retry {
+                        app: &app,
+                        entry_id: &entry_id,
+                    },
+                    &state,
+                    retry_task_id,
+                    output.raw_text.clone(),
+                )
+                .await
             };
 
             if final_text.is_empty() {
-                // Still failed
-                let store = state.history_store.lock();
-                store
-                    .mark_error(&id, "Retry produced empty transcription")
-                    .map_err(|e| format!("Failed to update entry: {e}"))?;
-
-                let _ = app_clone.emit(
-                    EventName::RECORDING_STATE_CHANGED,
-                    RecordingStateEvent {
-                        status: "error".to_string(),
-                        task_id: 0,
-                    },
+                mark_retry_entry_error(&state, &entry_id, "Retry produced empty transcription")?;
+                apply_retry_error(
+                    &app_clone,
+                    &entry_id,
+                    retry_task_id,
+                    "Retry produced empty transcription",
                 );
 
                 return Err("Retry produced empty transcription".to_string());
             }
 
-            // Update entry with new text
-            let (stt_engine, stt_model) = {
-                let settings = state.settings.lock();
-                let cloud_config = settings.get_active_cloud_stt_config();
-                let is_cloud = cloud_config.enabled;
-                (
-                    if is_cloud {
-                        format!("cloud-{}", cloud_config.provider_type)
-                    } else {
-                        crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(
-                            &settings.model,
-                        )
-                        .map(|et| et.as_str().to_string())
-                        .unwrap_or_else(|| "unknown".to_string())
-                    },
-                    if is_cloud {
-                        Some(cloud_config.model.clone())
-                    } else {
-                        Some(settings.model.clone())
-                    },
-                )
-            };
-
-            let updates = crate::history::store::EntryUpdates {
-                raw_text: raw_text.clone(),
-                final_text: final_text.clone(),
-                stt_engine,
-                stt_model,
-                stt_duration_ms: None,
-                polish_duration_ms: if polish_time_ms > 0 {
-                    Some(polish_time_ms as i64)
-                } else {
-                    None
-                },
-                polish_applied: polish_time_ms > 0,
-                polish_engine: None,
-            };
-
-            {
-                let store = state.history_store.lock();
-                store
-                    .update_entry(&id, updates)
-                    .map_err(|e| format!("Failed to update entry: {e}"))?;
-            }
-
-            // Clean up audio file after successful retry
-            if let Err(e) = std::fs::remove_file(&audio_path) {
-                warn!(error = %e, path = %audio_path, "audio_cleanup_failed_after_retry");
-            }
+            let updates = build_retry_entry_updates(&output, &final_text, polish_time_ms);
+            update_retry_entry_success(&state, &entry_id, updates)?;
+            cleanup_retry_audio_file(&audio_path);
 
             info!(
-                entry_id = %id,
+                entry_id = %entry_id,
                 text_len = final_text.len(),
                 "retry_transcription_completed"
             );
 
-            let _ = app_clone.emit(
-                EventName::TRANSCRIPTION_COMPLETE,
-                TranscriptionCompleteEvent {
-                    text: final_text.clone(),
-                    task_id: 0,
-                },
-            );
-
-            let _ = app_clone.emit(
-                EventName::RECORDING_STATE_CHANGED,
-                RecordingStateEvent {
-                    status: "idle".to_string(),
-                    task_id: 0,
-                },
-            );
-
-            // Insert the text
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            let _ = crate::commands::text::do_insert_text(app_clone, final_text.clone()).await;
+            apply_retry_success(&app_clone, &entry_id, retry_task_id, &final_text).await;
 
             Ok(final_text)
         }
         Err(e) => {
-            // Update error message
-            let store = state.history_store.lock();
-            store
-                .mark_error(&id, &e)
-                .map_err(|e2| format!("Failed to update entry: {e2}"))?;
-
-            let _ = app.emit(
-                EventName::RECORDING_STATE_CHANGED,
-                RecordingStateEvent {
-                    status: "error".to_string(),
-                    task_id: 0,
-                },
-            );
+            mark_retry_entry_error(&state, &entry_id, &e)?;
+            apply_retry_error(&app, &entry_id, retry_task_id, &e);
 
             Err(format!("Transcription failed: {}", e))
         }
     }
 }
 
-/// Transcribe an audio file for retry.
-async fn transcribe_audio_file(state: &AppState, audio_path: &str) -> Result<String, String> {
-    let (model_name, lang) = {
-        let settings = state.settings.lock();
-        (settings.model.clone(), settings.stt_engine_language.clone())
-    };
-
-    // Read audio file
-    let reader = hound::WavReader::open(audio_path)
-        .map_err(|e| format!("Failed to open audio file: {}", e))?;
-
-    let spec = reader.spec();
-    let samples: Vec<i16> = reader.into_samples().filter_map(|s| s.ok()).collect();
-
-    if samples.is_empty() {
-        return Err("Audio file is empty".to_string());
-    }
-
-    // Convert to f32 samples
-    let samples_f32: Vec<f32> = samples.iter().map(|&s| s as f32 / 32768.0).collect();
-
-    // Convert to mono if stereo
-    let mono_f32 = if spec.channels == 2 {
-        samples_f32
-            .chunks(2)
-            .map(|chunk| {
-                let left = chunk.first().copied().unwrap_or(0.0);
-                let right = chunk.get(1).copied().unwrap_or(0.0);
-                (left + right) / 2.0
-            })
-            .collect::<Vec<f32>>()
-    } else {
-        samples_f32.clone()
-    };
-
-    // Resample to 16kHz if needed
-    let samples_16k_f32 = if spec.sample_rate != 16000 {
-        let ratio = 16000.0 / spec.sample_rate as f32;
-        let target_len = (mono_f32.len() as f32 * ratio) as usize;
-        mono_f32
-            .iter()
-            .enumerate()
-            .filter_map(|(i, _)| {
-                let src_idx = (i as f32 / ratio) as usize;
-                mono_f32.get(src_idx).copied()
-            })
-            .take(target_len)
-            .collect()
-    } else {
-        mono_f32
-    };
-
-    // Resolve model
-    let (_engine_type, resolved_model_name) = state
-        .engine_manager
-        .resolve_available_model(&model_name, &lang);
-
-    let engine_type =
-        crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&resolved_model_name)
-            .ok_or_else(|| "Unknown engine type".to_string())?;
-
-    // Create transcription request
-    let request = crate::stt_engine::traits::TranscriptionRequest::new(samples_16k_f32)
-        .with_model(resolved_model_name.clone())
-        .with_language(lang.clone());
-
-    // Transcribe
-    let result = state
-        .engine_manager
-        .transcribe(engine_type, request)
-        .await
-        .map_err(|e| format!("Transcription failed: {}", e))?;
-
-    Ok(result.text)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        await_streaming_task_in_background, discard_canceled_result,
-        flush_pending_chunk_for_stop, maybe_polish_transcription_text,
-        recording_chunk_size_samples,
-        send_flushed_chunk_for_stop,
-        should_unregister_cancel_hotkey_after_async_cleanup,
+        await_streaming_task_in_background, discard_canceled_result, flush_pending_chunk_for_stop,
+        maybe_polish_transcription_text, recording_chunk_size_samples, send_flushed_chunk_for_stop,
+        should_unregister_cancel_hotkey_after_async_cleanup, ProcessingEventTarget,
     };
     use crate::commands::settings::CloudProviderConfig;
     use crate::state::app_state::AppState;
-    use std::sync::Arc;
     use std::sync::atomic::Ordering;
+    use std::sync::Arc;
     use std::time::Duration;
     use wiremock::matchers::{body_partial_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1538,24 +1332,36 @@ mod tests {
         }
 
         let (final_text, _polish_time_ms) =
-            maybe_polish_transcription_text(None, &state, 1, "User text here".to_string()).await;
+            maybe_polish_transcription_text(
+                &ProcessingEventTarget::None,
+                &state,
+                1,
+                "User text here".to_string(),
+            )
+            .await;
 
         assert_eq!(final_text, "Polished streaming text");
     }
 
     #[test]
     fn async_cleanup_keeps_cancel_hotkey_while_hotkey_cancel_is_still_active() {
-        assert!(!should_unregister_cancel_hotkey_after_async_cleanup(1, 1, true));
+        assert!(!should_unregister_cancel_hotkey_after_async_cleanup(
+            1, 1, true
+        ));
     }
 
     #[test]
     fn async_cleanup_ignores_stale_task_after_a_new_recording_starts() {
-        assert!(!should_unregister_cancel_hotkey_after_async_cleanup(2, 1, false));
+        assert!(!should_unregister_cancel_hotkey_after_async_cleanup(
+            2, 1, false
+        ));
     }
 
     #[test]
     fn async_cleanup_unregisters_cancel_hotkey_only_for_current_non_canceled_task() {
-        assert!(should_unregister_cancel_hotkey_after_async_cleanup(3, 3, false));
+        assert!(should_unregister_cancel_hotkey_after_async_cleanup(
+            3, 3, false
+        ));
     }
 
     #[test]

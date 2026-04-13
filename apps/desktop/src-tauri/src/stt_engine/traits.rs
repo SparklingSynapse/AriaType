@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// Each cloud engine interprets these fields differently based on its API capabilities:
 /// - **Volcengine**: glossary → `context.hotwords[]`, domain → `context.context_data[]`
 /// - **ElevenLabs**: all fields combined → `previous_text` (first audio chunk)
-/// - **Qwen Omni**: currently unused (STT model is opaque)
+/// - **Aliyun Realtime**: currently unused (STT model is opaque)
 /// - **Whisper**: all fields combined into `initial_prompt` string
 #[derive(Debug, Clone, Default)]
 pub struct SttContext {

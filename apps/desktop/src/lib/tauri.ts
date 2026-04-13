@@ -42,6 +42,24 @@ export interface TranscriptionCompleteEvent {
   task_id: number;
 }
 
+export interface RetryStateEvent {
+  entry_id: string;
+  status: string;
+  task_id: number;
+}
+
+export interface RetryCompleteEvent {
+  entry_id: string;
+  text: string;
+  task_id: number;
+}
+
+export interface RetryErrorEvent {
+  entry_id: string;
+  error: string;
+  task_id: number;
+}
+
 export interface CloudProviderConfig {
   enabled: boolean;
   provider_type: string;
@@ -371,6 +389,27 @@ export const events = {
     return listen<TranscriptionCompleteEvent>("transcription-complete", (event) => {
       const { task_id, text } = event.payload;
       logger.info("event_received-transcription_complete", { task_id, text_len: text.length });
+      callback(event.payload);
+    });
+  },
+  onRetryStateChanged: (callback: (event: RetryStateEvent) => void) => {
+    return listen<RetryStateEvent>("retry-state-changed", (event) => {
+      const { entry_id, task_id, status } = event.payload;
+      logger.info("event_received-retry_state_changed", { entry_id, task_id, status });
+      callback(event.payload);
+    });
+  },
+  onRetryComplete: (callback: (event: RetryCompleteEvent) => void) => {
+    return listen<RetryCompleteEvent>("retry-complete", (event) => {
+      const { entry_id, task_id, text } = event.payload;
+      logger.info("event_received-retry_complete", { entry_id, task_id, text_len: text.length });
+      callback(event.payload);
+    });
+  },
+  onRetryError: (callback: (event: RetryErrorEvent) => void) => {
+    return listen<RetryErrorEvent>("retry-error", (event) => {
+      const { entry_id, task_id, error } = event.payload;
+      logger.error("event_received-retry_error", { entry_id, task_id, error });
       callback(event.payload);
     });
   },

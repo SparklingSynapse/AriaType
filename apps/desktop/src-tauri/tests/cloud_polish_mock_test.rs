@@ -1,5 +1,5 @@
 use ariatype_lib::polish_engine::{
-    CloudPolishEngine, CloudProviderConfig, PolishEngine, PolishRequest,
+    CloudPolishEngine, CloudProviderConfig, PolishEngine, PolishRequest, CORE_POLISH_CONSTRAINT,
 };
 use std::time::Duration;
 use wiremock::matchers::{body_partial_json, header, method, path};
@@ -8,12 +8,16 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[tokio::test]
 async fn test_anthropic_polish_request_format() {
     let mock_server = MockServer::start().await;
+    let expected_system_prompt = format!(
+        "{}\n\nUSER RULES:\n{}",
+        CORE_POLISH_CONSTRAINT, "System instruction here"
+    );
 
     // We expect an Anthropic-compatible JSON body
     let expected_body = serde_json::json!({
         "model": "claude-3-haiku",
         "max_tokens": 4096,
-        "system": "System instruction here",
+        "system": expected_system_prompt,
         "messages": [
             {
                 "role": "user",
@@ -69,6 +73,10 @@ async fn test_anthropic_polish_request_format() {
 #[tokio::test]
 async fn test_openai_polish_request_format() {
     let mock_server = MockServer::start().await;
+    let expected_system_prompt = format!(
+        "{}\n\nUSER RULES:\n{}",
+        CORE_POLISH_CONSTRAINT, "System instruction here"
+    );
 
     // We expect an OpenAI-compatible JSON body
     let expected_body = serde_json::json!({
@@ -77,7 +85,7 @@ async fn test_openai_polish_request_format() {
         "messages": [
             {
                 "role": "system",
-                "content": "System instruction here"
+                "content": expected_system_prompt
             },
             {
                 "role": "user",

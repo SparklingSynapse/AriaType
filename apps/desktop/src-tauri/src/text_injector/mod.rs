@@ -20,3 +20,9 @@ pub fn create_injector() -> Box<dyn TextInjector> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     compile_error!("text_injector: unsupported platform");
 }
+
+pub fn insert_text(text: &str) {
+    let injector = create_injector();
+    // Clipboard handling is implemented inside the platform injector when needed.
+    injector.insert(text, &|| {});
+}

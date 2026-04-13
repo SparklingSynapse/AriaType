@@ -135,7 +135,7 @@ fn test_migration_missing_cloud_stt() {
 
 #[test]
 fn test_provider_type_validation() {
-    let valid_providers = vec!["volcengine-streaming", "qwen-omni-realtime", "elevenlabs"];
+    let valid_providers = vec!["volcengine-streaming", "aliyun-stream", "elevenlabs"];
 
     for provider in valid_providers {
         let config = CloudSttConfig {

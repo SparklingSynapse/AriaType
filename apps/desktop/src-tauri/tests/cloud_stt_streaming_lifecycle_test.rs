@@ -33,10 +33,10 @@ fn create_volcengine_config() -> CloudSttConfig {
     }
 }
 
-fn create_qwen_config() -> CloudSttConfig {
+fn create_aliyun_config() -> CloudSttConfig {
     CloudSttConfig {
         enabled: true,
-        provider_type: "qwen-omni-realtime".to_string(),
+        provider_type: "aliyun-stream".to_string(),
         api_key: mock_credentials::API_KEY.to_string(),
         app_id: "".to_string(),
         base_url: "wss://dashscope.aliyuncs.com/api-ws/v1/realtime".to_string(),
@@ -775,8 +775,8 @@ async fn test_volcengine_auth_error() {
 }
 
 #[tokio::test]
-async fn test_qwen_auth_error() {
-    let config = create_qwen_config();
+async fn test_aliyun_auth_error() {
+    let config = create_aliyun_config();
     let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
 
     let result = client.connect().await;
@@ -853,9 +853,13 @@ async fn test_streaming_client_provider_name() {
     .unwrap();
     assert_eq!(volcengine.provider_name(), "Volcengine");
 
-    let qwen =
-        StreamingSttClient::new(create_qwen_config(), Some("zh"), SttContext::default()).unwrap();
-    assert_eq!(qwen.provider_name(), "Qwen Omni");
+    let aliyun = StreamingSttClient::new(
+        create_aliyun_config(),
+        Some("zh"),
+        SttContext::default(),
+    )
+    .unwrap();
+    assert_eq!(aliyun.provider_name(), "Aliyun");
 
     let elevenlabs = StreamingSttClient::new(
         create_elevenlabs_config(),

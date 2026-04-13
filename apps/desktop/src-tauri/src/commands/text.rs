@@ -3,18 +3,16 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tracing::instrument;
 
 /// Shared helper used by both the `insert_text` command and the audio pipeline.
-#[instrument(skip(_app), fields(text_len = text.len()))]
-pub async fn do_insert_text(_app: AppHandle, text: String) {
-    let injector = crate::text_injector::create_injector();
-    // The write_clipboard callback is a no-op: clipboard handling is done
-    // natively inside MacosInjector (NSPasteboard save/restore).
-    injector.insert(&text, &|| {});
+#[instrument(fields(text_len = text.len()))]
+pub fn do_insert_text(text: &str) {
+    crate::text_injector::insert_text(text);
 }
 
 #[tauri::command]
 #[instrument(skip(app), fields(text_len = text.len()), ret, err)]
 pub async fn insert_text(app: AppHandle, text: String) -> Result<(), String> {
-    do_insert_text(app, text).await;
+    let _ = app;
+    do_insert_text(&text);
     Ok(())
 }
 

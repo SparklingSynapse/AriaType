@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info};
 
-const CLOUD_POLISH_TIMEOUT: Duration = Duration::from_secs(15);
+const CLOUD_POLISH_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct CloudProviderConfig {
@@ -80,33 +80,41 @@ impl CloudPolishEngine {
     }
 
     fn get_api_url(&self) -> String {
-        if !self.config.base_url.is_empty() {
-            let base = self.config.base_url.trim_end_matches('/');
-            // Check if base_url already ends with a valid API path
-            // Anthropic: /v1/messages, OpenAI: /v1/chat/completions
-            if base.ends_with("/messages") || base.ends_with("/chat/completions") {
-                base.to_string()
-            } else if base.ends_with("/v1") {
-                // base_url already has /v1, append the specific endpoint
-                match self.config.provider_type.as_str() {
-                    "anthropic" => format!("{}/messages", base),
-                    "openai" => format!("{}/chat/completions", base),
-                    _ => format!("{}/chat/completions", base),
-                }
-            } else {
-                // base_url is just a domain, add full path
-                match self.config.provider_type.as_str() {
-                    "anthropic" => format!("{}/v1/messages", base),
-                    "openai" => format!("{}/v1/chat/completions", base),
-                    _ => format!("{}/v1/chat/completions", base),
-                }
-            }
-        } else {
-            match self.config.provider_type.as_str() {
-                "anthropic" => "https://api.anthropic.com/v1/messages".to_string(),
-                "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
-                _ => format!("{}/v1/messages", self.config.base_url.trim_end_matches('/')),
-            }
+        let endpoint_path = self.provider_endpoint_path();
+
+        if self.config.base_url.is_empty() {
+            return format!("{}{}", self.default_api_origin(), endpoint_path);
+        }
+
+        let base = self.config.base_url.trim_end_matches('/');
+        if base.ends_with("/messages") || base.ends_with("/chat/completions") {
+            return base.to_string();
+        }
+
+        if base.ends_with(endpoint_path) {
+            return base.to_string();
+        }
+
+        if base.ends_with("/v1") {
+            return format!("{base}{}", endpoint_path.trim_start_matches("/v1"));
+        }
+
+        format!("{base}{endpoint_path}")
+    }
+
+    fn provider_endpoint_path(&self) -> &'static str {
+        match self.config.provider_type.as_str() {
+            "anthropic" => "/v1/messages",
+            "openai" => "/v1/chat/completions",
+            _ => "/v1/chat/completions",
+        }
+    }
+
+    fn default_api_origin(&self) -> &'static str {
+        match self.config.provider_type.as_str() {
+            "anthropic" => "https://api.anthropic.com",
+            "openai" => "https://api.openai.com",
+            _ => "https://api.openai.com",
         }
     }
 
@@ -499,6 +507,21 @@ mod tests {
         );
         let engine = CloudPolishEngine::new(config);
         assert_eq!(engine.get_api_url(), "https://api.example.com/v1/messages");
+    }
+
+    #[test]
+    fn test_get_api_url_already_has_chat_completions() {
+        let config = test_config(
+            "openai",
+            "test",
+            "https://api.example.com/v1/chat/completions",
+            "model",
+        );
+        let engine = CloudPolishEngine::new(config);
+        assert_eq!(
+            engine.get_api_url(),
+            "https://api.example.com/v1/chat/completions"
+        );
     }
 
     #[test]

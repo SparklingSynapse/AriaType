@@ -104,10 +104,13 @@ Events emitted through `events/` module:
 
 | Event | Payload | Trigger |
 |-------|---------|---------|
-| `recording-state-changed` | `RecordingState` | State transitions |
+| `recording-state-changed` | `RecordingState` | Recording session state transitions only |
 | `audio-level` | `number` (0.0-1.0) | Level meter updates |
 | `transcription-complete` | `TranscriptionResult` | Successful transcription |
 | `transcription-error` | `string` (error message) | Engine failure |
+| `retry-state-changed` | `{ entry_id, task_id, status }` | History retry state transitions |
+| `retry-complete` | `{ entry_id, task_id, text }` | Successful history retry |
+| `retry-error` | `{ entry_id, task_id, error }` | Failed history retry |
 | `model-download-progress` | `{ progress: number, model: string }` | Model download |
 | `polish-progress` | `string` | Polish operation update |
 

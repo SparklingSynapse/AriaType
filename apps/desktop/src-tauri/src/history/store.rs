@@ -55,10 +55,12 @@ pub struct EntryUpdates {
     pub final_text: String,
     pub stt_engine: String,
     pub stt_model: Option<String>,
+    pub language: Option<String>,
     pub stt_duration_ms: Option<i64>,
     pub polish_duration_ms: Option<i64>,
     pub polish_applied: bool,
     pub polish_engine: Option<String>,
+    pub is_cloud: bool,
 }
 
 impl HistoryStore {
@@ -345,18 +347,20 @@ impl HistoryStore {
         conn.execute(
             "UPDATE transcription_history SET \
              raw_text = ?1, final_text = ?2, stt_engine = ?3, stt_model = ?4, \
-             stt_duration_ms = ?5, polish_duration_ms = ?6, polish_applied = ?7, \
-             polish_engine = ?8, status = 'success', error = NULL \
-             WHERE id = ?9",
+             language = ?5, stt_duration_ms = ?6, polish_duration_ms = ?7, polish_applied = ?8, \
+             polish_engine = ?9, is_cloud = ?10, status = 'success', error = NULL \
+             WHERE id = ?11",
             params![
                 updates.raw_text,
                 updates.final_text,
                 updates.stt_engine,
                 updates.stt_model,
+                updates.language,
                 updates.stt_duration_ms,
                 updates.polish_duration_ms,
                 updates.polish_applied as i32,
                 updates.polish_engine,
+                updates.is_cloud as i32,
                 id,
             ],
         )
@@ -991,10 +995,12 @@ mod tests {
             final_text: "Retry Result".to_string(),
             stt_engine: "Whisper".to_string(),
             stt_model: Some("base".to_string()),
+            language: Some("en-US".to_string()),
             stt_duration_ms: Some(450),
             polish_duration_ms: Some(100),
             polish_applied: true,
             polish_engine: Some("cloud".to_string()),
+            is_cloud: false,
         };
         store.update_entry("entry-1", updates).unwrap();
 

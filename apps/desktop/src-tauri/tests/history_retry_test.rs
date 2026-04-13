@@ -115,10 +115,12 @@ fn retry_success_updates_entry() {
         final_text: "Retry transcription result".to_string(),
         stt_engine: "Whisper".to_string(),
         stt_model: Some("base".to_string()),
+        language: Some("en-US".to_string()),
         stt_duration_ms: Some(450),
         polish_duration_ms: None,
         polish_applied: false,
         polish_engine: None,
+        is_cloud: false,
     };
     store.update_entry(&id, updates).unwrap();
 
@@ -173,10 +175,12 @@ fn retry_multiple_attempts_state_transitions() {
         final_text: "Finally works".to_string(),
         stt_engine: "Whisper".to_string(),
         stt_model: None,
+        language: None,
         stt_duration_ms: Some(300),
         polish_duration_ms: None,
         polish_applied: false,
         polish_engine: None,
+        is_cloud: false,
     };
     store.update_entry(&id, updates).unwrap();
 
