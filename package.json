@@ -26,7 +26,7 @@
     "release:local": "pnpm tauri:build:mac && pnpm build:website",
     "release:local:universal": "pnpm tauri:build:mac-universal && pnpm build:website",
     "dev:website": "pnpm --filter @ariatype/website dev",
-    "build:website": "pnpm --filter @ariatype/website build"
+    "build:website": "pnpm --filter @ariatype/website build && node scripts/sync-website-export.mjs"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm check:md-links"
