@@ -6,7 +6,15 @@ use crate::state::app_state::AppState;
 pub enum FinalizeResult {
     DeliverText(String),
     TransitionToIdle,
-    TransitionToError,
+    TransitionToErrorThenIdle,
+}
+
+fn cleanup_audio_file(audio_path: Option<&str>) {
+    if let Some(path) = audio_path {
+        if let Err(error) = std::fs::remove_file(path) {
+            warn!(error = %error, path = %path, "audio_cleanup_failed");
+        }
+    }
 }
 
 pub fn finalize_successful_transcription(
@@ -26,13 +34,14 @@ pub fn finalize_successful_transcription(
         audio_path.clone(),
     );
 
-    if let Some(path) = audio_path.as_deref() {
-        if let Err(error) = std::fs::remove_file(path) {
-            warn!(error = %error, path = %path, "audio_cleanup_failed");
-        }
-    }
+    cleanup_audio_file(audio_path.as_deref());
 
     FinalizeResult::DeliverText(final_text.to_string())
+}
+
+pub fn finalize_silent_recording(audio_path: Option<String>) -> FinalizeResult {
+    cleanup_audio_file(audio_path.as_deref());
+    FinalizeResult::TransitionToIdle
 }
 
 pub fn finalize_empty_transcription(
@@ -49,13 +58,13 @@ pub fn finalize_failed_transcription(
     error: &str,
 ) -> FinalizeResult {
     crate::history::commands::save_failed_history(state, audio_path, error);
-    FinalizeResult::TransitionToError
+    FinalizeResult::TransitionToErrorThenIdle
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        finalize_empty_transcription, finalize_failed_transcription,
+        finalize_empty_transcription, finalize_failed_transcription, finalize_silent_recording,
         finalize_successful_transcription, FinalizeResult,
     };
     use crate::history::models::HistoryFilter;
@@ -125,13 +134,55 @@ mod tests {
     }
 
     #[test]
+    fn finalize_silent_recording_cleans_up_without_writing_history() {
+        let state = AppState::new();
+        set_recording_long_enough(&state);
+        let audio = NamedTempFile::new().unwrap();
+        let audio_path = audio.path().to_path_buf();
+        let history_before = state
+            .history_store
+            .lock()
+            .get_history(&HistoryFilter {
+                search: None,
+                engine: None,
+                status: None,
+                date_from: None,
+                date_to: None,
+                limit: Some(5),
+                offset: Some(0),
+            })
+            .unwrap()
+            .len();
+
+        let action = finalize_silent_recording(Some(audio_path.display().to_string()));
+
+        assert_eq!(action, FinalizeResult::TransitionToIdle);
+        assert!(!audio_path.exists());
+
+        let entries = state
+            .history_store
+            .lock()
+            .get_history(&HistoryFilter {
+                search: None,
+                engine: None,
+                status: None,
+                date_from: None,
+                date_to: None,
+                limit: Some(5),
+                offset: Some(0),
+            })
+            .unwrap();
+        assert_eq!(entries.len(), history_before);
+    }
+
+    #[test]
     fn finalize_failed_transcription_saves_failed_history_and_returns_error() {
         let state = AppState::new();
         set_recording_long_enough(&state);
 
         let action = finalize_failed_transcription(&state, None, "network failed");
 
-        assert_eq!(action, FinalizeResult::TransitionToError);
+        assert_eq!(action, FinalizeResult::TransitionToErrorThenIdle);
 
         let entries = state
             .history_store

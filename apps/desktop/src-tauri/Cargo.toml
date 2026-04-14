@@ -69,6 +69,9 @@ objc2-core-graphics = "0.3"
 [target.'cfg(target_os = "windows")'.dependencies]
 enigo = { version = "0.6", default-features = false }
 
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2.4.1"
+
 [profile.release]
 panic = "unwind"
 codegen-units = 16

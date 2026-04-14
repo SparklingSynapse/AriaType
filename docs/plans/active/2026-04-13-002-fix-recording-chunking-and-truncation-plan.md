@@ -97,6 +97,7 @@ Current runtime chunking was hardcoded to 500ms even though cloud streaming prov
 - Cloud STT requests receive smaller, more frequent processed chunks.
 - Very short utterances between 200ms and 500ms should improve.
 - Explicit stop now sends the final buffered remainder even if normal streaming VAD would have skipped it.
+- Recording sessions that stop before any processed chunk is emitted now return to idle silently instead of surfacing a provider-level invalid-audio error.
 - Start clipping before capture begins still remains possible until preroll/ring-buffer work is added.
 
 ## Risks & Dependencies
@@ -109,6 +110,8 @@ Current runtime chunking was hardcoded to 500ms even though cloud streaming prov
 - `apps/desktop/src-tauri/src/commands/audio.rs` now flushes pending stop-time PCM through `process_chunk_for_stop_flush()` instead of the normal streaming `process_chunk()` path.
 - `apps/desktop/src-tauri/src/audio/stream_processor.rs` now centralizes chunk processing in `process_chunk_inner()` and uses `force_send` only for explicit stop flushes.
 - Added `flush_pending_chunk_for_stop_does_not_drop_tail_when_vad_rejects_it` to prove a VAD-rejected tail chunk is still delivered on stop.
+- `apps/desktop/src-tauri/src/commands/audio.rs` now short-circuits `chunks_sent == 0` sessions to a silent idle finalize path so cloud providers never see an empty-audio `finish()` request.
+- `apps/desktop/src-tauri/src/services/transcription_finalize.rs` now exposes a dedicated silent finalize helper and test coverage that confirms no history entry is written for zero-chunk sessions.
 - Verified with:
   - `cargo test --lib flush_pending_chunk_for_stop_ -- --nocapture`
   - `cargo test --lib commands::audio::tests:: -- --nocapture`

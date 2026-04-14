@@ -19,8 +19,8 @@ use crate::services::retry_transcription::{
     prepare_retry_transcription, transcribe_retry_audio_file, update_retry_entry_success,
 };
 use crate::services::transcription_finalize::{
-    finalize_empty_transcription, finalize_failed_transcription, finalize_successful_transcription,
-    FinalizeResult,
+    finalize_empty_transcription, finalize_failed_transcription, finalize_silent_recording,
+    finalize_successful_transcription, FinalizeResult,
 };
 use crate::state::app_state::AppState;
 use crate::state::unified_state::StreamingSttState;
@@ -34,6 +34,43 @@ use crate::utils::AppPaths;
 const AUDIO_ACTIVITY_ON_THRESHOLD: u32 = 40;
 const AUDIO_ACTIVITY_OFF_THRESHOLD: u32 = 25;
 const RECORDING_CHUNK_DURATION_MS: usize = 200;
+const ERROR_STATE_SETTLE_MS: u64 = 2000;
+
+fn should_emit_error_recovery_idle(
+    current_task_id: u64,
+    error_task_id: u64,
+    is_recording: bool,
+    is_transcribing: bool,
+) -> bool {
+    current_task_id == error_task_id && !is_recording && !is_transcribing
+}
+
+async fn emit_recording_error_then_idle(app: &AppHandle, task_id: u64) {
+    emit_recording_state(app, RecordingStatus::Error, task_id);
+    tokio::time::sleep(tokio::time::Duration::from_millis(ERROR_STATE_SETTLE_MS)).await;
+
+    let state = app.state::<AppState>();
+    let current_task_id = state.task_counter.load(Ordering::SeqCst);
+    let is_recording = state.is_recording.load(Ordering::SeqCst);
+    let is_transcribing = state.is_transcribing.load(Ordering::SeqCst);
+    if !should_emit_error_recovery_idle(
+        current_task_id,
+        task_id,
+        is_recording,
+        is_transcribing,
+    ) {
+        info!(
+            task_id,
+            current_task_id,
+            is_recording,
+            is_transcribing,
+            "error_recovery_idle_skipped_for_stale_task"
+        );
+        return;
+    }
+
+    emit_recording_state(app, RecordingStatus::Idle, task_id);
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingState {
@@ -60,8 +97,8 @@ async fn apply_finalize_result(app: &AppHandle, task_id: u64, result: FinalizeRe
         FinalizeResult::TransitionToIdle => {
             emit_recording_state(app, RecordingStatus::Idle, task_id);
         }
-        FinalizeResult::TransitionToError => {
-            emit_recording_state(app, RecordingStatus::Error, task_id);
+        FinalizeResult::TransitionToErrorThenIdle => {
+            emit_recording_error_then_idle(app, task_id).await;
         }
     }
 }
@@ -452,7 +489,7 @@ fn start_unified_recording(
                 Ok(c) => c,
                 Err(e) => {
                     error!(task_id, error = %e, "streaming_client_create_failed");
-                    emit_recording_state(&app_clone, RecordingStatus::Error, task_id);
+                    emit_recording_error_then_idle(&app_clone, task_id).await;
                     return;
                 }
             };
@@ -480,7 +517,7 @@ fn start_unified_recording(
                 }
                 Err(e) => {
                     error!(task_id, provider = %provider_name, error = %e, "streaming_consumer_connect_failed");
-                    emit_recording_state(&app_clone, RecordingStatus::Error, task_id);
+                    emit_recording_error_then_idle(&app_clone, task_id).await;
                     return;
                 }
             }
@@ -535,87 +572,97 @@ fn start_unified_recording(
         }
         info!(task_id, total_chunks = chunks_sent, "audio_chunks_all_sent");
 
-        emit_recording_state(&app_clone, RecordingStatus::Transcribing, task_id);
-        app_clone
-            .state::<AppState>()
-            .is_transcribing
-            .store(true, Ordering::SeqCst);
-
-        debug!(task_id, "consumer_finish_invoked");
-        let text_result: Result<String, String> = consumer.finish().await;
-
         let state_inner = app_clone.state::<AppState>();
         if state_inner.is_cancellation_requested(task_id) {
             discard_canceled_result(&state_inner, task_id, None);
             return;
         }
 
-        // Save raw audio to file regardless of success or failure
-        let audio_path = {
-            let state = app_clone.state::<AppState>();
-            let streaming_stt = state.streaming_stt.lock();
-            streaming_stt.as_ref().and_then(|s| {
-                crate::audio::wav_writer::save_raw_audio_to_file(s, sr_for_async, ch_for_async)
-            })
-        };
+        if chunks_sent == 0 {
+            info!(task_id, "transcription_skipped_no_audio_chunks");
+            let action = finalize_silent_recording(None);
+            let _ = state_inner.finish_session(task_id);
+            apply_finalize_result(&app_clone, task_id, action).await;
+        } else {
+            emit_recording_state(&app_clone, RecordingStatus::Transcribing, task_id);
+            state_inner.is_transcribing.store(true, Ordering::SeqCst);
 
-        match text_result {
-            Ok(text) => {
-                let raw_text = text.clone();
-                let state = app_clone.state::<AppState>();
-                if state.is_cancellation_requested(task_id) {
-                    discard_canceled_result(&state, task_id, audio_path.as_ref());
-                    return;
-                }
-                let (final_text, polish_time_ms) = if text.is_empty() {
-                    (String::new(), 0)
-                } else {
-                    maybe_polish_transcription_text(
-                        &ProcessingEventTarget::Recording(&app_clone),
-                        &state,
-                        task_id,
-                        text,
-                    )
-                    .await
-                };
+            debug!(task_id, "consumer_finish_invoked");
+            let text_result: Result<String, String> = consumer.finish().await;
 
-                if state.is_cancellation_requested(task_id) {
-                    discard_canceled_result(&state, task_id, audio_path.as_ref());
-                    return;
-                }
-
-                info!(
-                    task_id,
-                    text_len = final_text.len(),
-                    audio_saved = audio_path.is_some(),
-                    "transcription_final_received"
-                );
-
-                let action = if !final_text.is_empty() {
-                    finalize_successful_transcription(
-                        &state,
-                        &raw_text,
-                        &final_text,
-                        polish_time_ms,
-                        audio_path.clone(),
-                    )
-                } else {
-                    finalize_empty_transcription(&state, audio_path)
-                };
-                let _ = state.finish_session(task_id);
-                apply_finalize_result(&app_clone, task_id, action).await;
+            let state_inner = app_clone.state::<AppState>();
+            if state_inner.is_cancellation_requested(task_id) {
+                discard_canceled_result(&state_inner, task_id, None);
+                return;
             }
-            Err(e) => {
-                let state = app_clone.state::<AppState>();
-                if state.is_cancellation_requested(task_id) {
-                    discard_canceled_result(&state, task_id, audio_path.as_ref());
-                    return;
-                }
-                error!(task_id, error = %e, "stt_finish_failed");
 
-                let action = finalize_failed_transcription(&state, audio_path, &e);
-                let _ = state.finish_session(task_id);
-                apply_finalize_result(&app_clone, task_id, action).await;
+            // Save raw audio to file regardless of success or failure
+            let audio_path = {
+                let state = app_clone.state::<AppState>();
+                let streaming_stt = state.streaming_stt.lock();
+                streaming_stt.as_ref().and_then(|s| {
+                    crate::audio::wav_writer::save_raw_audio_to_file(s, sr_for_async, ch_for_async)
+                })
+            };
+
+            match text_result {
+                Ok(text) => {
+                    let raw_text = text.clone();
+                    let state = app_clone.state::<AppState>();
+                    if state.is_cancellation_requested(task_id) {
+                        discard_canceled_result(&state, task_id, audio_path.as_ref());
+                        return;
+                    }
+                    let (final_text, polish_time_ms) = if text.is_empty() {
+                        (String::new(), 0)
+                    } else {
+                        maybe_polish_transcription_text(
+                            &ProcessingEventTarget::Recording(&app_clone),
+                            &state,
+                            task_id,
+                            text,
+                        )
+                        .await
+                    };
+
+                    if state.is_cancellation_requested(task_id) {
+                        discard_canceled_result(&state, task_id, audio_path.as_ref());
+                        return;
+                    }
+
+                    info!(
+                        task_id,
+                        text_len = final_text.len(),
+                        audio_saved = audio_path.is_some(),
+                        "transcription_final_received"
+                    );
+
+                    let action = if !final_text.is_empty() {
+                        finalize_successful_transcription(
+                            &state,
+                            &raw_text,
+                            &final_text,
+                            polish_time_ms,
+                            audio_path.clone(),
+                        )
+                    } else {
+                        finalize_empty_transcription(&state, audio_path)
+                    };
+                    let _ = state.finish_session(task_id);
+                    apply_finalize_result(&app_clone, task_id, action).await;
+                }
+                Err(e) => {
+                    let state = app_clone.state::<AppState>();
+                    if state.is_cancellation_requested(task_id) {
+                        discard_canceled_result(&state, task_id, audio_path.as_ref());
+                        return;
+                    }
+                    error!(task_id, error = %e, "stt_finish_failed");
+
+                    let action = finalize_failed_transcription(&state, audio_path, &e);
+                    let _ = state.finish_session(task_id);
+                    apply_finalize_result(&app_clone, task_id, action).await;
+                }
             }
         }
 
@@ -1241,7 +1288,8 @@ mod tests {
     use super::{
         await_streaming_task_in_background, discard_canceled_result, flush_pending_chunk_for_stop,
         maybe_polish_transcription_text, recording_chunk_size_samples, send_flushed_chunk_for_stop,
-        should_unregister_cancel_hotkey_after_async_cleanup, ProcessingEventTarget,
+        should_emit_error_recovery_idle, should_unregister_cancel_hotkey_after_async_cleanup,
+        ProcessingEventTarget,
     };
     use crate::commands::settings::CloudProviderConfig;
     use crate::state::app_state::AppState;
@@ -1364,6 +1412,18 @@ mod tests {
         assert!(should_unregister_cancel_hotkey_after_async_cleanup(
             3, 3, false
         ));
+    }
+
+    #[test]
+    fn error_recovery_idle_emits_only_for_the_same_finished_task() {
+        assert!(should_emit_error_recovery_idle(7, 7, false, false));
+    }
+
+    #[test]
+    fn error_recovery_idle_skips_after_a_new_recording_starts() {
+        assert!(!should_emit_error_recovery_idle(8, 7, true, false));
+        assert!(!should_emit_error_recovery_idle(8, 7, false, true));
+        assert!(!should_emit_error_recovery_idle(8, 7, false, false));
     }
 
     #[test]
