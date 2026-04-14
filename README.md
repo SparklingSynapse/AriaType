@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./assets/showcase.png" alt="AriaType Showcase" width="100%"/>
+<img src="./assets/showcase-0.3.png" alt="AriaType Showcase" width="100%"/>
 
 <br/><br/>
 

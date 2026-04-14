@@ -1,10 +1,9 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Download, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { useDownload } from '@/hooks/useDownload';
+import { useTranslation } from "react-i18next";
+import { Download, Loader2, AlertCircle, ChevronDown } from "lucide-react";
+import { motion } from "framer-motion";
+import { useDownload } from "@/hooks/useDownload";
 
 const reveal = {
   hidden: { opacity: 0, y: 16 },
@@ -30,7 +29,7 @@ function SectionLabel({ children }: { children: string }) {
   );
 }
 
-function DownloadOptionButton({
+function DownloadOptionRow({
   option,
   onClick,
   recommendedLabel,
@@ -43,36 +42,30 @@ function DownloadOptionButton({
     <a
       href={option.url}
       onClick={onClick}
-      className={`flex min-h-14 items-center justify-between gap-4 rounded-2xl border px-4 py-4 text-left text-sm transition-colors ${
+      className={`group flex items-center justify-between gap-4 rounded-2xl px-4 py-4 text-left transition-colors ${
         option.recommended
-          ? 'border-foreground/10 bg-foreground/[0.03] hover:bg-foreground/[0.05]'
-          : 'border-border bg-background/70 hover:bg-secondary/60'
+          ? "bg-foreground/[0.035] hover:bg-foreground/[0.05]"
+          : "hover:bg-foreground/[0.025]"
       }`}
     >
-      <span className="flex items-center gap-3">
-        <span className="font-medium text-foreground">{option.label}</span>
+      <span className="flex min-w-0 items-center gap-3">
+        <span className="min-w-0 font-medium text-foreground">
+          {option.label}
+        </span>
         {option.recommended && (
-          <span className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-foreground">
+          <span className="rounded-full bg-background px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-foreground/80">
             {recommendedLabel}
           </span>
         )}
       </span>
-      <Download className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+      <Download className="h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-y-[1px]" />
     </a>
-  );
-}
-
-function MetaRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="text-sm font-medium text-foreground">{value}</dd>
-    </div>
   );
 }
 
 function PlatformBlock({
   title,
+  description,
   requirements,
   options,
   emptyText,
@@ -80,6 +73,7 @@ function PlatformBlock({
   onTrack,
 }: {
   title: string;
+  description: string;
   requirements: string;
   options: DownloadOption[];
   emptyText: string;
@@ -87,16 +81,23 @@ function PlatformBlock({
   onTrack: (url: string) => void;
 }) {
   return (
-    <div className="rounded-3xl border border-border bg-card p-6 md:p-8">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-xl font-semibold tracking-[-0.03em] text-foreground">{title}</h2>
-        <span className="text-sm text-muted-foreground">{requirements}</span>
+    <section className="rounded-[2rem] border border-border/70 bg-background/80 p-6 md:p-7">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-xl font-semibold tracking-[-0.03em] text-foreground">
+            {title}
+          </h2>
+          <span className="text-sm text-muted-foreground">{requirements}</span>
+        </div>
+        <p className="max-w-xl text-sm leading-7 text-muted-foreground">
+          {description}
+        </p>
       </div>
 
-      <div className="mt-6 space-y-3">
+      <div className="mt-5 rounded-2xl ">
         {options.length > 0 ? (
           options.map((option) => (
-            <DownloadOptionButton
+            <DownloadOptionRow
               key={option.url}
               option={option}
               onClick={() => onTrack(option.url)}
@@ -104,168 +105,166 @@ function PlatformBlock({
             />
           ))
         ) : (
-          <p className="text-sm leading-7 text-muted-foreground">{emptyText}</p>
+          <p className="px-4 py-5 text-sm leading-7 text-muted-foreground">
+            {emptyText}
+          </p>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
 export default function DownloadClient() {
-  const { t } = useTranslation();
-  const { release, loading, unavailable, platform, defaultMacUrl, trackDownload } = useDownload('download_page');
-  const macUniversalUrl = release?.platforms?.mac?.universal || '';
-  const macArmUrl = release?.platforms?.mac?.aarch64 || '';
-  const macIntelUrl = release?.platforms?.mac?.x86_64 || '';
+  const { t, i18n } = useTranslation();
+  const {
+    release,
+    loading,
+    unavailable,
+    platform,
+    defaultMacUrl,
+    trackDownload,
+  } = useDownload("download_page");
+  const macUniversalUrl = release?.platforms?.mac?.universal || "";
+  const macArmUrl = release?.platforms?.mac?.aarch64 || "";
+  const macIntelUrl = release?.platforms?.mac?.x86_64 || "";
   const macOptions = [
-    { label: t('download.universal'), url: macUniversalUrl, recommended: macUniversalUrl === defaultMacUrl },
-    { label: t('download.macArm'), url: macArmUrl, recommended: macArmUrl === defaultMacUrl },
-    { label: t('download.macIntel'), url: macIntelUrl, recommended: macIntelUrl === defaultMacUrl },
+    {
+      label: t("download.universal"),
+      url: macUniversalUrl,
+      recommended: macUniversalUrl === defaultMacUrl,
+    },
+    {
+      label: t("download.macArm"),
+      url: macArmUrl,
+      recommended: macArmUrl === defaultMacUrl,
+    },
+    {
+      label: t("download.macIntel"),
+      url: macIntelUrl,
+      recommended: macIntelUrl === defaultMacUrl,
+    },
   ].filter((item) => item.url);
-  const windowsExeUrl = release?.platforms?.windows?.exe || '';
-  const windowsMsiUrl = release?.platforms?.windows?.msi || '';
+  const windowsExeUrl = release?.platforms?.windows?.exe || "";
+  const windowsMsiUrl = release?.platforms?.windows?.msi || "";
   const windowsOptions = [
-    { label: t('download.windowsExe'), url: windowsExeUrl },
-    { label: t('download.windowsMsi'), url: windowsMsiUrl },
+    { label: t("download.windowsExe"), url: windowsExeUrl },
+    { label: t("download.windowsMsi"), url: windowsMsiUrl },
   ].filter((item) => item.url);
-  const recommendedMacOption = macOptions.find((item) => item.recommended) ?? macOptions[0];
+  const recommendedMacOption =
+    macOptions.find((item) => item.recommended) ?? macOptions[0];
   const recommendedWindowsOption = windowsOptions[0];
   const primaryDownloadOption =
-    platform === 'mac'
+    platform === "mac"
       ? recommendedMacOption
-      : platform === 'win'
+      : platform === "win"
         ? recommendedWindowsOption
-        : recommendedMacOption ?? recommendedWindowsOption;
-  const primaryMeta = useMemo(() => {
-    if (!primaryDownloadOption) {
-      return '';
-    }
-
-    if (platform === 'mac') {
-      return `${t('download.primaryMetaDetected')}: ${primaryDownloadOption.label}`;
-    }
-
-    if (platform === 'win') {
-      return `${t('download.primaryMetaDetected')}: ${t('download.windows')}`;
-    }
-
-    return t('download.primaryMetaFallback');
-  }, [platform, primaryDownloadOption, t]);
+        : (recommendedMacOption ?? recommendedWindowsOption);
   const requirementsNote =
-    platform === 'win' ? t('download.requirementsWin') : t('download.requirementsMac');
-  const detectedHint = useMemo(() => {
-    if (platform === 'mac') {
-      return t('download.detectedMacHint');
-    }
-
-    if (platform === 'win') {
-      return t('download.detectedWindowsHint');
-    }
-
-    return t('download.detectedOtherHint');
-  }, [platform, t]);
-  const detectedPlatform = useMemo(() => {
-    if (platform === 'mac') {
-      return t('download.macos');
-    }
-
-    if (platform === 'win') {
-      return t('download.windows');
-    }
-
-    return t('download.otherPlatform');
-  }, [platform, t]);
+    platform === "win"
+      ? t("download.requirementsWin")
+      : t("download.requirementsMac");
   const topFacts = [
-    t('download.subtitle'),
-    release ? `${t('download.currentVersion')}: v${release.version}` : null,
+    t("download.subtitle"),
+    release ? `${t("download.currentVersion")}: v${release.version}` : null,
     requirementsNote,
   ].filter(Boolean);
+  const primaryButtonLabel = (() => {
+    if (!primaryDownloadOption) {
+      return t("download.primaryCta");
+    }
+
+    if (primaryDownloadOption.url === macArmUrl) {
+      return t("download.primaryCtaMacArm");
+    }
+
+    if (primaryDownloadOption.url === macIntelUrl) {
+      return t("download.primaryCtaMacIntel");
+    }
+
+    if (primaryDownloadOption.url === macUniversalUrl) {
+      return t("download.primaryCtaMacUniversal");
+    }
+
+    if (primaryDownloadOption.url === windowsExeUrl) {
+      return t("download.primaryCtaWindowsExe");
+    }
+
+    if (primaryDownloadOption.url === windowsMsiUrl) {
+      return t("download.primaryCtaWindowsMsi");
+    }
+
+    return i18n.language.startsWith("zh")
+      ? `${t("download.primaryCta")}${primaryDownloadOption.label}`
+      : `${t("download.primaryCta")} ${primaryDownloadOption.label}`;
+  })();
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(120,113,108,0.08),transparent_42%)]">
       <section className="pb-16 pt-24 md:pb-20 md:pt-32">
-        <div className="mx-auto max-w-5xl px-6">
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-            <motion.div
-              variants={reveal}
-              initial="hidden"
-              animate="visible"
-              transition={{ ...transition, duration: 0.7 }}
-              className="space-y-6"
-            >
-              <SectionLabel>{t('download.eyebrow')}</SectionLabel>
-              <div className="space-y-4">
-                <h1 className="max-w-2xl text-[clamp(2.5rem,5vw,4.5rem)] font-bold leading-[1.05] tracking-tight text-foreground">
-                  {t('download.title')}
-                </h1>
-                <p className="max-w-xl text-base leading-8 text-muted-foreground">
-                  {t('download.description')}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-3 pt-1">
-                {topFacts.map((fact) => (
-                  <span
-                    key={fact}
-                    className="rounded-full border border-border bg-card px-4 py-2 text-sm text-muted-foreground"
-                  >
-                    {fact}
-                  </span>
-                ))}
-              </div>
-            </motion.div>
-
-            <motion.div
-              variants={reveal}
-              initial="hidden"
-              animate="visible"
-              transition={{ ...transition, duration: 0.7, delay: 0.12 }}
-              className="rounded-3xl border border-border bg-card p-6 md:p-8"
-            >
-              <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                {t('download.detectedLabel')}
+        <div className="mx-auto max-w-5xl px-6 text-center">
+          <motion.div
+            variants={reveal}
+            initial="hidden"
+            animate="visible"
+            transition={{ ...transition, duration: 0.7 }}
+            className="max-w-3xl space-y-6 mx-auto"
+          >
+            <div className="space-y-4">
+              <h1 className="text-[clamp(2.7rem,5vw,4.8rem)] font-semibold leading-[1.02] tracking-[-0.05em] text-foreground">
+                {t("download.title")}
+              </h1>
+              <p className="text-base leading-8 text-muted-foreground md:text-[1.05rem]">
+                {t("download.description")}
               </p>
+            </div>
 
+            <div className="flex flex-wrap gap-3 pt-1 items-center justify-center">
+              {topFacts.map((fact) => (
+                <span
+                  key={fact}
+                  className="rounded-full border border-border/70 bg-background/80 px-4 py-2 text-sm text-muted-foreground"
+                >
+                  {fact}
+                </span>
+              ))}
+            </div>
+          </motion.div>
+
+          <div className="mt-14">
+            <motion.div
+              variants={reveal}
+              initial="hidden"
+              animate="visible"
+              transition={{ ...transition, delay: 0.08 }}
+            >
               {loading && (
-                <div className="flex min-h-60 flex-col items-center justify-center gap-4 text-center">
+                <div className="flex min-h-40 flex-col items-center justify-center gap-4 text-center">
                   <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">{t('download.description')}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t("download.description")}
+                  </p>
                 </div>
               )}
 
               {!loading && unavailable && (
-                <div className="flex min-h-60 flex-col items-center justify-center gap-4 text-center">
+                <div className="flex min-h-40 flex-col items-center justify-center gap-4 text-center">
                   <AlertCircle className="h-7 w-7 text-muted-foreground" />
-                  <p className="max-w-xs text-sm leading-7 text-muted-foreground">{t('download.noRelease')}</p>
+                  <p className="max-w-xs text-sm leading-7 text-muted-foreground">
+                    {t("download.noRelease")}
+                  </p>
                 </div>
               )}
 
               {!loading && release && primaryDownloadOption && (
-                <div className="mt-5 space-y-6">
-                  <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">{primaryMeta}</p>
-                    <h2 className="text-[clamp(1.6rem,3vw,2rem)] font-semibold leading-tight tracking-[-0.04em] text-foreground">
-                      {primaryDownloadOption.label}
-                    </h2>
-                    <p className="text-sm leading-7 text-muted-foreground">{detectedHint}</p>
-                  </div>
-
+                <div className="flex min-h-40 items-center justify-center">
                   <a
                     href={primaryDownloadOption.url}
                     onClick={() => trackDownload(primaryDownloadOption.url)}
-                    className="flex min-h-14 items-center justify-between gap-4 rounded-full bg-primary px-5 py-3 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
+                    className="inline-flex min-h-14 items-center justify-center gap-3 rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                   >
-                    <span className="font-medium">
-                      {t('download.primaryCta')} {primaryDownloadOption.label}
-                    </span>
+                    <span>{primaryButtonLabel}</span>
                     <Download className="h-4 w-4 flex-shrink-0" />
                   </a>
-
-                  <dl className="space-y-3 border-t border-border pt-5">
-                    <MetaRow label={t('download.currentVersion')} value={`v${release.version}`} />
-                    <MetaRow label={t('download.detectedLabel')} value={detectedPlatform} />
-                    <MetaRow label={t('download.secondaryCta')} value={requirementsNote} />
-                  </dl>
                 </div>
               )}
             </motion.div>
@@ -274,61 +273,63 @@ export default function DownloadClient() {
       </section>
 
       {!loading && release && (
-        <section className="border-t border-border/70 pb-20 md:pb-24">
-          <div className="mx-auto max-w-5xl px-6 pt-12 md:pt-16">
+        <section className="border-t border-border/70 pb-20 md:pb-24 text-center">
+          <div className="mx-auto max-w-5xl px-6 pt-14 md:pt-20">
             <motion.div
               variants={reveal}
               initial="hidden"
               animate="visible"
               transition={{ ...transition, delay: 0.16 }}
-              className="space-y-10"
+              className="space-y-10 mx-auto"
             >
-              <div className="max-w-2xl space-y-4">
-                <SectionLabel>{t('download.chooseEyebrow')}</SectionLabel>
+              <div className="space-y-4">
+                <SectionLabel>{t("download.chooseEyebrow")}</SectionLabel>
                 <h2 className="text-[clamp(1.8rem,3vw,2.4rem)] font-semibold leading-[1.08] tracking-[-0.04em] text-foreground">
-                  {t('download.chooseTitle')}
+                  {t("download.chooseTitle")}
                 </h2>
                 <p className="text-base leading-8 text-muted-foreground">
-                  {t('download.chooseDescription')}
+                  {t("download.chooseDescription")}
                 </p>
               </div>
 
               <div className="grid gap-6 md:grid-cols-2">
                 <PlatformBlock
-                  title={t('download.macos')}
-                  requirements={t('download.requirementsMac')}
+                  title={t("download.macos")}
+                  description={t("download.platformMacDescription")}
+                  requirements={t("download.requirementsMac")}
                   options={
                     macOptions.length > 0
                       ? macOptions
                       : [
                           {
-                            label: t('download.macos'),
+                            label: t("download.macos"),
                             url: release.url,
-                            recommended: platform === 'mac',
+                            recommended: platform === "mac",
                           },
                         ]
                   }
-                  emptyText={t('download.comingSoon')}
-                  recommendedLabel={t('download.recommendedBadge')}
+                  emptyText={t("download.comingSoon")}
+                  recommendedLabel={t("download.recommendedBadge")}
                   onTrack={trackDownload}
                 />
                 <PlatformBlock
-                  title={t('download.windows')}
-                  requirements={t('download.requirementsWin')}
+                  title={t("download.windows")}
+                  description={t("download.platformWindowsDescription")}
+                  requirements={t("download.requirementsWin")}
                   options={windowsOptions}
-                  emptyText={t('download.comingSoon')}
-                  recommendedLabel={t('download.recommendedBadge')}
+                  emptyText={t("download.comingSoon")}
+                  recommendedLabel={t("download.recommendedBadge")}
                   onTrack={trackDownload}
                 />
               </div>
 
               {release.notes && (
-                <details className="group rounded-3xl border border-border bg-card px-6 py-5 md:px-8">
+                <details className="group rounded-[2rem] border border-border/70 bg-background/80 px-6 py-5 md:px-8">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium text-foreground">
                     <div>
-                      <span>{t('download.releaseNotes')}</span>
+                      <span>{t("download.releaseNotes")}</span>
                       <p className="mt-1 text-sm font-normal leading-7 text-muted-foreground">
-                        {t('download.releaseNotesDescription')}
+                        {t("download.releaseNotesDescription")}
                       </p>
                     </div>
                     <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
