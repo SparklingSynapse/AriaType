@@ -41,6 +41,14 @@ pnpm --filter @ariatype/desktop tauri:build:mac
 pnpm --filter @ariatype/desktop tauri:build:win
 ```
 
+### Dev / Inhouse Build Conventions
+
+- `pnpm --filter @ariatype/desktop tauri:dev` starts the inhouse/dev desktop variant.
+- The `tauri:dev` script regenerates inhouse icon assets before launching Tauri. Do not hand-edit generated files in `apps/desktop/assets/icons/inhouse/`.
+- The canonical generator is `scripts/generate-inhouse-icons.sh`. Change the corner marker style there, then regenerate assets.
+- Dev bundle icons are wired through `src-tauri/tauri.dev.conf.json`.
+- macOS tray icon selection is runtime-driven in `src-tauri/src/tray.rs`: app identifiers ending with `.inhouse` load `assets/tray-icon-inhouse.png`.
+
 ---
 
 ## Architecture
@@ -101,6 +109,10 @@ import { startRecording } from '@/lib/tauri';
 // Never use raw invoke()
 import { invoke } from '@tauri-apps/api/core'; // ❌ Avoid
 ```
+
+**Hotkey Display Convention**:
+- Side-specific modifier keys stay visible in UI text.
+- Use `L⌘` / `R⌘`, `LCtrl` / `RCtrl`, `L⌥` / `R⌥`, and `L⇧` / `R⇧` when the backend captures left/right variants.
 
 ### Backend (Rust)
 

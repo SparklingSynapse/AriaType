@@ -5,20 +5,20 @@ import { hotkeyCommands, events } from "@/lib/tauri";
 // Hotkey display labels - for UI formatting only
 const HOTKEY_LABELS: Record<string, string> = {
   cmd: "⌘",
-  cmdleft: "⌘",
-  cmdright: "⌘",
+  cmdleft: "L⌘",
+  cmdright: "R⌘",
   ctrl: "Ctrl",
-  ctrlleft: "Ctrl",
-  ctrlright: "Ctrl",
+  ctrlleft: "LCtrl",
+  ctrlright: "RCtrl",
   alt: "⌥",
-  altleft: "⌥",
-  altright: "⌥",
+  altleft: "L⌥",
+  altright: "R⌥",
   opt: "⌥",
-  optleft: "⌥",
-  optright: "⌥",
+  optleft: "L⌥",
+  optright: "R⌥",
   shift: "⇧",
-  shiftleft: "⇧",
-  shiftright: "⇧",
+  shiftleft: "L⇧",
+  shiftright: "R⇧",
   fn: "Fn",
   space: "Space",
   enter: "↵",
@@ -138,7 +138,7 @@ interface HotkeyInputProps {
  * Hotkey input component.
  *
  * Flow:
- * 1. User clicks input → enter capture mode (backend unregisters old hotkey)
+ * 1. User clicks input → enter capture mode while current hotkey stays registered
  * 2. User presses keys → backend captures and emits hotkey-captured event
  * 3. Frontend receives event → calls stop_hotkey_recording to register new hotkey
  * 4. Backend registers new hotkey, saves to settings

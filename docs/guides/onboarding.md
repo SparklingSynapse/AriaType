@@ -78,6 +78,14 @@ pnpm --filter @ariatype/desktop build
 
 **Detailed setup**: See [`apps/desktop/CONTRIBUTING.md`](../../apps/desktop/CONTRIBUTING.md) for full development environment configuration.
 
+### Desktop Dev Variant Notes
+
+- `pnpm --filter @ariatype/desktop tauri:dev` launches the inhouse/dev app variant, not the production-branded bundle.
+- The dev entrypoint regenerates inhouse icon assets automatically before launching Tauri.
+- Generated inhouse app icons live in `apps/desktop/assets/icons/inhouse/`; the tray variant lives at `apps/desktop/src-tauri/assets/tray-icon-inhouse.png`.
+- If the Dock or packaged dev app loses the green corner marker, check `scripts/generate-inhouse-icons.sh`, `apps/desktop/package.json`, and `apps/desktop/src-tauri/tauri.dev.conf.json` together.
+- Hotkey UI intentionally distinguishes left/right modifier keys. Expect labels such as `L⌘`, `R⌘`, `LCtrl`, and `R⌥`.
+
 ---
 
 ## Key Directories

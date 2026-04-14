@@ -15,15 +15,15 @@ describe("formatHotkey", () => {
     ["f1", "F1"],
     ["f12", "F12"],
     ["f20", "F20"],
-    // Side-specific modifiers - all variants show same symbol
-    ["cmdright+slash", "⌘+/"],
-    ["cmdleft+a", "⌘+A"],
-    ["ctrlright+space", "Ctrl+Space"],
-    ["shiftleft+a", "⇧+A"],
-    ["optright+b", "⌥+B"],
+    // Side-specific modifiers stay visible in the UI
+    ["cmdright+slash", "R⌘+/"],
+    ["cmdleft+a", "L⌘+A"],
+    ["ctrlright+space", "RCtrl+Space"],
+    ["shiftleft+a", "L⇧+A"],
+    ["optright+b", "R⌥+B"],
     // Combinations
-    ["shiftright+cmdright+space", "⇧+⌘+Space"],
-    ["ctrlleft+optleft+a", "Ctrl+⌥+A"],
+    ["shiftright+cmdright+space", "R⇧+R⌘+Space"],
+    ["ctrlleft+optleft+a", "LCtrl+L⌥+A"],
     // Special keys - using symbols
     ["ctrl+enter", "Ctrl+↵"],
     ["ctrl+escape", "Ctrl+Esc"],
@@ -44,7 +44,7 @@ describe("formatHotkey", () => {
   it("handles case insensitive input", () => {
     expect(formatHotkey("CMD+A")).toBe("⌘+A");
     expect(formatHotkey("ctrl+SHIFT+Space")).toBe("Ctrl+⇧+Space");
-    expect(formatHotkey("CMDRIGHT+SLASH")).toBe("⌘+/");
+    expect(formatHotkey("CMDRIGHT+SLASH")).toBe("R⌘+/");
   });
 
   it("capitalizes unknown keys", () => {
@@ -54,9 +54,9 @@ describe("formatHotkey", () => {
 
 describe("HotkeyTags", () => {
   it("renders multiple key tags", () => {
-    render(<HotkeyTags hotkey="cmd+shift+a" />);
-    // Should render 3 key tags: ⌘, ⇧, A
-    const tags = screen.getAllByText(/⌘|⇧|A/);
+    render(<HotkeyTags hotkey="cmdleft+shift+a" />);
+    // Should render 3 key tags: L⌘, ⇧, A
+    const tags = screen.getAllByText(/L⌘|⇧|A/);
     expect(tags.length).toBe(3);
   });
 

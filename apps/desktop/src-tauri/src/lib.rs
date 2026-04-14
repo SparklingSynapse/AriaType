@@ -10,6 +10,7 @@ pub mod audio;
 pub mod commands;
 pub mod events;
 pub mod history;
+pub mod permissions;
 pub mod polish_engine;
 pub mod provider_schema;
 pub mod services;
@@ -24,7 +25,7 @@ use commands::audio::{
     cancel_recording, get_audio_level, get_recording_state, start_audio_level_monitor,
     start_recording, stop_recording,
 };
-use commands::{hotkey, model, model_cache, permissions, settings, system, text, window};
+use commands::{hotkey, model, model_cache, settings, system, text, window};
 use events::EventName;
 use state::app_state::AppState;
 
@@ -168,8 +169,8 @@ pub fn run() {
             system::get_log_content,
             system::open_log_folder,
             system::get_platform,
-            permissions::check_permission,
-            permissions::apply_permission,
+            commands::permissions::check_permission,
+            commands::permissions::apply_permission,
             model::get_models,
             model::get_models_for_engine,
             model::is_model_downloaded,
@@ -215,6 +216,7 @@ pub fn run() {
             hotkey::peek_hotkey_recording,
         ])
         .setup(|app| {
+            let _ = crate::permissions::report_startup_permission_snapshot();
             info!("setup_completed");
 
             #[cfg(target_os = "macos")]
@@ -485,46 +487,36 @@ pub fn run() {
                 commands::window::update_pill_visibility(app.handle());
             }
 
-            // Trigger microphone permission request on first launch so the app
-            // appears in System Settings > Privacy > Microphone.
-            // Must be called in-process (not via a subprocess) so that macOS
-            // registers the permission under com.ariatype.voicetotext, not swift.
             std::thread::spawn(move || {
-                // Small delay to let the app fully initialize
                 std::thread::sleep(std::time::Duration::from_millis(500));
 
-                info!("microphone_permission_requesting");
-                #[cfg(target_os = "macos")]
-                {
-                    use objc::{class, msg_send, sel, sel_impl};
-                    #[link(name = "AVFoundation", kind = "framework")]
-                    extern "C" {}
-                    // Check current status first; only request if not yet determined
-                    let status: i64 = unsafe {
-                        let media_type: *mut objc::runtime::Object = msg_send![
-                            class!(NSString),
-                            stringWithUTF8String: c"soun".as_ptr()
-                        ];
-                        msg_send![class!(AVCaptureDevice), authorizationStatusForMediaType: media_type]
-                    };
-                    if status == 0 {
-                        // not_determined — delegate to the existing in-process implementation
-                        let runtime = tokio::runtime::Runtime::new().unwrap();
-                        let result = runtime.block_on(commands::permissions::apply_permission("microphone".to_string()));
-                        info!(result = ?result, "microphone_permission_result");
-                    } else {
-                        info!(status, "microphone_permission_determined");
+                let permission = crate::permissions::PermissionKind::Microphone;
+                let status = crate::permissions::check_permission(permission);
+
+                if status == crate::permissions::PermissionStatus::NotDetermined {
+                    info!(
+                        permission = permission.as_str(),
+                        status = status.as_str(),
+                        "app_permission_requesting"
+                    );
+                    if let Err(error) = crate::permissions::apply_permission(permission) {
+                        warn!(
+                            permission = permission.as_str(),
+                            error = %error,
+                            "app_permission_request_failed"
+                        );
                     }
+                    let _ = crate::permissions::report_permission_snapshot_if_changed(
+                        "microphone_permission_request",
+                    );
+                } else {
+                    info!(
+                        permission = permission.as_str(),
+                        status = status.as_str(),
+                        "app_permission_request_skipped"
+                    );
                 }
             });
-
-            // Call AXIsProcessTrusted() on startup so the app appears in the
-            // Accessibility list in System Settings without prompting the user.
-            #[cfg(target_os = "macos")]
-            {
-                let status = commands::permissions::check_permission("accessibility".to_string());
-                info!(status = %status, "accessibility_permission_checked");
-            }
 
             // Initialize ShortcutManager and register global shortcut from settings
             let hotkey = {

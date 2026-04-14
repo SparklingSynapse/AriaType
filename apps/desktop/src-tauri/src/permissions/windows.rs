@@ -1,23 +1,23 @@
 use std::process::Command;
 
+use super::{PermissionProvider, PermissionStatus};
+
 pub struct WindowsPermissions;
 
-impl super::PermissionProvider for WindowsPermissions {
-    fn check_accessibility(&self) -> String {
-        // Windows does not restrict accessibility APIs the same way as macOS
-        "granted".to_string()
+impl PermissionProvider for WindowsPermissions {
+    fn check_accessibility(&self) -> PermissionStatus {
+        PermissionStatus::Granted
     }
 
-    fn check_input_monitoring(&self) -> String {
-        // Not applicable on Windows
-        "granted".to_string()
+    fn check_input_monitoring(&self) -> PermissionStatus {
+        PermissionStatus::Granted
     }
 
-    fn check_microphone(&self) -> String {
+    fn check_microphone(&self) -> PermissionStatus {
         let host = cpal::default_host();
         match host.default_input_device() {
-            Some(_) => "granted".to_string(),
-            None => "not_determined".to_string(),
+            Some(_) => PermissionStatus::Granted,
+            None => PermissionStatus::NotDetermined,
         }
     }
 
@@ -25,19 +25,19 @@ impl super::PermissionProvider for WindowsPermissions {
         Command::new("cmd")
             .args(["/c", "start", "ms-settings:easeofaccess"])
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
         Ok(())
     }
 
     fn apply_input_monitoring(&self) -> Result<(), String> {
-        Ok(()) // Not applicable on Windows
+        Ok(())
     }
 
     fn apply_microphone(&self) -> Result<(), String> {
         Command::new("cmd")
             .args(["/c", "start", "ms-settings:privacy-microphone"])
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
         Ok(())
     }
 }

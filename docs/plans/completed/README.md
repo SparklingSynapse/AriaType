@@ -13,7 +13,7 @@ A plan belongs in this directory only when all of the following are true:
 
 ## Completed Plans
 
-(None yet)
+- [Startup Permission Logging Architecture](./2026-04-14-006-startup-permission-logging-architecture-plan.md) - fix - 2026-04-14
 
 ## Maintenance
 

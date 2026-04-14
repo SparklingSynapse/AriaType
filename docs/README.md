@@ -131,6 +131,7 @@ Active and completed execution plans.
 | Understand why the system works this way | [`architecture/decisions/README.md`](./architecture/decisions/README.md) |
 | Onboard as new contributor/agent | [`guides/onboarding.md`](./guides/onboarding.md) |
 | Set up dev environment | [`apps/desktop/CONTRIBUTING.md`](../apps/desktop/CONTRIBUTING.md) |
+| Understand desktop dev/inhouse conventions | [`apps/desktop/CONTRIBUTING.md`](../apps/desktop/CONTRIBUTING.md) |
 | Understand system architecture | [`architecture/README.md`](./architecture/README.md) |
 | Add a new STT provider | [`guides/adding-stt-provider.md`](./guides/adding-stt-provider.md) |
 | Add a new Polish provider | [`guides/adding-polish-provider.md`](./guides/adding-polish-provider.md) |

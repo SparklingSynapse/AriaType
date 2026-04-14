@@ -237,9 +237,12 @@ mod tests {
     #[test]
     fn prepare_retry_transcription_requires_error_state_and_audio_file() {
         let state = AppState::new();
-        let success_err =
-            prepare_retry_transcription(&state, "entry-1".to_string(), retry_entry("success", None))
-                .unwrap_err();
+        let success_err = prepare_retry_transcription(
+            &state,
+            "entry-1".to_string(),
+            retry_entry("success", None),
+        )
+        .unwrap_err();
         assert_eq!(success_err, "Entry is not in error state");
 
         let missing_audio_err =
@@ -262,7 +265,10 @@ mod tests {
         assert_eq!(prepared.task_id, 1);
         assert_eq!(prepared.entry_id, "entry-9");
         assert_eq!(prepared.audio_path, audio.path().display().to_string());
-        assert_eq!(prepared.plan.policy, RetryProviderPolicy::CurrentLocalConfig);
+        assert_eq!(
+            prepared.plan.policy,
+            RetryProviderPolicy::CurrentLocalConfig
+        );
         assert!(!prepared.plan.is_cloud);
         assert!(!prepared.plan.engine_name.is_empty());
         assert!(!prepared.plan.model_name.is_empty());

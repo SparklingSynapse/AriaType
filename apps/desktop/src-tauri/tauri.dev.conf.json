@@ -1,7 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "identifier": "com.ariatype.voicetotext.dev",
+  "productName": "AriaType Inhouse",
+  "identifier": "com.ariatype.voicetotext.inhouse",
   "bundle": {
+    "icon": [
+      "../assets/icons/inhouse/icon.png",
+      "../assets/icons/inhouse/icon.icns",
+      "../assets/icons/inhouse/icon.ico"
+    ],
     "macOS": {
       "signingIdentity": "-"
     }

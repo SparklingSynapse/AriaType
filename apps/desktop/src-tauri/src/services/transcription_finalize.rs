@@ -35,7 +35,10 @@ pub fn finalize_successful_transcription(
     FinalizeResult::DeliverText(final_text.to_string())
 }
 
-pub fn finalize_empty_transcription(state: &AppState, audio_path: Option<String>) -> FinalizeResult {
+pub fn finalize_empty_transcription(
+    state: &AppState,
+    audio_path: Option<String>,
+) -> FinalizeResult {
     crate::history::commands::save_failed_history(state, audio_path, "Empty transcription result");
     FinalizeResult::TransitionToIdle
 }

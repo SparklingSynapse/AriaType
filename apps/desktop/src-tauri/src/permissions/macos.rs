@@ -1,37 +1,42 @@
 #![allow(unexpected_cfgs)]
+
 use std::process::Command;
+
+use super::{PermissionProvider, PermissionStatus};
 
 pub struct MacosPermissions;
 
-impl super::PermissionProvider for MacosPermissions {
-    fn check_accessibility(&self) -> String {
+impl PermissionProvider for MacosPermissions {
+    fn check_accessibility(&self) -> PermissionStatus {
         #[link(name = "ApplicationServices", kind = "framework")]
         extern "C" {
             fn AXIsProcessTrusted() -> bool;
         }
         if unsafe { AXIsProcessTrusted() } {
-            "granted".to_string()
+            PermissionStatus::Granted
         } else {
-            "denied".to_string()
+            PermissionStatus::Denied
         }
     }
 
-    fn check_input_monitoring(&self) -> String {
+    fn check_input_monitoring(&self) -> PermissionStatus {
         #[link(name = "IOKit", kind = "framework")]
         extern "C" {
             fn IOHIDCheckAccess(request_type: u32) -> u32;
         }
         if unsafe { IOHIDCheckAccess(0) } == 0 {
-            "granted".to_string()
+            PermissionStatus::Granted
         } else {
-            "denied".to_string()
+            PermissionStatus::Denied
         }
     }
 
-    fn check_microphone(&self) -> String {
+    fn check_microphone(&self) -> PermissionStatus {
         use objc::{class, msg_send, sel, sel_impl};
+
         #[link(name = "AVFoundation", kind = "framework")]
         extern "C" {}
+
         unsafe {
             let media_type: *mut objc::runtime::Object = msg_send![
                 class!(NSString),
@@ -43,9 +48,9 @@ impl super::PermissionProvider for MacosPermissions {
                 authorizationStatusForMediaType: media_type
             ];
             match status {
-                3 => "granted".to_string(),
-                2 | 1 => "denied".to_string(),
-                _ => "not_determined".to_string(),
+                3 => PermissionStatus::Granted,
+                2 | 1 => PermissionStatus::Denied,
+                _ => PermissionStatus::NotDetermined,
             }
         }
     }
@@ -84,7 +89,7 @@ impl super::PermissionProvider for MacosPermissions {
         Command::new("open")
             .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
         Ok(())
     }
 
@@ -92,17 +97,20 @@ impl super::PermissionProvider for MacosPermissions {
         Command::new("open")
             .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
         Ok(())
     }
 
     fn apply_microphone(&self) -> Result<(), String> {
-        if self.check_microphone() == "not_determined" {
+        if self.check_microphone() == PermissionStatus::NotDetermined {
             use objc::{class, msg_send, sel, sel_impl};
+
             #[link(name = "AVFoundation", kind = "framework")]
             extern "C" {}
+
             let (tx, rx) = std::sync::mpsc::channel::<bool>();
             let tx = std::sync::Mutex::new(Some(tx));
+
             unsafe {
                 let media_type: *mut objc::runtime::Object = msg_send![
                     class!(NSString),
@@ -112,11 +120,10 @@ impl super::PermissionProvider for MacosPermissions {
                 extern crate block;
                 let block = block::ConcreteBlock::new(move |granted: objc::runtime::BOOL| {
                     let tx = Box::from_raw(tx_ptr);
-                    if let Ok(mut guard) = tx.lock() {
-                        if let Some(sender) = guard.take() {
-                            let _ = sender.send(granted == objc::runtime::YES);
-                        }
-                    };
+                    let sender = tx.lock().ok().and_then(|mut guard| guard.take());
+                    if let Some(sender) = sender {
+                        let _ = sender.send(granted == objc::runtime::YES);
+                    }
                 });
                 let block = block.copy();
                 let _: () = msg_send![
@@ -125,13 +132,13 @@ impl super::PermissionProvider for MacosPermissions {
                     completionHandler: &*block
                 ];
             }
-            // Wait up to 60 s for the user to respond to the dialog
+
             let _ = rx.recv_timeout(std::time::Duration::from_secs(60));
         } else {
             Command::new("open")
                 .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
                 .spawn()
-                .map_err(|e| e.to_string())?;
+                .map_err(|error| error.to_string())?;
         }
         Ok(())
     }

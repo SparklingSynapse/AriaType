@@ -19,8 +19,8 @@ use crate::services::retry_transcription::{
     prepare_retry_transcription, transcribe_retry_audio_file, update_retry_entry_success,
 };
 use crate::services::transcription_finalize::{
-    finalize_empty_transcription, finalize_failed_transcription,
-    finalize_successful_transcription, FinalizeResult,
+    finalize_empty_transcription, finalize_failed_transcription, finalize_successful_transcription,
+    FinalizeResult,
 };
 use crate::state::app_state::AppState;
 use crate::state::unified_state::StreamingSttState;
@@ -83,7 +83,10 @@ fn apply_retry_error(app: &AppHandle, entry_id: &str, task_id: u64, error: &str)
 enum ProcessingEventTarget<'a> {
     None,
     Recording(&'a AppHandle),
-    Retry { app: &'a AppHandle, entry_id: &'a str },
+    Retry {
+        app: &'a AppHandle,
+        entry_id: &'a str,
+    },
 }
 
 impl ProcessingEventTarget<'_> {
@@ -1331,14 +1334,13 @@ mod tests {
             );
         }
 
-        let (final_text, _polish_time_ms) =
-            maybe_polish_transcription_text(
-                &ProcessingEventTarget::None,
-                &state,
-                1,
-                "User text here".to_string(),
-            )
-            .await;
+        let (final_text, _polish_time_ms) = maybe_polish_transcription_text(
+            &ProcessingEventTarget::None,
+            &state,
+            1,
+            "User text here".to_string(),
+        )
+        .await;
 
         assert_eq!(final_text, "Polished streaming text");
     }

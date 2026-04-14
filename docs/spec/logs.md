@@ -101,6 +101,15 @@ These fields are used in specific contexts and are acceptable when documented:
 | `chunks` | `usize` | Streaming summary | Total chunks sent |
 | `url` | `%str` | Connection logging | WebSocket/API endpoint URLs |
 | `logid` | `?str` | Server log ID | Volcengine X-Tt-Logid header |
+| `permission` | `%str` | Permission logging | Permission identifier such as `microphone` |
+| `status` | `%str` | Permission logging | Current permission status |
+| `trigger` | `%str` | Permission logging | Lifecycle trigger for a permission snapshot |
+| `permission_count` | `usize` | Permission logging | Number of permissions included in a snapshot |
+| `capability` | `%str` | Permission logging | Product capability gated by a permission |
+| `check_method` | `%str` | Permission logging | OS/API probe used to derive permission status |
+| `core_flow` | `bool` | Permission logging | Whether the permission gates a core product flow |
+| `from` | `%str` | Permission logging | Previous permission status |
+| `to` | `%str` | Permission logging | New permission status |
 
 ---
 
