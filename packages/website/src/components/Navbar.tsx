@@ -90,10 +90,10 @@ export default function Navbar() {
 
           <div className="flex items-center gap-4">
             <Link
-              href="https://github.com/SparklingSynapse/AriaType"
+              href="https://github.com/joe223/AriaType"
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => trackEvent(AnalyticsEvents.NAV_CLICK, { label: 'GitHub', href: 'https://github.com/SparklingSynapse/AriaType' })}
+              onClick={() => trackEvent(AnalyticsEvents.NAV_CLICK, { label: 'GitHub', href: 'https://github.com/joe223/AriaType' })}
               className="text-foreground/60 hover:text-foreground transition-colors"
               aria-label="GitHub"
             >

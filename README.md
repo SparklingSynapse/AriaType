@@ -9,9 +9,9 @@ AriaType – Open-Source AI Voice-to-Text Input | Powerful Typeless Alternative
 
 English | [简体中文](README-cn.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md)
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/SparklingSynapse/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/SparklingSynapse/AriaType) [![Version](https://img.shields.io/badge/version-0.2-green)](https://github.com/SparklingSynapse/AriaType/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.2-green)](https://github.com/joe223/AriaType/releases)
 
-[Download](https://github.com/SparklingSynapse/AriaType/releases) • [Docs](docs/README.md) • [Discussions](https://github.com/SparklingSynapse/AriaType/discussions) • [Website](https://ariatype.com)
+[Download](https://github.com/joe223/AriaType/releases) • [Docs](context/README.md) • [Discussions](https://github.com/joe223/AriaType/discussions) • [Website](https://ariatype.com)
 
 </div>
 

@@ -9,9 +9,9 @@ AriaType - 开源 AI 语音转文字输入工具 | 强大的Typeless替代方案
 
 [English](README.md) | 简体中文 | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md)
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/SparklingSynapse/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/SparklingSynapse/AriaType) [![Version](https://img.shields.io/badge/version-0.2-green)](https://github.com/SparklingSynapse/AriaType/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.2-green)](https://github.com/joe223/AriaType/releases)
 
-[下载](https://github.com/SparklingSynapse/AriaType/releases) • [文档](docs/README.md) • [讨论区](https://github.com/SparklingSynapse/AriaType/discussions) • [官网](https://ariatype.com)
+[下载](https://github.com/joe223/AriaType/releases) • [文档](context/README.md) • [讨论区](https://github.com/joe223/AriaType/discussions) • [官网](https://ariatype.com)
 
 </div>
 

@@ -27,7 +27,7 @@ import { useNavBadges } from "@/hooks/useNavBadges";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import "overlayscrollbars/overlayscrollbars.css";
 
-const FEEDBACK_URL = "https://github.com/SparklingSynapse/AriaType/issues/new";
+const FEEDBACK_URL = "https://github.com/joe223/AriaType/issues/new";
 
 export function HomeLayout() {
   const { t } = useTranslation();

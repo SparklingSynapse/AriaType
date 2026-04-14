@@ -147,7 +147,7 @@ tests/
 ### 文档
 
 ```
-docs/
+context/
 ├── polish_engine_tests.md         # 详细测试文档
 ├── polish_engine_test_summary.md  # 测试总结
 └── TESTING.md                      # 总体测试架构

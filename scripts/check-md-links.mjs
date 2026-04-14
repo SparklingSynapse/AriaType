@@ -26,14 +26,14 @@ const IGNORED_DIRECTORIES = new Set([
 ]);
 const LINK_PATTERN = /!?\[[^\]]*?\]\(([^)]+)\)/g;
 const REQUIRED_WHEN_TO_READ_INDEXES = [
-  "docs/architecture/README.md",
-  "docs/architecture/decisions/README.md",
-  "docs/conventions/README.md",
-  "docs/feat/README.md",
-  "docs/guides/README.md",
-  "docs/plans/README.md",
-  "docs/quality/README.md",
-  "docs/reference/README.md",
+  "context/architecture/README.md",
+  "context/architecture/decisions/README.md",
+  "context/conventions/README.md",
+  "context/feat/README.md",
+  "context/guides/README.md",
+  "context/plans/README.md",
+  "context/quality/README.md",
+  "context/reference/README.md",
 ];
 
 function isExternalTarget(target) {
@@ -165,13 +165,13 @@ export function findBrokenMarkdownLinks(rootDir = PROJECT_ROOT) {
 
 export function findDocumentationStructureIssues(rootDir = PROJECT_ROOT) {
   const issues = [];
-  const docsReadmePath = resolve(rootDir, "docs/README.md");
+  const docsReadmePath = resolve(rootDir, "context/README.md");
 
   if (!existsSync(docsReadmePath)) {
     issues.push({
       type: "missing_docs_index",
       filePath: docsReadmePath,
-      detail: "docs/README.md is missing",
+      detail: "context/README.md is missing",
     });
     return issues;
   }
@@ -182,7 +182,7 @@ export function findDocumentationStructureIssues(rootDir = PROJECT_ROOT) {
     issues.push({
       type: "missing_canonical_sources",
       filePath: docsReadmePath,
-      detail: 'docs/README.md must include a "## Canonical Sources" section',
+      detail: 'context/README.md must include a "## Canonical Sources" section',
     });
   }
 
@@ -224,7 +224,7 @@ export function formatSuccessMessage() {
     "OK: all markdown link targets resolve correctly.",
     "",
     "Documentation maintenance requirements:",
-    "- Keep docs/README.md aligned with canonical document families and the real tree.",
+    "- Keep context/README.md aligned with canonical document families and the real tree.",
     '- Keep top-level docs indexes aligned with "## Canonical Sources" and "## When to Read This".',
     "- Update feature specs, plans, and architecture/convention docs in the same change.",
     "- Broken relative links are release blockers for doc trust.",
@@ -253,7 +253,7 @@ export function formatFailureMessage({ formattedLinkIssues, formattedStructureIs
   return [
     ...lines,
     "Documentation maintenance requirements:",
-    "- Keep docs/README.md aligned with canonical document families and the real tree.",
+    "- Keep context/README.md aligned with canonical document families and the real tree.",
     '- Keep top-level docs indexes aligned with "## Canonical Sources" and "## When to Read This".',
     "- Update feature specs, plans, and architecture/convention docs in the same change.",
     "- Broken relative links are release blockers for doc trust.",

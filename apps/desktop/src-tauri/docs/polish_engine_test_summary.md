@@ -228,7 +228,7 @@ src/polish_engine/
 tests/
 └── polish_engine_test.rs  # 包含 12 个集成测试
 
-docs/
+context/
 └── polish_engine_tests.md # 测试文档
 
 scripts/

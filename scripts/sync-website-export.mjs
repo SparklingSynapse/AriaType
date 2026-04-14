@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
 const sourceDir = path.join(repoRoot, "packages", "website", "out");
-const targetDir = path.join(repoRoot, "website");
+const targetDir = path.join(repoRoot, "docs");
 
 if (!existsSync(sourceDir)) {
   throw new Error(`Website export directory not found: ${sourceDir}`);

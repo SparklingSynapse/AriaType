@@ -109,7 +109,7 @@ export default function HomePage() {
           >
             <HomeDownloadButton lang={lang} />
             <Link
-              href="https://github.com/SparklingSynapse/AriaType"
+              href="https://github.com/joe223/AriaType"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex h-11 items-center justify-center rounded-full border border-border bg-card px-6 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
