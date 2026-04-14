@@ -38,6 +38,7 @@ A plan is only completed when all implementation units are closed, verification 
 | Plan | Type | Date |
 |------|------|------|
 | [sherpa-onnx STT Engine Refactor](./completed/2026-04-08-001-refactor-sherpa-onnx-stt-engine.md) | refactor | 2026-04-08 |
+| [Audio Command Boundary Refactor](./completed/2026-04-13-003-refactor-audio-command-boundaries-plan.md) | refactor | 2026-04-13 |
 | [Startup Permission Logging Architecture](./completed/2026-04-14-006-startup-permission-logging-architecture-plan.md) | fix | 2026-04-14 |
 
 ## Provider API Reference

@@ -1,7 +1,7 @@
 ---
 title: Audio Command Boundary Refactor
 type: refactor
-status: active
+status: completed
 date: 2026-04-13
 ---
 
@@ -149,3 +149,10 @@ This plan refactors by extracting one behavior seam at a time, always starting w
   - `cargo test --lib services::transcription_finalize::tests::`
   - `cargo test --lib commands::audio::tests::`
   - `cargo fmt -- --check`
+- Completed the final command-layer split so `apps/desktop/src-tauri/src/commands/audio.rs` now serves only as a module barrel and public export surface.
+- Added focused command submodules under `apps/desktop/src-tauri/src/commands/audio/` for `start`, `stop`, `cancel`, `capture`, `retry`, `polish`, `query`, `level_monitor`, and shared helpers/tests.
+- Removed the pseudo-refactor shape where `audio.rs` only forwarded to a monolithic `audio/internal.rs`; the command logic now lives in responsibility-aligned modules instead of a hidden single-file sink.
+- Verified the modular command split with:
+  - `cargo fmt`
+  - `cargo test --lib`
+  - `cargo clippy --all-features -- -D warnings`

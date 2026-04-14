@@ -13,6 +13,7 @@ export function useRecording() {
   const [hotkey, setHotkey] = useState("shift+space");
   const recordingStartTime = useRef<number | null>(null);
   const prevStatusRef = useRef<RecordingStatus>("idle");
+  const latestTaskIdRef = useRef(0);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -34,7 +35,12 @@ export function useRecording() {
       unlistenStatus = await listen<{ status: RecordingStatus; task_id: number }>(
         "recording-state-changed",
         (event) => {
-          const newStatus = event.payload.status;
+          const { status: newStatus, task_id: taskId } = event.payload;
+          if (taskId < latestTaskIdRef.current) {
+            return;
+          }
+
+          latestTaskIdRef.current = taskId;
           const prevStatus = prevStatusRef.current;
 
           if (newStatus === "recording" && prevStatus !== "recording") {

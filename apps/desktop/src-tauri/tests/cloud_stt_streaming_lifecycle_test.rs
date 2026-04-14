@@ -853,12 +853,8 @@ async fn test_streaming_client_provider_name() {
     .unwrap();
     assert_eq!(volcengine.provider_name(), "Volcengine");
 
-    let aliyun = StreamingSttClient::new(
-        create_aliyun_config(),
-        Some("zh"),
-        SttContext::default(),
-    )
-    .unwrap();
+    let aliyun =
+        StreamingSttClient::new(create_aliyun_config(), Some("zh"), SttContext::default()).unwrap();
     assert_eq!(aliyun.provider_name(), "Aliyun");
 
     let elevenlabs = StreamingSttClient::new(
