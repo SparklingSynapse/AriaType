@@ -3,8 +3,18 @@
 #![allow(deprecated)]
 use tauri::{Emitter, Manager};
 use tauri_plugin_aptabase::EventTracker;
+use std::fmt;
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{
+    fmt::{
+        format::{Compact, FormatEvent, FormatFields, Writer},
+        FmtContext,
+    },
+    layer::SubscriberExt,
+    registry::LookupSpan,
+    util::SubscriberInitExt,
+    EnvFilter,
+};
 
 pub mod audio;
 pub mod commands;
@@ -56,6 +66,27 @@ fn cleanup_old_logs(log_dir: &std::path::Path, keep_days: u64) {
     }
 }
 
+struct EnvPrefixFormat<'a> {
+    prefix: &'a str,
+    inner: tracing_subscriber::fmt::format::Format<Compact>,
+}
+
+impl<'a, S, N> FormatEvent<S, N> for EnvPrefixFormat<'a>
+where
+    S: tracing::Subscriber + for<'lookup> LookupSpan<'lookup>,
+    N: for<'writer> FormatFields<'writer> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> fmt::Result {
+        write!(writer, "[{}] ", self.prefix)?;
+        self.inner.format_event(ctx, writer, event)
+    }
+}
+
 fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
     let log_dir = crate::utils::AppPaths::log_dir();
 
@@ -75,20 +106,28 @@ fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
     #[cfg(not(debug_assertions))]
     let env_prefix = "PROD";
 
-    let fmt = tracing_subscriber::fmt::format::Format::default().compact();
+    let base_fmt = tracing_subscriber::fmt::format::Format::default().compact();
+    let stderr_format = EnvPrefixFormat {
+        prefix: env_prefix,
+        inner: base_fmt.clone(),
+    };
+    let file_format = EnvPrefixFormat {
+        prefix: env_prefix,
+        inner: base_fmt,
+    };
 
     tracing_subscriber::registry()
         .with(env_filter)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stderr)
-                .event_format(fmt.clone()),
+                .event_format(stderr_format),
         )
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(non_blocking)
                 .with_ansi(false)
-                .event_format(fmt),
+                .event_format(file_format),
         )
         .init();
 
