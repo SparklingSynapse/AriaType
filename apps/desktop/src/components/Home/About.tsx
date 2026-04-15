@@ -7,6 +7,7 @@ import {
   Palette,
   Sparkles,
   Lock,
+  FileText,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
@@ -16,6 +17,7 @@ import appleLogo from "../../../assets/apple-logo.svg";
 import microsoftLogo from "../../../assets/microsoft-logo.svg";
 import { UpdateChecker } from "./UpdateChecker";
 import { SettingsPageLayout } from "./SettingsPageLayout";
+import { ChangelogModal } from "./ChangelogModal";
 
 const platforms = [
   { name: "macOS", requirement: "12.0+", logo: appleLogo },
@@ -26,6 +28,7 @@ export function About() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [version, setVersion] = useState("");
+  const [changelogOpen, setChangelogOpen] = useState(false);
 
   const features = [
     {
@@ -119,8 +122,15 @@ export function About() {
           <CardTitle>{t("about.updates")}</CardTitle>
           <CardDescription>{t("about.updatesDesc")}</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <UpdateChecker />
+          <button
+            onClick={() => setChangelogOpen(true)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <FileText className="h-4 w-4" />
+            {t("about.changelog.view")}
+          </button>
         </CardContent>
       </Card>
 
@@ -183,6 +193,8 @@ export function About() {
       <div className="text-center pt-4" id="copyright-area">
         <p className="text-xs text-muted-foreground">{t("about.copyright")}</p>
       </div>
+
+      <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </SettingsPageLayout>
   );
 }
