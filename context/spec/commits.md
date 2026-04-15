@@ -42,16 +42,38 @@ ci: add macOS binary pre-signing for smoother install
 
 | Type | When | Examples |
 |------|------|----------|
-| `feat` | New feature or capability | Add retry functionality, new hotkey support |
+| `feat` | User-facing feature | Add retry functionality, new hotkey support |
 | `fix` | Bug fix, error correction | Fix audio truncation, correct API response handling |
 | `refactor` | Code change without behavior change | Unify engine trait, reorganize modules |
-| `chore` | Maintenance, tooling, release | Update version, bump dependencies, clean up |
+| `chore` | Internal tooling, dev experience, release | Update version, dev log format, debug helpers |
 | `docs` | Documentation only | Update README, fix typo in guide |
 | `build` | Build system, dependencies | Add build script, update Cargo.toml |
 | `ci` | CI/CD configuration | Update GitHub Actions, add lint step |
 | `test` | Adding or modifying tests | Add integration test for pipeline |
 | `perf` | Performance improvement | Optimize audio chunking, reduce memory usage |
 | `style` | Code style (formatting, whitespace) | Fix indentation, normalize quotes |
+
+### Audience Determines Type
+
+**Primary rule**: Who benefits from the change determines the type.
+
+| Audience | Type | Examples |
+|----------|------|----------|
+| End users | `feat`, `fix`, `refactor`, `perf` | Retry button, recording fix, faster startup |
+| Developers only | `chore` | Dev log prefix, debug logging, internal helpers |
+
+Changes visible to end users (in app behavior, release notes) use `feat/fix/refactor/perf`. Changes only visible to developers (terminal output, internal tooling, debug aids) use `chore`.
+
+```
+✅ feat(desktop): retry failed transcriptions from history
+   → User sees retry button in history panel
+
+✅ chore(desktop): show dev/prod tag in terminal logs
+   → Developer sees [DEV]/[PROD] prefix when debugging
+
+❌ feat(desktop): show dev/prod tag in terminal logs
+   → Not user-facing, no release note needed
+```
 
 ---
 
@@ -206,6 +228,7 @@ Users with custom paths may need to update their config.
 |--------------|-----|
 | No type (`Update CNAME`) | `chore(website): update CNAME` |
 | Wrong type (`fix: add new feature`) | `feat(desktop): add new feature` |
+| Dev-only change as `feat` (`feat: add dev log prefix`) | `chore(desktop): show dev/prod tag in terminal logs` |
 | Past tense (`added retry`) | `add retry` |
 | Capitalized subject (`Add retry`) | `add retry` |
 | Trailing period (`add retry.`) | `add retry` |
@@ -222,6 +245,7 @@ Users with custom paths may need to update their config.
 ## 8. Verification Checklist
 
 - [ ] Type matches change category (Section 2)
+- [ ] Type matches audience: `feat/fix/refactor/perf` for users, `chore` for devs
 - [ ] Scope is `desktop`, `website`, or omitted (Section 3)
 - [ ] Subject describes user-facing impact, not implementation
 - [ ] Subject uses imperative mood
@@ -250,6 +274,15 @@ docs: add v0.3 release notes
 ci: add macOS binary pre-signing for smoother install
 ```
 
+### Good Examples (Dev-Only)
+
+```
+chore(desktop): show dev/prod tag in terminal logs
+chore(desktop): add debug logging for audio buffer
+chore: update rust-toolchain version
+chore: clean up unused dependencies
+```
+
 ### Anti-Examples (Too Technical → User-Facing)
 
 ```
@@ -264,4 +297,7 @@ ci: add macOS binary pre-signing for smoother install
 
 ❌ fix return committed transcript from finish()
 ✅ fix(desktop): ensure transcription result appears after recording stops
+
+❌ feat(desktop): add dev log prefix to terminal output
+✅ chore(desktop): show dev/prod tag in terminal logs
 ```

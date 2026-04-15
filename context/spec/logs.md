@@ -10,6 +10,7 @@ Conventions, format, and coverage requirements for AriaType logging.
 
 - `tracing` + `tracing-subscriber` + `tracing-appender`
 - Outputs: stderr (human-readable) + rolling hourly file (no ANSI)
+- Environment prefix: `[DEV]` or `[PROD]` added by format layer
 - File: `~/Library/Logs/ariatype/ariatype.log.YYYY-MM-DD-HH` (macOS)
 - Retention: 7 days, cleaned on startup
 - Default level: `info` (override via `RUST_LOG`)
@@ -40,13 +41,22 @@ Conventions, format, and coverage requirements for AriaType logging.
 ### Standard Format
 
 ```
-[timestamp] LEVEL [target]-[event_name]-[description] field1=val1
+[ENV] timestamp LEVEL target:message field1=val1
 ```
+
+- `ENV`: `[DEV]` or `[PROD]` — environment prefix (dev-only, not user-facing)
+- `timestamp`: ISO 8601 format
+- `LEVEL`: `ERROR` / `WARN` / `INFO` / `DEBUG` / `TRACE`
+- `target`: module path (e.g., `ariatype_lib::stt_engine::sherpa_onnx::engine`)
+- `message`: `event_name-description` pattern (snake_case, lowercase)
+- `fields`: structured key=value pairs
 
 Message string pattern: `event_name-description` (snake_case, lowercase).
 
 - `event_name`: identifies the event (required)
 - `description`: optional qualifier (omit if not needed)
+
+**Note**: Environment prefix is handled by `EnvPrefixFormat` in `lib.rs` — never add manually in log messages.
 
 ### Mandatory Rules
 
@@ -173,7 +183,8 @@ Hotkey → Recording → Audio Capture → Stop → WAV Write → STT → Polish
 | `println!` / `eprintln!` | Use `tracing` macros |
 | `error = format!("...")` | Use `error = %e` |
 | `info!("Model loaded: {}", name)` | `info!(model = %name, "model_loaded")` |
-| `info!("[prefix] message")` | `info!(prefix = %p, "message")` |
+| `info!("[DEV] message")` | Prefix handled by format layer — remove from message |
+| `info!("[prefix] message")` | `info!(prefix = %p, "message")` for dynamic prefix |
 | Missing `task_id` in pipeline | Always include where available |
 | `error!("failed")` no context | Add source, operation, identifiers |
 | Logging sensitive data | Truncate, hash, or omit |
