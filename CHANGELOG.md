@@ -6,7 +6,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
-- Add changelog viewer in about page (d26d64d)
+- Add changelog viewer in about page (0c72a43)
 - Add audio command boundary (b4e7a53)
 - Add single-instance plugin and handle silent recordings (a37e33c)
 - Add inhouse dev variant with custom icons and hotkey labels (8b43163)
