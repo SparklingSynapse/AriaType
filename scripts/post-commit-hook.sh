@@ -7,6 +7,12 @@ if [ "$SKIP_SIMPLE_GIT_HOOKS" = "1" ]; then
     exit 0
 fi
 
+# Skip if current commit already contains CHANGELOG.md (amend cycle prevention)
+if git show --name-only --format="" HEAD | grep -q "CHANGELOG.md"; then
+    echo "[INFO] CHANGELOG.md already in HEAD commit, skipping"
+    exit 0
+fi
+
 node scripts/generate-changelog.mjs
 
 if [ -f "CHANGELOG.md" ]; then
