@@ -11,6 +11,10 @@ All notable changes to the desktop application will be documented in this file.
 - Add single-instance plugin and handle silent recordings (a37e33c)
 - Add inhouse dev variant with custom icons and hotkey labels (8b43163)
 
+### Bug Fixes
+
+- Prevent changelog fetch loop and improve UI (77b9b44)
+
 ## v0.3.0 (2026-04-13)
 
 ### Features

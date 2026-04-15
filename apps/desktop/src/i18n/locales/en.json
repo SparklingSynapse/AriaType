@@ -256,6 +256,7 @@
   "about.changelog.close": "Close",
   "about.changelog.error": "Failed to load changelog",
   "about.changelog.retry": "Retry",
+  "about.changelog.empty": "No changes documented",
   "about.featuresDesc": "Private, local, and effortless voice typing.",
   "polishTemplates.title": "Polish Templates",
   "polishTemplates.description": "Manage templates for text polishing",

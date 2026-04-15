@@ -250,6 +250,7 @@
   "about.changelog.close": "Закрыть",
   "about.changelog.error": "Ошибка загрузки журнала изменений",
   "about.changelog.retry": "Повторить",
+  "about.changelog.empty": "No changes documented",
   "about.featuresDesc": "Приватно, локально и легкий голосовой ввод.",
   "polishTemplates.title": "Polish Templates",
   "polishTemplates.description": "Manage templates for text polishing",

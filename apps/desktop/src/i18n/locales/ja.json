@@ -250,6 +250,7 @@
   "about.changelog.close": "閉じる",
   "about.changelog.error": "更新履歴の読み込みに失敗しました",
   "about.changelog.retry": "再試行",
+  "about.changelog.empty": "No changes documented",
   "about.featuresDesc": "プライバシー優先、ローカル実行、簡単な音声入力。",
   "polishTemplates.title": "Polish Templates",
   "polishTemplates.description": "Manage templates for text polishing",

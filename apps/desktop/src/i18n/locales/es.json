@@ -244,6 +244,7 @@
   "about.changelog.close": "Cerrar",
   "about.changelog.error": "Error al cargar el registro de cambios",
   "about.changelog.retry": "Reintentar",
+  "about.changelog.empty": "No changes documented",
   "about.featuresDesc": "Privado, local y entrada de voz sin esfuerzo.",
   "polishTemplates.title": "Polish Templates",
   "polishTemplates.description": "Manage templates for text polishing",

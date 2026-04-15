@@ -244,6 +244,7 @@
   "about.changelog.close": "Fermer",
   "about.changelog.error": "Échec du chargement du journal des modifications",
   "about.changelog.retry": "Réessayer",
+  "about.changelog.empty": "No changes documented",
   "about.featuresDesc": "Privé, local et saisie vocale sans effort.",
   "polishTemplates.title": "Polish Templates",
   "polishTemplates.description": "Manage templates for text polishing",

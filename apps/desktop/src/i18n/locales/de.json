@@ -244,6 +244,7 @@
   "about.changelog.close": "Schließen",
   "about.changelog.error": "Änderungsprotokoll konnte nicht geladen werden",
   "about.changelog.retry": "Erneut versuchen",
+  "about.changelog.empty": "No changes documented",
   "about.featuresDesc": "Privat, lokal und mühelose Spracheingabe.",
   "polishTemplates.title": "Polish Templates",
   "polishTemplates.description": "Manage templates for text polishing",

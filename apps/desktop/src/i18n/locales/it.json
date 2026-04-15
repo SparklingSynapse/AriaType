@@ -250,6 +250,7 @@
   "about.changelog.close": "Chiudi",
   "about.changelog.error": "Caricamento registro modifiche fallito",
   "about.changelog.retry": "Riprova",
+  "about.changelog.empty": "No changes documented",
   "about.featuresDesc": "Privato, locale e input vocale senza sforzo.",
   "polishTemplates.title": "Polish Templates",
   "polishTemplates.description": "Manage templates for text polishing",

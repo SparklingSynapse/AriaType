@@ -250,6 +250,7 @@
   "about.changelog.close": "닫기",
   "about.changelog.error": "변경 로그 로드 실패",
   "about.changelog.retry": "재시도",
+  "about.changelog.empty": "No changes documented",
   "about.featuresDesc": "프라이버시 우선, 로컬 실행, 편안한 음성 입력.",
   "polishTemplates.title": "Polish Templates",
   "polishTemplates.description": "Manage templates for text polishing",
