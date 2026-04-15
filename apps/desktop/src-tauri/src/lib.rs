@@ -62,7 +62,6 @@ fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     if let Err(e) = std::fs::create_dir_all(&log_dir) {
-        // eprintln is acceptable here as a last-resort fallback BEFORE tracing is initialized
         eprintln!("failed to create log directory {:?}: {}", log_dir, e);
     }
 
@@ -71,17 +70,29 @@ fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
     let file_appender = tracing_appender::rolling::hourly(&log_dir, "ariatype.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
+    #[cfg(debug_assertions)]
+    let env_prefix = "DEV";
+    #[cfg(not(debug_assertions))]
+    let env_prefix = "PROD";
+
+    let fmt = tracing_subscriber::fmt::format::Format::default().compact();
+
     tracing_subscriber::registry()
         .with(env_filter)
-        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .event_format(fmt.clone()),
+        )
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(non_blocking)
-                .with_ansi(false),
+                .with_ansi(false)
+                .event_format(fmt),
         )
         .init();
 
-    tracing::info!(log_dir = ?log_dir, "logging_initialized");
+    tracing::info!(log_dir = ?log_dir, env = env_prefix, "logging_initialized");
     guard
 }
 

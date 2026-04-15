@@ -9,11 +9,18 @@ AriaType - 开源 AI 语音转文字输入工具 | 强大的Typeless替代方案
 
 [English](README.md) | 简体中文 | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md)
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.2-green)](https://github.com/joe223/AriaType/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.3-green)](https://github.com/joe223/AriaType/releases)
 
 [下载](https://github.com/joe223/AriaType/releases) • [文档](context/README.md) • [讨论区](https://github.com/joe223/AriaType/discussions) • [官网](https://ariatype.com)
 
 </div>
+
+> [!TIP]
+> **v0.3 更新内容**
+> - **重试失败转录** – 历史记录中的失败条目可使用保存的音频重试
+> - **ESC 取消录音** – 录音时按 ESC 取消，不会产生无效记录
+> - **长录音更稳定** – 修复了长时间录音被截断的问题
+> - **支持 Fn 键** – 自定义快捷键支持 Fn 组合键
 
 ---
 

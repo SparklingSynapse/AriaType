@@ -9,11 +9,18 @@ AriaType – Open-Source AI Voice-to-Text Input | Powerful Typeless Alternative
 
 English | [简体中文](README-cn.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md)
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.2-green)](https://github.com/joe223/AriaType/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.3-green)](https://github.com/joe223/AriaType/releases)
 
 [Download](https://github.com/joe223/AriaType/releases) • [Docs](context/README.md) • [Discussions](https://github.com/joe223/AriaType/discussions) • [Website](https://ariatype.com)
 
 </div>
+
+> [!TIP]
+> **What's New in v0.3**
+> - **Retry failed transcriptions** – history entries that failed can now be retried with saved audio
+> - **Cancel with ESC** – press ESC during recording to cancel without creating invalid entries
+> - **More stable long recordings** – fixed truncation issues for extended sessions
+> - **Fn key support** – custom hotkeys now support Fn key combinations
 
 ---
 

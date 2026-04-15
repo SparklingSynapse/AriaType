@@ -488,7 +488,7 @@ export function GeneralSettings() {
               <div className="space-y-2">
                 <Label>{t("model.domain.glossary")}</Label>
                 <textarea
-                  className="flex min-h-[80px] w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 scrollbar-overlay"
+                  className="flex min-h-[80px] w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   value={settings.stt_engine_user_glossary ?? ""}
                   onChange={(e) => handleGlossaryChange(e.target.value)}
                   placeholder={t("model.domain.glossaryPlaceholder")}

@@ -108,88 +108,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Native-style scrollbar (macOS overlay look) */
+/* Hide native scrollbar - use OverlayScrollbars instead */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
-  border-radius: 100px;
-  /* 2px transparent border + background-clip creates visual padding,
-     making the thumb appear ~4px wide like macOS */
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  transition: background 0.15s ease;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.32);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.32);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-/* Native overlay scrollbar (macOS style - only shows on hover/scroll) */
-.scrollbar-overlay {
-  scrollbar-gutter: stable;
-}
-
-.scrollbar-overlay::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.scrollbar-overlay::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scrollbar-overlay::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 100px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.scrollbar-overlay::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  opacity: 1;
-}
-
-.scrollbar-overlay:hover::-webkit-scrollbar-thumb {
-  opacity: 1;
-}
-
-.dark .scrollbar-overlay::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.dark .scrollbar-overlay::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  width: 0;
+  height: 0;
 }
 
 /* Toast styles - minimal, elegant, with smooth transitions */

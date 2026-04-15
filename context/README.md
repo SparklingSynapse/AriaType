@@ -55,6 +55,7 @@
 | [`spec/testing.md`](./spec/testing.md) | Test pyramid, coverage gates, verification commands |
 | [`spec/engine-api-contract.md`](./spec/engine-api-contract.md) | STT/Polish engine API contracts, unified interfaces |
 | [`spec/hotkey.md`](./spec/hotkey.md) | Global hotkey combinations, capture behavior, validation rules |
+| [`spec/commits.md`](./spec/commits.md) | Commit message format, type/scope taxonomy, anti-patterns |
 
 ---
 
@@ -138,6 +139,7 @@ Active and completed execution plans.
 | Write and run tests | [`guides/testing.md`](./guides/testing.md) |
 | Understand logging requirements | [`spec/logs.md`](./spec/logs.md) |
 | Understand hotkey rules | [`spec/hotkey.md`](./spec/hotkey.md) |
+| Write a commit message | [`spec/commits.md`](./spec/commits.md) |
 | Debug a production issue | [`guides/debugging.md`](./guides/debugging.md) |
 | Look up provider API details | [`reference/`](./reference/README.md) |
 | Understand a feature spec | `feat/<name>/<version>/prd/erd.md` |
@@ -179,7 +181,8 @@ context/
 │   ├── logs.md                        # Logging standard
 │   ├── testing.md                     # Test pyramid and coverage gates
 │   ├── engine-api-contract.md         # Engine API contract testing
-│   └── hotkey.md                      # Global hotkey specification
+│   ├── hotkey.md                      # Global hotkey specification
+│   └── commits.md                     # Commit message format and taxonomy
 │
 ├── conventions/
 │   ├── README.md                      # Conventions index
