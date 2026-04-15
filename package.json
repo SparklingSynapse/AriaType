@@ -7,6 +7,7 @@
   "scripts": {
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:md-links": "node scripts/check-md-links.mjs",
+    "changelog": "node scripts/generate-changelog.mjs",
     "version:patch": "pnpm --filter @ariatype/desktop version:patch",
     "version:minor": "pnpm --filter @ariatype/desktop version:minor",
     "version:major": "pnpm --filter @ariatype/desktop version:major",
@@ -29,7 +30,8 @@
     "build:website": "pnpm --filter @ariatype/website build && node scripts/sync-website-export.mjs"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm check:md-links"
+    "pre-commit": "pnpm check:md-links",
+    "post-commit": "./scripts/post-commit-hook.sh"
   },
   "devDependencies": {
     "simple-git-hooks": "^2.13.1",
