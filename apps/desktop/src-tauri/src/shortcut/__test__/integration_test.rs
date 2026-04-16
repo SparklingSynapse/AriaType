@@ -27,14 +27,14 @@ fn test_shortcut_manager_creation() {
 fn test_shortcut_manager_register() {
     let manager = ShortcutManager::new().unwrap();
     // Register should succeed even without app handle (stores in pending state)
-    let result = manager.register("Cmd+Space");
+    let result = manager.register_primary("Cmd+Space");
     assert!(result.is_ok());
 }
 
 #[test]
 fn test_shortcut_manager_unregister() {
     let manager = ShortcutManager::new().unwrap();
-    let result = manager.unregister();
+    let result = manager.unregister_primary();
     assert!(result.is_ok());
 }
 

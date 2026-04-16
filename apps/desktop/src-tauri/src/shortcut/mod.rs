@@ -2,7 +2,7 @@
 //!
 //! This module provides:
 //! - `ShortcutManager`: Background thread handling hotkey registration and triggering
-//! - `RecordingListener`: Low-level keyboard listener for hotkey recording UI
+//! - Internal recording capture runtime for hotkey recording UI
 //! - `FnEmojiBlocker`: macOS-specific blocker for FN/Globe key emoji popup
 //!
 //! Uses `handy-keys` library for cross-platform support (macOS, Windows, Linux).
@@ -19,7 +19,6 @@ mod listener;
 mod manager;
 
 // Public API
-pub use listener::RecordingListener;
 pub use manager::ShortcutManager;
 pub use types::{HotkeyConfig, ShortcutCommand, ShortcutEvent, ShortcutState};
 

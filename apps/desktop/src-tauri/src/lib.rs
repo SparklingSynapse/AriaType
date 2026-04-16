@@ -1,9 +1,9 @@
 // Suppress warnings from third-party macros (objc, cocoa) that we cannot control.
 #![allow(unexpected_cfgs)]
 #![allow(deprecated)]
+use std::fmt;
 use tauri::{Emitter, Manager};
 use tauri_plugin_aptabase::EventTracker;
-use std::fmt;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{
     fmt::{
@@ -588,7 +588,7 @@ pub fn run() {
             match shortcut_manager.start(app.handle().clone()) {
                 Ok(_) => {
                     // Register the initial hotkey
-                    match shortcut_manager.register(&hotkey) {
+                    match shortcut_manager.register_primary(&hotkey) {
                         Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
                         Err(e) => {
                             warn!(error = %e, "shortcut_registration_failed");

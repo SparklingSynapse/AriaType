@@ -202,8 +202,6 @@ pub struct AppState {
     pub streaming_stt: Mutex<Option<StreamingSttState>>,
     /// Transcription history store (SQLite)
     pub history_store: Mutex<crate::history::HistoryStore>,
-    /// Recording listener for hotkey recording UI (captures FN key)
-    pub hotkey_recording_listener: Mutex<Option<crate::shortcut::RecordingListener>>,
 }
 
 impl AppState {
@@ -247,7 +245,6 @@ impl AppState {
             history_store: Mutex::new(
                 crate::history::HistoryStore::new().expect("failed to initialize history store"),
             ),
-            hotkey_recording_listener: Mutex::new(None),
         }
     }
 

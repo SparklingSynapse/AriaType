@@ -1,9 +1,13 @@
 //! macOS-specific accessibility helpers.
 //!
 //! On macOS, global keyboard shortcuts require accessibility permissions.
-//! This module provides helpers to check and request those permissions.
+//! This module provides helpers to check, probe, and request those permissions.
 
+#[cfg(target_os = "macos")]
+use std::ffi::c_void;
 use std::process::Command;
+#[cfg(target_os = "macos")]
+use std::ptr::NonNull;
 
 /// Check if accessibility permissions are granted for this application.
 ///
@@ -14,10 +18,48 @@ pub fn check_accessibility() -> bool {
     handy_keys::check_accessibility()
 }
 
+/// Create and immediately tear down a fresh keyboard-only event tap.
+///
+/// This is stricter than `check_accessibility()`: it verifies that macOS will
+/// currently allow a new session event tap to be created for keyboard traffic.
+pub fn fresh_event_tap_probe() -> Result<(), String> {
+    use objc2_core_foundation::CFMachPort;
+    use objc2_core_graphics::{
+        CGEvent, CGEventMask, CGEventTapCallBack, CGEventTapLocation, CGEventTapOptions,
+        CGEventTapPlacement, CGEventType,
+    };
+
+    if !check_accessibility() {
+        return Err("Accessibility permission not granted".to_string());
+    }
+
+    let event_mask: CGEventMask = (1 << CGEventType::KeyDown.0)
+        | (1 << CGEventType::KeyUp.0)
+        | (1 << CGEventType::FlagsChanged.0);
+
+    let callback: CGEventTapCallBack = Some(fresh_event_tap_probe_callback);
+    let tap = unsafe {
+        CGEvent::tap_create(
+            CGEventTapLocation::SessionEventTap,
+            CGEventTapPlacement::HeadInsertEventTap,
+            CGEventTapOptions::ListenOnly,
+            event_mask,
+            callback,
+            std::ptr::null_mut(),
+        )
+    }
+    .ok_or_else(|| "Failed to create fresh event tap probe".to_string())?;
+
+    CGEvent::tap_enable(&tap, true);
+    CGEvent::tap_enable(&tap, false);
+    CFMachPort::invalidate(&tap);
+
+    Ok(())
+}
+
 /// Open macOS System Settings accessibility pane.
 ///
 /// Guides the user to grant accessibility permissions to the application.
-/// After granting permissions, the application must be restarted.
 pub fn open_accessibility_settings() -> Result<(), String> {
     // Use handy-keys' helper if available, otherwise fall back to manual approach
     if let Err(_e) = handy_keys::open_accessibility_settings() {
@@ -31,6 +73,15 @@ pub fn open_accessibility_settings() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+unsafe extern "C-unwind" fn fresh_event_tap_probe_callback(
+    _proxy: objc2_core_graphics::CGEventTapProxy,
+    _event_type: objc2_core_graphics::CGEventType,
+    event: NonNull<objc2_core_graphics::CGEvent>,
+    _user_info: *mut c_void,
+) -> *mut objc2_core_graphics::CGEvent {
+    event.as_ptr()
 }
 
 #[cfg(test)]

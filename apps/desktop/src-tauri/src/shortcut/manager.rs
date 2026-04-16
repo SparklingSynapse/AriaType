@@ -8,12 +8,21 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+#[cfg(target_os = "macos")]
+use std::time::Instant;
 
 use parking_lot::Mutex;
 use tauri::{Emitter, Manager};
 
+use crate::commands::settings::save_settings_internal;
 use crate::events::EventName;
+use crate::services::shortcut::{
+    cancel_hotkey_release_unregister_owner, capture_cancel_hotkey_release_owner,
+    primary_shortcut_action, primary_shortcut_context, should_unregister_cancel_hotkeys,
+    PrimaryShortcutAction,
+};
 
+use super::listener::RecordingListener;
 use super::types::{ShortcutEvent, ShortcutState};
 
 #[cfg(target_os = "macos")]
@@ -30,8 +39,12 @@ enum ShortcutCommand {
 
 /// Internal state shared between main thread and background thread.
 struct ManagerState {
+    /// App handle stored after startup for manager-owned side effects.
+    app_handle: Mutex<Option<tauri::AppHandle>>,
     /// Commands to execute on next cycle.
     pending_commands: Mutex<Vec<ShortcutCommand>>,
+    /// Desired hotkey string that should be registered whenever runtime is available.
+    desired_hotkey: Mutex<Option<String>>,
     /// Current registered hotkey ID (stored directly as HotkeyId which is Copy).
     current_id: Mutex<Option<handy_keys::HotkeyId>>,
     /// Cancel hotkey IDs. Hold mode may need modifier-aware Escape variants.
@@ -40,6 +53,8 @@ struct ManagerState {
     cancel_owner_task_id: Mutex<Option<u64>>,
     /// Task whose cancel hotkey should be unregistered after ESC is released.
     pending_cancel_release_owner_task_id: Mutex<Option<u64>>,
+    /// Listener used for hotkey recording capture.
+    recording_listener: Mutex<Option<RecordingListener>>,
     /// Signal to shut down the background thread.
     shutdown: AtomicBool,
 }
@@ -60,9 +75,6 @@ pub struct ShortcutManager {
     thread_handle: Option<JoinHandle<()>>,
     /// Shared state with background thread.
     state: Arc<ManagerState>,
-    /// FN emoji blocker (macOS only) to prevent system FN shortcuts during normal operation.
-    #[cfg(target_os = "macos")]
-    fn_emoji_blocker: Option<FnEmojiBlocker>,
 }
 
 impl ShortcutManager {
@@ -73,11 +85,14 @@ impl ShortcutManager {
         let (event_tx, event_rx) = std::sync::mpsc::channel();
 
         let state = Arc::new(ManagerState {
+            app_handle: Mutex::new(None),
             pending_commands: Mutex::new(Vec::new()),
+            desired_hotkey: Mutex::new(None),
             current_id: Mutex::new(None),
             cancel_ids: Mutex::new(Vec::new()),
             cancel_owner_task_id: Mutex::new(None),
             pending_cancel_release_owner_task_id: Mutex::new(None),
+            recording_listener: Mutex::new(None),
             shutdown: AtomicBool::new(false),
         });
 
@@ -86,8 +101,6 @@ impl ShortcutManager {
             event_rx: Mutex::new(event_rx),
             thread_handle: None,
             state,
-            #[cfg(target_os = "macos")]
-            fn_emoji_blocker: None,
         })
     }
 
@@ -102,23 +115,8 @@ impl ShortcutManager {
             return Err("shortcut manager already started".to_string());
         }
 
-        // Check accessibility on macOS
-        #[cfg(target_os = "macos")]
-        {
-            if !super::macos::check_accessibility() {
-                tracing::warn!("accessibility_permissions_not_granted");
-                // Continue anyway; hotkeys may not work but won't crash
-            }
-        }
-
-        // Start FN emoji blocker on macOS
-        #[cfg(target_os = "macos")]
-        {
-            let mut blocker = FnEmojiBlocker::new();
-            blocker.start()?;
-            self.fn_emoji_blocker = Some(blocker);
-            tracing::info!("fn_emoji_blocker_started_for_shortcut_manager");
-        }
+        self.state.shutdown.store(false, Ordering::SeqCst);
+        *self.state.app_handle.lock() = Some(app_handle.clone());
 
         let state = Arc::clone(&self.state);
         let event_tx = self.event_tx.clone();
@@ -136,21 +134,21 @@ impl ShortcutManager {
     /// Register a new hotkey, replacing any existing one.
     ///
     /// Stores in shared state; background thread will pick it up.
-    pub fn register(&self, hotkey: &str) -> Result<(), String> {
+    pub fn register_primary(&self, hotkey: &str) -> Result<(), String> {
         // Store in pending state; background thread will pick it up
         let mut pending = self.state.pending_commands.lock();
         pending.push(ShortcutCommand::Register(hotkey.to_string()));
 
-        tracing::info!(hotkey = %hotkey, "shortcut_register_requested");
+        tracing::info!(hotkey = %hotkey, "primary_shortcut_register_requested");
         Ok(())
     }
 
     /// Unregister the current hotkey.
-    pub fn unregister(&self) -> Result<(), String> {
+    pub fn unregister_primary(&self) -> Result<(), String> {
         let mut pending = self.state.pending_commands.lock();
         pending.push(ShortcutCommand::Unregister);
 
-        tracing::info!("shortcut_unregister_requested");
+        tracing::info!("primary_shortcut_unregister_requested");
         Ok(())
     }
 
@@ -185,27 +183,74 @@ impl ShortcutManager {
         Ok(())
     }
 
+    /// Start the hotkey recording capture runtime.
+    pub fn start_recording_capture(&self) -> Result<(), String> {
+        let app_handle = self.app_handle()?;
+        let mut recording_listener = self.state.recording_listener.lock();
+
+        if recording_listener
+            .as_ref()
+            .is_some_and(|listener| listener.is_active())
+        {
+            return Err("hotkey recording already in progress".to_string());
+        }
+
+        let mut listener = RecordingListener::new()
+            .map_err(|error| format!("failed to create recording listener: {error}"))?;
+        listener
+            .start(app_handle)
+            .map_err(|error| format!("failed to start recording listener: {error}"))?;
+        *recording_listener = Some(listener);
+
+        tracing::info!("recording_capture_started");
+        Ok(())
+    }
+
+    /// Stop the recording capture runtime and commit the captured hotkey if present.
+    pub fn stop_recording_capture(&self) -> Result<Option<String>, String> {
+        let captured_hotkey = stop_recording_capture_listener(&self.state, "explicit_stop");
+
+        if let Some(ref hotkey) = captured_hotkey {
+            let app_handle = self.app_handle()?;
+            commit_captured_primary_hotkey(self, &app_handle, hotkey)?;
+        }
+
+        Ok(captured_hotkey)
+    }
+
+    /// Cancel the recording capture runtime without persisting the result.
+    pub fn cancel_recording_capture(&self) {
+        let _ = stop_recording_capture_listener(&self.state, "cancelled");
+    }
+
+    /// Inspect the captured hotkey without stopping capture.
+    pub fn peek_recording_capture(&self) -> Option<String> {
+        self.state
+            .recording_listener
+            .lock()
+            .as_ref()
+            .and_then(RecordingListener::peek_captured)
+    }
+
+    /// Whether the recording capture runtime is active.
+    pub fn is_recording_capture_active(&self) -> bool {
+        self.state
+            .recording_listener
+            .lock()
+            .as_ref()
+            .is_some_and(|listener| listener.is_active())
+    }
+
     /// Stop the background thread and cleanup.
     pub fn stop(&mut self) -> Result<(), String> {
         if self.thread_handle.is_none() {
             return Ok(());
         }
 
-        // Stop FN emoji blocker on macOS
-        #[cfg(target_os = "macos")]
-        if let Some(mut blocker) = self.fn_emoji_blocker.take() {
-            blocker.stop();
-            tracing::info!("fn_emoji_blocker_stopped_for_shortcut_manager");
-        }
-
         self.state.shutdown.store(true, Ordering::SeqCst);
 
-        // Wait for thread to finish (with timeout)
         if let Some(handle) = self.thread_handle.take() {
-            // Give it a moment to shutdown gracefully
-            thread::sleep(Duration::from_millis(10));
-            // Drop handle without blocking indefinitely
-            std::mem::drop(handle);
+            let _ = handle.join();
         }
 
         tracing::info!("shortcut_manager_stopped");
@@ -216,6 +261,14 @@ impl ShortcutManager {
     pub fn event_receiver(&self) -> parking_lot::MutexGuard<'_, Receiver<ShortcutEvent>> {
         self.event_rx.lock()
     }
+
+    fn app_handle(&self) -> Result<tauri::AppHandle, String> {
+        self.state
+            .app_handle
+            .lock()
+            .clone()
+            .ok_or_else(|| "shortcut manager app handle unavailable".to_string())
+    }
 }
 
 impl Default for ShortcutManager {
@@ -224,183 +277,429 @@ impl Default for ShortcutManager {
     }
 }
 
-/// Run the hotkey event loop in a background thread.
-///
-/// This function:
-/// 1. Creates a `HotkeyManager`
-/// 2. Registers pending hotkeys from shared state
-/// 3. Receives hotkey events and emits to main thread
-/// 4. Handles shutdown signal
+#[cfg(target_os = "macos")]
+const SHORTCUT_PERMISSION_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+#[cfg(target_os = "macos")]
+const SHORTCUT_RUNTIME_PROBE_INTERVAL: Duration = Duration::from_millis(500);
+
+struct ShortcutRuntime {
+    manager: handy_keys::HotkeyManager,
+    #[cfg(target_os = "macos")]
+    fn_emoji_blocker: FnEmojiBlocker,
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for ShortcutRuntime {
+    fn drop(&mut self) {
+        self.fn_emoji_blocker.stop();
+        tracing::info!("fn_emoji_blocker_stopped_for_shortcut_manager");
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimePermissionAction {
+    Mount,
+    Unmount,
+    Keep,
+}
+
+#[cfg(target_os = "macos")]
+fn runtime_permission_action(
+    runtime_is_mounted: bool,
+    previous_accessibility_granted: Option<bool>,
+    accessibility_granted: bool,
+) -> RuntimePermissionAction {
+    match (
+        runtime_is_mounted,
+        previous_accessibility_granted,
+        accessibility_granted,
+    ) {
+        (true, _, false) => RuntimePermissionAction::Unmount,
+        (false, Some(false), true) | (false, None, true) => RuntimePermissionAction::Mount,
+        _ => RuntimePermissionAction::Keep,
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeProbeAction {
+    Mount,
+    Unmount,
+    Keep,
+}
+
+#[cfg(target_os = "macos")]
+fn runtime_probe_action(runtime_is_mounted: bool, probe_ok: bool) -> RuntimeProbeAction {
+    match (runtime_is_mounted, probe_ok) {
+        (false, true) => RuntimeProbeAction::Mount,
+        (true, false) => RuntimeProbeAction::Unmount,
+        _ => RuntimeProbeAction::Keep,
+    }
+}
+
 fn run_hotkey_loop(
     state: Arc<ManagerState>,
     event_tx: Sender<ShortcutEvent>,
     app_handle: tauri::AppHandle,
 ) {
-    // Create the hotkey manager
-    let mut manager = match create_hotkey_manager() {
-        Ok(m) => m,
-        Err(e) => {
-            tracing::error!(error = %e, "hotkey_manager_creation_failed");
-            let _ = event_tx.send(ShortcutEvent::RegistrationFailed {
-                error: e.to_string(),
-            });
-            return;
-        }
-    };
+    #[cfg(target_os = "macos")]
+    let mut runtime: Option<ShortcutRuntime> = None;
+    #[cfg(not(target_os = "macos"))]
+    let mut runtime: Option<ShortcutRuntime> =
+        match mount_shortcut_runtime(&state, &event_tx, &app_handle) {
+            Ok(runtime) => Some(runtime),
+            Err(error) => {
+                emit_registration_failure(&event_tx, &app_handle, error);
+                return;
+            }
+        };
 
-    tracing::info!("hotkey_manager_created");
+    #[cfg(target_os = "macos")]
+    let mut last_permission_poll_at = Instant::now() - SHORTCUT_PERMISSION_POLL_INTERVAL;
+    #[cfg(target_os = "macos")]
+    let mut last_accessibility_granted: Option<bool> = None;
+    #[cfg(target_os = "macos")]
+    let mut last_probe_at = Instant::now() - SHORTCUT_RUNTIME_PROBE_INTERVAL;
 
-    // Main event loop
     loop {
-        // Check shutdown signal
         if state.shutdown.load(Ordering::SeqCst) {
             tracing::info!("hotkey_manager_shutdown_requested");
             break;
         }
 
-        // Check for pending command
-        {
-            let mut pending = state.pending_commands.lock();
-            let commands: Vec<ShortcutCommand> = pending.drain(..).collect();
-            drop(pending);
+        #[cfg(target_os = "macos")]
+        if last_permission_poll_at.elapsed() >= SHORTCUT_PERMISSION_POLL_INTERVAL {
+            let permission_snapshot = crate::permissions::report_permission_snapshot_if_changed(
+                "shortcut_runtime_permission_poll",
+            );
+            let accessibility_granted =
+                permission_snapshot.accessibility == crate::permissions::PermissionStatus::Granted;
+            let action = runtime_permission_action(
+                runtime.is_some(),
+                last_accessibility_granted,
+                accessibility_granted,
+            );
 
-            for command in commands {
-                match command {
-                    ShortcutCommand::Register(hotkey_str) => {
-                        // Unregister old hotkey if exists (using stored HotkeyId)
-                        {
-                            let mut current = state.current_id.lock();
-                            if let Some(old_id) = current.take() {
-                                tracing::info!(
-                                    old_id = old_id.as_u32(),
-                                    "unregistering_old_hotkey"
-                                );
-                                if let Err(e) = manager.unregister(old_id) {
-                                    tracing::warn!(error = ?e, "old_hotkey_unregister_failed");
-                                } else {
-                                    tracing::info!("old_hotkey_unregistered");
-                                }
-                            }
-                        }
-
-                        // Recreate the manager to reset any stuck modifier states
-                        // This fixes an issue where the recording listener's tap blocks the key-down
-                        // but allows the key-up, causing the manager's internal modifier state to invert.
-                        tracing::info!("recreating_hotkey_manager_to_reset_state");
-                        manager = match create_hotkey_manager() {
-                            Ok(m) => m,
-                            Err(e) => {
-                                tracing::error!(error = %e, "hotkey_manager_recreation_failed");
-                                let _ = event_tx.send(ShortcutEvent::RegistrationFailed {
-                                    error: e.to_string(),
-                                });
-                                return;
-                            }
-                        };
-
-                        // Re-register cancel hotkey if it was active
-                        let mut cancel_lock = state.cancel_ids.lock();
-                        if !cancel_lock.is_empty() {
-                            let cancel_hotkeys = build_cancel_hotkeys_for_app(&app_handle);
-                            *cancel_lock = register_cancel_hotkeys(&manager, &cancel_hotkeys);
-                        }
-                        drop(cancel_lock);
-
-                        // Parse and register new hotkey
-                        match register_hotkey(&manager, &hotkey_str) {
-                            Ok(id) => {
-                                tracing::info!(hotkey = %hotkey_str, id = id.as_u32(), "hotkey_registered");
-                                let mut current = state.current_id.lock();
-                                *current = Some(id);
-                            }
-                            Err(e) => {
-                                tracing::error!(hotkey = %hotkey_str, error = %e, "hotkey_registration_failed");
-                                // Emit failure event
-                                let _ = event_tx
-                                    .send(ShortcutEvent::RegistrationFailed { error: e.clone() });
-                                // Also emit to frontend via Tauri
-                                let _ = app_handle.emit(EventName::SHORTCUT_REGISTRATION_FAILED, e);
-                            }
-                        }
-                    }
-                    ShortcutCommand::Unregister => {
-                        let mut current = state.current_id.lock();
-                        if let Some(old_id) = current.take() {
-                            tracing::info!(
-                                old_id = old_id.as_u32(),
-                                "unregistering_old_hotkey_explicit"
-                            );
-                            if let Err(e) = manager.unregister(old_id) {
-                                tracing::warn!(error = ?e, "old_hotkey_unregister_failed_explicit");
-                            } else {
-                                tracing::info!("old_hotkey_unregistered_explicit");
-                            }
-                        }
-                    }
-                    ShortcutCommand::RegisterCancel { owner_task_id } => {
-                        *state.cancel_owner_task_id.lock() = Some(owner_task_id);
-                        let mut current = state.cancel_ids.lock();
-                        unregister_cancel_hotkeys(&manager, &mut current);
-                        let cancel_hotkeys = build_cancel_hotkeys_for_app(&app_handle);
-                        *current = register_cancel_hotkeys(&manager, &cancel_hotkeys);
-                    }
-                    ShortcutCommand::UnregisterCancel { owner_task_id } => {
-                        let mut cancel_owner_task_id = state.cancel_owner_task_id.lock();
-                        if should_unregister_cancel_hotkeys(*cancel_owner_task_id, owner_task_id) {
-                            *cancel_owner_task_id = None;
-                            drop(cancel_owner_task_id);
-
-                            let mut current = state.cancel_ids.lock();
-                            unregister_cancel_hotkeys(&manager, &mut current);
-                        } else {
-                            tracing::info!(
-                                current_owner_task_id = ?*cancel_owner_task_id,
-                                requested_owner_task_id = ?owner_task_id,
-                                "stale_cancel_hotkey_unregister_ignored"
-                            );
-                        }
+            match action {
+                RuntimePermissionAction::Mount => {
+                    tracing::info!("shortcut_runtime_permission_available");
+                    if let Err(error) =
+                        remount_shortcut_runtime(&mut runtime, &state, &event_tx, &app_handle)
+                    {
+                        tracing::warn!(error = %error, "shortcut_runtime_mount_failed");
                     }
                 }
+                RuntimePermissionAction::Unmount => {
+                    tracing::warn!("shortcut_runtime_permission_lost");
+                    unmount_shortcut_runtime(&mut runtime, &state, "accessibility_permission_lost");
+                }
+                RuntimePermissionAction::Keep => {}
             }
+
+            last_accessibility_granted = Some(accessibility_granted);
+            last_permission_poll_at = Instant::now();
         }
 
-        // Receive hotkey event (non-blocking)
-        // Use try_recv() to allow checking shutdown signal
-        match manager.try_recv() {
-            Some(event) => {
-                // Convert handy_keys state to our state
-                let state_enum = match event.state {
-                    handy_keys::HotkeyState::Pressed => ShortcutState::Pressed,
-                    handy_keys::HotkeyState::Released => ShortcutState::Released,
-                };
+        #[cfg(target_os = "macos")]
+        if last_probe_at.elapsed() >= SHORTCUT_RUNTIME_PROBE_INTERVAL {
+            let probe_result = super::macos::fresh_event_tap_probe();
+            let action = runtime_probe_action(runtime.is_some(), probe_result.is_ok());
 
-                let current_id = *state.current_id.lock();
-                let cancel_ids = state.cancel_ids.lock().clone();
+            match action {
+                RuntimeProbeAction::Mount => {
+                    tracing::info!("shortcut_runtime_probe_recovered");
+                    if let Err(error) =
+                        remount_shortcut_runtime(&mut runtime, &state, &event_tx, &app_handle)
+                    {
+                        tracing::warn!(error = %error, "shortcut_runtime_mount_failed");
+                    }
+                }
+                RuntimeProbeAction::Unmount => {
+                    let error = probe_result
+                        .err()
+                        .unwrap_or_else(|| "fresh event tap probe failed".to_string());
+                    tracing::warn!(error = %error, "shortcut_runtime_probe_failed");
+                    unmount_shortcut_runtime(&mut runtime, &state, "permission_probe_failed");
+                }
+                RuntimeProbeAction::Keep => {}
+            }
 
-                if Some(event.id) == current_id {
-                    tracing::info!(state = %state_enum.as_str(), "hotkey_triggered");
-                    let _ = event_tx.send(ShortcutEvent::Triggered { state: state_enum });
-                    let _ = app_handle.emit(EventName::SHORTCUT_TRIGGERED, state_enum.as_str());
-                    handle_recording_trigger(&app_handle, state_enum);
-                } else if cancel_ids.contains(&event.id) {
-                    tracing::info!(state = %state_enum.as_str(), "cancel_hotkey_triggered");
-                    let _ = event_tx.send(ShortcutEvent::CancelTriggered { state: state_enum });
-                    handle_cancel_trigger(&app_handle, state_enum);
-                }
+            last_probe_at = Instant::now();
+        }
+
+        process_pending_commands(&mut runtime, &state, &event_tx, &app_handle);
+
+        if let Some(runtime) = runtime.as_ref() {
+            match runtime.manager.try_recv() {
+                Some(event) => handle_hotkey_event(event, &state, &event_tx, &app_handle),
+                None => thread::sleep(Duration::from_millis(50)),
             }
-            None => {
-                // No event available, check shutdown and sleep briefly
-                if state.shutdown.load(Ordering::SeqCst) {
-                    tracing::info!("hotkey_manager_shutdown_detected");
-                    break;
-                }
-                // Sleep briefly to avoid busy-waiting
-                thread::sleep(Duration::from_millis(50));
-            }
+        } else {
+            thread::sleep(Duration::from_millis(50));
         }
     }
 
+    unmount_shortcut_runtime(&mut runtime, &state, "shutdown");
     tracing::info!("hotkey_manager_loop_exited");
+}
+
+fn process_pending_commands(
+    runtime: &mut Option<ShortcutRuntime>,
+    state: &Arc<ManagerState>,
+    event_tx: &Sender<ShortcutEvent>,
+    app_handle: &tauri::AppHandle,
+) {
+    let mut pending = state.pending_commands.lock();
+    let commands: Vec<ShortcutCommand> = pending.drain(..).collect();
+    drop(pending);
+
+    for command in commands {
+        match command {
+            ShortcutCommand::Register(hotkey_str) => {
+                *state.desired_hotkey.lock() = Some(hotkey_str);
+
+                if runtime.is_some() {
+                    if let Err(error) =
+                        remount_shortcut_runtime(runtime, state, event_tx, app_handle)
+                    {
+                        tracing::warn!(error = %error, "shortcut_runtime_remount_failed");
+                    }
+                } else {
+                    tracing::info!("shortcut_register_deferred_until_runtime_available");
+                }
+            }
+            ShortcutCommand::Unregister => {
+                *state.desired_hotkey.lock() = None;
+                if let Some(runtime) = runtime.as_ref() {
+                    unregister_current_hotkey(&runtime.manager, state, "explicit");
+                } else {
+                    clear_live_registrations(state);
+                }
+            }
+            ShortcutCommand::RegisterCancel { owner_task_id } => {
+                *state.cancel_owner_task_id.lock() = Some(owner_task_id);
+
+                if let Some(runtime) = runtime.as_ref() {
+                    let mut current = state.cancel_ids.lock();
+                    unregister_cancel_hotkeys(&runtime.manager, &mut current);
+                    let cancel_hotkeys = build_cancel_hotkeys_for_app(app_handle);
+                    *current = register_cancel_hotkeys(&runtime.manager, &cancel_hotkeys);
+                }
+            }
+            ShortcutCommand::UnregisterCancel { owner_task_id } => {
+                let mut cancel_owner_task_id = state.cancel_owner_task_id.lock();
+                if should_unregister_cancel_hotkeys(*cancel_owner_task_id, owner_task_id) {
+                    *cancel_owner_task_id = None;
+                    drop(cancel_owner_task_id);
+
+                    if let Some(runtime) = runtime.as_ref() {
+                        let mut current = state.cancel_ids.lock();
+                        unregister_cancel_hotkeys(&runtime.manager, &mut current);
+                    } else {
+                        state.cancel_ids.lock().clear();
+                    }
+                } else {
+                    tracing::info!(
+                        current_owner_task_id = ?*cancel_owner_task_id,
+                        requested_owner_task_id = ?owner_task_id,
+                        "stale_cancel_hotkey_unregister_ignored"
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn handle_hotkey_event(
+    event: handy_keys::HotkeyEvent,
+    state: &Arc<ManagerState>,
+    event_tx: &Sender<ShortcutEvent>,
+    app_handle: &tauri::AppHandle,
+) {
+    let state_enum = match event.state {
+        handy_keys::HotkeyState::Pressed => ShortcutState::Pressed,
+        handy_keys::HotkeyState::Released => ShortcutState::Released,
+    };
+
+    let current_id = *state.current_id.lock();
+    let cancel_ids = state.cancel_ids.lock().clone();
+
+    if Some(event.id) == current_id {
+        tracing::info!(state = %state_enum.as_str(), "hotkey_triggered");
+        let _ = event_tx.send(ShortcutEvent::Triggered { state: state_enum });
+        let _ = app_handle.emit(EventName::SHORTCUT_TRIGGERED, state_enum.as_str());
+        handle_recording_trigger(app_handle, state_enum);
+    } else if cancel_ids.contains(&event.id) {
+        tracing::info!(state = %state_enum.as_str(), "cancel_hotkey_triggered");
+        let _ = event_tx.send(ShortcutEvent::CancelTriggered { state: state_enum });
+        handle_cancel_trigger(app_handle, state_enum);
+    }
+}
+
+fn remount_shortcut_runtime(
+    runtime: &mut Option<ShortcutRuntime>,
+    state: &Arc<ManagerState>,
+    event_tx: &Sender<ShortcutEvent>,
+    app_handle: &tauri::AppHandle,
+) -> Result<(), String> {
+    unmount_shortcut_runtime(runtime, state, "remount");
+    let new_runtime = mount_shortcut_runtime(state, event_tx, app_handle)?;
+    *runtime = Some(new_runtime);
+    Ok(())
+}
+
+fn mount_shortcut_runtime(
+    state: &Arc<ManagerState>,
+    event_tx: &Sender<ShortcutEvent>,
+    app_handle: &tauri::AppHandle,
+) -> Result<ShortcutRuntime, String> {
+    #[cfg(target_os = "macos")]
+    super::macos::fresh_event_tap_probe()?;
+
+    let manager = create_hotkey_manager().map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "macos")]
+    let runtime = {
+        let mut blocker = FnEmojiBlocker::new();
+        blocker.start()?;
+        tracing::info!("fn_emoji_blocker_started_for_shortcut_manager");
+        ShortcutRuntime {
+            manager,
+            fn_emoji_blocker: blocker,
+        }
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let runtime = ShortcutRuntime { manager };
+
+    apply_runtime_registrations(&runtime, state, event_tx, app_handle);
+    tracing::info!("shortcut_runtime_mounted");
+    Ok(runtime)
+}
+
+fn unmount_shortcut_runtime(
+    runtime: &mut Option<ShortcutRuntime>,
+    state: &Arc<ManagerState>,
+    reason: &'static str,
+) {
+    if runtime.take().is_some() {
+        tracing::info!(reason, "shortcut_runtime_unmounted");
+    }
+    let _ = stop_recording_capture_listener(state, reason);
+    clear_live_registrations(state);
+}
+
+fn clear_live_registrations(state: &Arc<ManagerState>) {
+    *state.current_id.lock() = None;
+    state.cancel_ids.lock().clear();
+}
+
+fn apply_runtime_registrations(
+    runtime: &ShortcutRuntime,
+    state: &Arc<ManagerState>,
+    event_tx: &Sender<ShortcutEvent>,
+    app_handle: &tauri::AppHandle,
+) {
+    clear_live_registrations(state);
+
+    if state.cancel_owner_task_id.lock().is_some() {
+        let cancel_hotkeys = build_cancel_hotkeys_for_app(app_handle);
+        let registered_ids = register_cancel_hotkeys(&runtime.manager, &cancel_hotkeys);
+        tracing::info!(
+            cancel_hotkeys = ?cancel_hotkeys,
+            count = registered_ids.len(),
+            "cancel_hotkeys_registered"
+        );
+        *state.cancel_ids.lock() = registered_ids;
+    }
+
+    if let Some(hotkey_str) = state.desired_hotkey.lock().clone() {
+        match register_hotkey(&runtime.manager, &hotkey_str) {
+            Ok(id) => {
+                tracing::info!(hotkey = %hotkey_str, id = id.as_u32(), "hotkey_registered");
+                *state.current_id.lock() = Some(id);
+            }
+            Err(error) => {
+                *state.desired_hotkey.lock() = None;
+                tracing::error!(
+                    hotkey = %hotkey_str,
+                    error = %error,
+                    "hotkey_registration_failed"
+                );
+                emit_registration_failure(event_tx, app_handle, error);
+            }
+        }
+    }
+}
+
+fn unregister_current_hotkey(
+    manager: &handy_keys::HotkeyManager,
+    state: &Arc<ManagerState>,
+    reason: &'static str,
+) {
+    let mut current = state.current_id.lock();
+    if let Some(old_id) = current.take() {
+        tracing::info!(old_id = old_id.as_u32(), reason, "unregistering_old_hotkey");
+        if let Err(error) = manager.unregister(old_id) {
+            tracing::warn!(error = ?error, reason, "old_hotkey_unregister_failed");
+        } else {
+            tracing::info!(reason, "old_hotkey_unregistered");
+        }
+    }
+}
+
+fn take_recording_listener(state: &Arc<ManagerState>) -> Option<RecordingListener> {
+    state.recording_listener.lock().take()
+}
+
+fn stop_recording_capture_listener(
+    state: &Arc<ManagerState>,
+    reason: &'static str,
+) -> Option<String> {
+    let mut listener = take_recording_listener(state)?;
+    let captured_hotkey = listener.stop();
+    tracing::info!(reason, captured = ?captured_hotkey, "recording_capture_stopped");
+    captured_hotkey
+}
+
+fn commit_captured_primary_hotkey(
+    manager: &ShortcutManager,
+    app_handle: &tauri::AppHandle,
+    new_hotkey: &str,
+) -> Result<(), String> {
+    let app_state = app_handle
+        .try_state::<crate::state::app_state::AppState>()
+        .ok_or_else(|| "app state unavailable".to_string())?;
+
+    manager.unregister_primary()?;
+    manager.register_primary(new_hotkey)?;
+
+    {
+        let mut settings = app_state.settings.lock();
+        settings.hotkey = new_hotkey.to_string();
+    }
+
+    save_settings_internal(app_handle)?;
+
+    let settings = app_state.settings.lock().clone();
+    app_handle
+        .emit(EventName::SETTINGS_CHANGED, settings)
+        .map_err(|error| format!("failed to emit settings changed: {error}"))?;
+
+    Ok(())
+}
+
+fn emit_registration_failure(
+    event_tx: &Sender<ShortcutEvent>,
+    app_handle: &tauri::AppHandle,
+    error: String,
+) {
+    let _ = event_tx.send(ShortcutEvent::RegistrationFailed {
+        error: error.clone(),
+    });
+    let _ = app_handle.emit(EventName::SHORTCUT_REGISTRATION_FAILED, error);
 }
 
 fn create_hotkey_manager() -> Result<handy_keys::HotkeyManager, handy_keys::Error> {
@@ -466,18 +765,6 @@ fn handle_cancel_trigger(app_handle: &tauri::AppHandle, state: ShortcutState) {
     }
 }
 
-fn capture_cancel_hotkey_release_owner(
-    is_recording: bool,
-    is_transcribing: bool,
-    task_id: u64,
-) -> Option<u64> {
-    if is_recording || is_transcribing {
-        Some(task_id)
-    } else {
-        None
-    }
-}
-
 fn build_cancel_hotkeys_for_app(app_handle: &tauri::AppHandle) -> Vec<String> {
     let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() else {
         return vec!["Escape".to_string()];
@@ -522,25 +809,6 @@ fn unregister_cancel_hotkeys(
     }
 }
 
-fn should_unregister_cancel_hotkeys(
-    current_owner_task_id: Option<u64>,
-    requested_owner_task_id: Option<u64>,
-) -> bool {
-    requested_owner_task_id.is_none() || current_owner_task_id == requested_owner_task_id
-}
-
-fn cancel_hotkey_release_unregister_owner(
-    is_recording: bool,
-    is_transcribing: bool,
-    pending_owner_task_id: Option<u64>,
-) -> Option<u64> {
-    if is_recording || is_transcribing {
-        None
-    } else {
-        pending_owner_task_id
-    }
-}
-
 /// Handle recording trigger based on hotkey state and recording mode.
 ///
 /// This function replicates the logic from the old register_global_shortcut:
@@ -550,74 +818,43 @@ fn cancel_hotkey_release_unregister_owner(
 /// IMPORTANT: If capture mode is active, do NOT trigger recording.
 /// This allows users to press their current hotkey during capture to re-register it.
 fn handle_recording_trigger(app_handle: &tauri::AppHandle, state: ShortcutState) {
-    use std::sync::atomic::Ordering;
-
     tracing::debug!(state = %state.as_str(), "handle_recording_trigger_entered");
 
-    // Get app state
-    let state_result = app_handle.try_state::<crate::state::app_state::AppState>();
-    match state_result {
-        Some(app_state) => {
-            // Check if capture mode is active - if so, don't trigger recording
-            let listener_guard = app_state.hotkey_recording_listener.lock();
-            if let Some(ref listener) = *listener_guard {
-                if listener.is_active() {
-                    tracing::info!("capture_mode_active_hotkey_trigger_ignored");
-                    return;
-                }
-            }
-            // Drop the lock before proceeding
-            drop(listener_guard);
+    let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() else {
+        tracing::error!("app_state_unavailable_for_recording_trigger");
+        return;
+    };
 
-            tracing::debug!("app_state_acquired");
-            let is_recording = app_state.is_recording.load(Ordering::SeqCst);
-            let recording_mode = app_state.settings.lock().recording_mode.clone();
+    let capture_active = app_handle
+        .try_state::<crate::shortcut::ShortcutManager>()
+        .is_some_and(|shortcut_manager| shortcut_manager.is_recording_capture_active());
+    let context = primary_shortcut_context(&app_state, capture_active);
+    tracing::debug!(
+        capture_active = context.capture_active,
+        is_recording = context.is_recording,
+        recording_mode = ?context.recording_mode,
+        "handle_recording_trigger_state"
+    );
 
-            tracing::debug!(
-                is_recording = is_recording,
-                recording_mode = %recording_mode,
-                "handle_recording_trigger_state"
-            );
-
-            match recording_mode.as_str() {
-                "hold" => {
-                    // Hold mode: Press to start, Release to stop
-                    if state == ShortcutState::Pressed && !is_recording {
-                        tracing::info!("hold_mode_start_recording_requested");
-                        match crate::commands::audio::start_recording_sync(app_handle.clone()) {
-                            Ok(_) => tracing::info!("hold_mode_recording_started"),
-                            Err(e) => tracing::error!(error = %e, "hold_mode_start_failed"),
-                        }
-                    } else if state == ShortcutState::Released && is_recording {
-                        tracing::info!("hold_mode_stop_recording_requested");
-                        match crate::commands::audio::stop_recording_sync(app_handle.clone()) {
-                            Ok(_) => tracing::info!("hold_mode_recording_stopped"),
-                            Err(e) => tracing::error!(error = %e, "hold_mode_stop_failed"),
-                        }
-                    }
-                }
-                _ => {
-                    // Toggle mode (default): Press to toggle
-                    if state == ShortcutState::Pressed {
-                        if is_recording {
-                            tracing::info!("toggle_mode_stop_recording_requested");
-                            match crate::commands::audio::stop_recording_sync(app_handle.clone()) {
-                                Ok(_) => tracing::info!("toggle_mode_recording_stopped"),
-                                Err(e) => tracing::error!(error = %e, "toggle_mode_stop_failed"),
-                            }
-                        } else {
-                            tracing::info!("toggle_mode_start_recording_requested");
-                            match crate::commands::audio::start_recording_sync(app_handle.clone()) {
-                                Ok(_) => tracing::info!("toggle_mode_recording_started"),
-                                Err(e) => tracing::error!(error = %e, "toggle_mode_start_failed"),
-                            }
-                        }
-                    }
-                }
+    match primary_shortcut_action(context, state) {
+        PrimaryShortcutAction::Ignore => {
+            if context.capture_active {
+                tracing::info!("capture_mode_active_hotkey_trigger_ignored");
             }
         }
-        None => {
-            tracing::error!("app_state_unavailable_for_recording_trigger");
+        PrimaryShortcutAction::StartRecording => {
+            tracing::info!("shortcut_start_recording_requested");
+            match crate::commands::audio::start_recording_sync(app_handle.clone()) {
+                Ok(_) => tracing::info!("shortcut_recording_started"),
+                Err(e) => tracing::error!(error = %e, "shortcut_start_failed"),
+            }
+        }
+        PrimaryShortcutAction::StopRecording => {
+            tracing::info!("shortcut_stop_recording_requested");
+            match crate::commands::audio::stop_recording_sync(app_handle.clone()) {
+                Ok(_) => tracing::info!("shortcut_recording_stopped"),
+                Err(e) => tracing::error!(error = %e, "shortcut_stop_failed"),
+            }
         }
     }
 }
@@ -714,6 +951,72 @@ const FN_KEY_NAME: &str = "fn";
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn runtime_permission_action_mounts_on_startup_when_accessibility_is_granted() {
+        assert_eq!(
+            runtime_permission_action(false, None, true),
+            RuntimePermissionAction::Mount
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn runtime_permission_action_unmounts_when_accessibility_is_revoked() {
+        assert_eq!(
+            runtime_permission_action(true, Some(true), false),
+            RuntimePermissionAction::Unmount
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn runtime_permission_action_mounts_when_accessibility_recovers() {
+        assert_eq!(
+            runtime_permission_action(false, Some(false), true),
+            RuntimePermissionAction::Mount
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn runtime_permission_action_keeps_existing_state_without_transition() {
+        assert_eq!(
+            runtime_permission_action(true, Some(true), true),
+            RuntimePermissionAction::Keep
+        );
+        assert_eq!(
+            runtime_permission_action(false, Some(true), true),
+            RuntimePermissionAction::Keep
+        );
+        assert_eq!(
+            runtime_permission_action(false, None, false),
+            RuntimePermissionAction::Keep
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn runtime_probe_action_mounts_when_probe_recovers() {
+        assert_eq!(runtime_probe_action(false, true), RuntimeProbeAction::Mount);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn runtime_probe_action_unmounts_when_probe_fails_while_active() {
+        assert_eq!(
+            runtime_probe_action(true, false),
+            RuntimeProbeAction::Unmount
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn runtime_probe_action_keeps_existing_state_when_no_transition_is_needed() {
+        assert_eq!(runtime_probe_action(true, true), RuntimeProbeAction::Keep);
+        assert_eq!(runtime_probe_action(false, false), RuntimeProbeAction::Keep);
+    }
+
     #[test]
     fn test_manager_new() {
         let manager = ShortcutManager::new();
@@ -729,7 +1032,7 @@ mod tests {
     #[test]
     fn test_manager_register_updates_state() {
         let manager = ShortcutManager::new().unwrap();
-        let result = manager.register("Shift+Space");
+        let result = manager.register_primary("Shift+Space");
         assert!(result.is_ok());
 
         let pending = manager.state.pending_commands.lock();
@@ -738,6 +1041,29 @@ mod tests {
         } else {
             panic!("Expected ShortcutCommand::Register");
         }
+    }
+
+    #[test]
+    fn recording_capture_is_inactive_by_default() {
+        let manager = ShortcutManager::new().unwrap();
+        assert!(!manager.is_recording_capture_active());
+        assert_eq!(manager.peek_recording_capture(), None);
+    }
+
+    #[test]
+    fn stop_recording_capture_without_listener_is_noop() {
+        let manager = ShortcutManager::new().unwrap();
+        assert_eq!(manager.stop_recording_capture().unwrap(), None);
+    }
+
+    #[test]
+    fn cancel_recording_capture_clears_listener_state() {
+        let manager = ShortcutManager::new().unwrap();
+        *manager.state.recording_listener.lock() = Some(RecordingListener::default());
+
+        manager.cancel_recording_capture();
+
+        assert!(manager.state.recording_listener.lock().is_none());
     }
 
     #[test]

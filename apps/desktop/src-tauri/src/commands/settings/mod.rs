@@ -661,12 +661,12 @@ pub fn update_settings(
             // First unregister the old hotkey before registering new one
             // This ensures the old hotkey is properly removed from the system
             tracing::info!("unregistering_old_hotkey");
-            if let Err(e) = manager.unregister() {
+            if let Err(e) = manager.unregister_primary() {
                 tracing::warn!(error = %e, "old_hotkey_unregister_failed");
             }
 
             // Now register the new hotkey
-            match manager.register(&hotkey) {
+            match manager.register_primary(&hotkey) {
                 Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
                 Err(e) => tracing::error!(error = %e, "shortcut_registration_failed"),
             }

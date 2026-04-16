@@ -118,16 +118,16 @@ impl FnEmojiBlocker {
             return Err("FN emoji blocker already running".to_string());
         }
 
+        // Check accessibility permissions first
+        if !handy_keys::check_accessibility() {
+            return Err("Accessibility permission not granted".to_string());
+        }
+
         self.running.store(true, Ordering::SeqCst);
         self.active.store(true, Ordering::SeqCst);
 
         let running = Arc::clone(&self.running);
         let active = Arc::clone(&self.active);
-
-        // Check accessibility permissions first
-        if !handy_keys::check_accessibility() {
-            return Err("Accessibility permission not granted".to_string());
-        }
 
         let handle = thread::spawn(move || {
             run_fn_emoji_blocker_tap(running, active);
@@ -227,6 +227,7 @@ fn run_fn_emoji_blocker_tap(running: Arc<AtomicBool>, active: Arc<AtomicBool>) {
                 let _ = Arc::from_raw(state_ptr as *const FnEmojiBlockerState);
             }
             tracing::error!("fn_emoji_blocker_tap_creation_failed");
+            running.store(false, Ordering::SeqCst);
             active.store(false, Ordering::SeqCst);
             return;
         }
@@ -244,6 +245,7 @@ fn run_fn_emoji_blocker_tap(running: Arc<AtomicBool>, active: Arc<AtomicBool>) {
                 let _ = Arc::from_raw(state_ptr as *const FnEmojiBlockerState);
             }
             tracing::error!("fn_emoji_blocker_runloop_source_failed");
+            running.store(false, Ordering::SeqCst);
             active.store(false, Ordering::SeqCst);
             return;
         }
@@ -257,6 +259,7 @@ fn run_fn_emoji_blocker_tap(running: Arc<AtomicBool>, active: Arc<AtomicBool>) {
                 let _ = Arc::from_raw(state_ptr as *const FnEmojiBlockerState);
             }
             tracing::error!("fn_emoji_blocker_runloop_failed");
+            running.store(false, Ordering::SeqCst);
             active.store(false, Ordering::SeqCst);
             return;
         }
@@ -276,12 +279,6 @@ fn run_fn_emoji_blocker_tap(running: Arc<AtomicBool>, active: Arc<AtomicBool>) {
             0.1, // 100ms timeout
             true,
         );
-
-        // Re-enable tap if macOS disabled it
-        if !CGEvent::tap_is_enabled(&tap) {
-            CGEvent::tap_enable(&tap, true);
-            tracing::debug!("fn_emoji_blocker_tap_re-enabled");
-        }
     }
 
     // Cleanup
@@ -293,6 +290,7 @@ fn run_fn_emoji_blocker_tap(running: Arc<AtomicBool>, active: Arc<AtomicBool>) {
     unsafe {
         let _ = Arc::from_raw(state_ptr as *const FnEmojiBlockerState);
     }
+    running.store(false, Ordering::SeqCst);
     active.store(false, Ordering::SeqCst);
 }
 
