@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { Loader2, WifiOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { logger } from "@/lib/logger";
-import { SettingsPageLayout } from "./SettingsPageLayout";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { Button } from "@/components/ui/button";
 import "overlayscrollbars/overlayscrollbars.css";
@@ -13,8 +12,17 @@ const CHANGELOG_URL =
 function parseMarkdownToHtml(markdown: string): string {
   const lines = markdown.split("\n");
   const htmlLines: string[] = [];
+  let skipSection = false;
 
   for (const line of lines) {
+    if (line.startsWith("## ")) {
+      const sectionTitle = line.slice(3).trim().toLowerCase();
+      skipSection = sectionTitle === "unreleased";
+      if (skipSection) continue;
+    }
+
+    if (skipSection) continue;
+
     if (line.startsWith("# ")) {
       htmlLines.push(`<h1 class="text-xl font-bold tracking-tight mb-4">${line.slice(2)}</h1>`);
     } else if (line.startsWith("## ")) {
@@ -90,22 +98,20 @@ export function ChangelogPage() {
       });
   }, [loading, changelog, t]);
 
-  const isEmpty = changelog && changelog.trim().length === 0;
+  const parsedHtml = changelog ? parseMarkdownToHtml(changelog) : "";
+  const isEmpty = parsedHtml.trim().length === 0;
 
   return (
-    <SettingsPageLayout
-      title={t("about.changelog.title")}
-      description={t("about.changelog.description")}
-    >
-      <div className="rounded-2xl border border-border bg-card p-6">
+    <div className="h-full p-6">
+      <div className="h-full rounded-2xl border border-border bg-card p-6 overflow-hidden">
         {loading && (
-          <div className="flex items-center justify-center h-48">
+          <div className="flex items-center justify-center h-full">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         )}
 
         {error && !loading && (
-          <div className="flex flex-col items-center justify-center h-48 gap-3">
+          <div className="flex flex-col items-center justify-center h-full gap-3">
             <WifiOff className="h-6 w-6 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">{error}</p>
             <Button variant="outline" size="sm" onClick={handleRetry}>
@@ -115,15 +121,15 @@ export function ChangelogPage() {
         )}
 
         {isEmpty && !loading && !error && (
-          <div className="flex items-center justify-center h-48">
+          <div className="flex items-center justify-center h-full">
             <p className="text-sm text-muted-foreground">{t("about.changelog.empty")}</p>
           </div>
         )}
 
-        {changelog && !isEmpty && !loading && !error && (
+        {!isEmpty && !loading && !error && (
           <OverlayScrollbarsComponent
             defer
-            className="max-h-[calc(100vh-220px)]"
+            className="h-full"
             options={{
               showNativeOverlaidScrollbars: false,
               scrollbars: {
@@ -137,12 +143,12 @@ export function ChangelogPage() {
             <div
               className="prose prose-sm dark:prose-invert max-w-none"
               dangerouslySetInnerHTML={{
-                __html: parseMarkdownToHtml(changelog),
+                __html: parsedHtml,
               }}
             />
           </OverlayScrollbarsComponent>
         )}
       </div>
-    </SettingsPageLayout>
+    </div>
   );
 }

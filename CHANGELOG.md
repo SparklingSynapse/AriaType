@@ -13,7 +13,8 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
-- Shortcut not working when no permission (5ea7cf4)
+- Update changelog page layout (8207a88)
+- Shortcut not working when no permission (ed322f3)
 - Prevent changelog fetch loop and improve UI (254476d)
 
 ## v0.3.0 (2026-04-13)
