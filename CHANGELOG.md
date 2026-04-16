@@ -13,7 +13,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
-- Update changelog page layout (8207a88)
+- Update changelog page layout (9ad2908)
 - Shortcut not working when no permission (ed322f3)
 - Prevent changelog fetch loop and improve UI (254476d)
 
