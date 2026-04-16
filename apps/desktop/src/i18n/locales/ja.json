@@ -247,6 +247,7 @@
   "about.updatesDesc": "最新バージョンを確認",
   "about.changelog.view": "更新履歴を見る",
   "about.changelog.title": "更新履歴",
+  "about.changelog.description": "リリース履歴とバージョン更新を確認",
   "about.changelog.close": "閉じる",
   "about.changelog.error": "更新履歴の読み込みに失敗しました",
   "about.changelog.retry": "再試行",

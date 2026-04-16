@@ -56,6 +56,12 @@ Code churn without stronger evidence is not progress.
 
 ---
 
+## Brainstorm Output Directory
+
+Brainstorm requirements documents go to `context/brainstorms/` (not `docs/brainstorms/`).
+
+---
+
 ## Architecture Principles
 
 ### Headless Backend Architecture

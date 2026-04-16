@@ -247,6 +247,7 @@
   "about.updatesDesc": "Проверить наличие новой версии",
   "about.changelog.view": "Просмотреть журнал изменений",
   "about.changelog.title": "Журнал изменений",
+  "about.changelog.description": "История выпусков и обновления версий",
   "about.changelog.close": "Закрыть",
   "about.changelog.error": "Ошибка загрузки журнала изменений",
   "about.changelog.retry": "Повторить",

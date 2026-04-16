@@ -241,6 +241,7 @@
   "about.updatesDesc": "Check for the latest version",
   "about.changelog.view": "Änderungsprotokoll anzeigen",
   "about.changelog.title": "Änderungsprotokoll",
+  "about.changelog.description": "Versionshistorie und Updates anzeigen",
   "about.changelog.close": "Schließen",
   "about.changelog.error": "Änderungsprotokoll konnte nicht geladen werden",
   "about.changelog.retry": "Erneut versuchen",

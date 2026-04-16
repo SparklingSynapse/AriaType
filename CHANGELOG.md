@@ -13,7 +13,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
-- Prevent changelog fetch loop and improve UI (77b9b44)
+- Prevent changelog fetch loop and improve UI (254476d)
 
 ## v0.3.0 (2026-04-13)
 

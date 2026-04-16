@@ -247,6 +247,7 @@
   "about.updatesDesc": "Verifica la ultima versione",
   "about.changelog.view": "Vedi registro modifiche",
   "about.changelog.title": "Registro modifiche",
+  "about.changelog.description": "Visualizza storia delle release e aggiornamenti",
   "about.changelog.close": "Chiudi",
   "about.changelog.error": "Caricamento registro modifiche fallito",
   "about.changelog.retry": "Riprova",

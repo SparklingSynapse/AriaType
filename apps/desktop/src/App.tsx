@@ -11,6 +11,7 @@ import { CloudService } from "./components/Home/CloudService";
 import { PermissionSettings } from "./components/Home/PermissionSettings";
 import { About } from "./components/Home/About";
 import { LogViewer } from "./components/Home/LogViewer";
+import { ChangelogPage } from "./components/Home/ChangelogPage";
 import { PolishTemplatesPage } from "./components/Home/PolishTemplatesPage";
 
 function App() {
@@ -56,6 +57,7 @@ function App() {
           <Route path="polish-templates" element={<PolishTemplatesPage />} />
           <Route path="permission" element={<PermissionSettings />} />
           <Route path="logs" element={<LogViewer />} />
+          <Route path="changelog" element={<ChangelogPage />} />
           <Route path="about" element={<About />} />
         </Route>
       </Routes>

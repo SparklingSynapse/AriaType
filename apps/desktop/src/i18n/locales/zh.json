@@ -252,6 +252,7 @@
   "about.updatesDesc": "检查最新版本",
   "about.changelog.view": "查看更新日志",
   "about.changelog.title": "更新日志",
+  "about.changelog.description": "查看版本发布历史和更新记录",
   "about.changelog.close": "关闭",
   "about.changelog.error": "加载更新日志失败",
   "about.changelog.retry": "重试",

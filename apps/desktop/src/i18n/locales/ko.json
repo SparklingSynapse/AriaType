@@ -247,6 +247,7 @@
   "about.updatesDesc": "최신 버전 확인",
   "about.changelog.view": "변경 로그 보기",
   "about.changelog.title": "변경 로그",
+  "about.changelog.description": "릴리스 기록 및 버전 업데이트 확인",
   "about.changelog.close": "닫기",
   "about.changelog.error": "변경 로그 로드 실패",
   "about.changelog.retry": "재시도",
