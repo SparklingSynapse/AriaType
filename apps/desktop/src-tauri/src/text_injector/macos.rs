@@ -4,7 +4,6 @@ use cocoa::foundation::NSString;
 use enigo::{Enigo, Keyboard, Settings};
 use objc::{class, msg_send, sel, sel_impl};
 use std::ffi::c_void;
-use std::process::Command;
 use tracing::{info, warn};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -265,7 +264,7 @@ fn try_enigo_key_sequence(text: &str) -> bool {
     }
 }
 
-/// Layer 2: write text to clipboard then simulate Cmd+V via osascript.
+/// Layer 2: write text to clipboard then simulate Cmd+V via enigo.
 /// Saves and restores all pasteboard content so nothing is lost.
 /// More reliable for long text, multiline text, and special characters.
 fn try_clipboard_paste(text: &str) -> bool {
@@ -273,24 +272,11 @@ fn try_clipboard_paste(text: &str) -> bool {
     unsafe { run_on_main_sync(|| pb_write_text(text)) };
     info!("clipboard_written");
 
-    let script = "tell application \"System Events\" to keystroke \"v\" using command down";
-    let ok = match Command::new("osascript").args(["-e", script]).output() {
-        Ok(out) if out.status.success() => {
-            info!("osascript_cmdv_succeeded");
-            true
-        }
-        Ok(out) => {
-            warn!(exit_code = out.status.code(), stderr = %String::from_utf8_lossy(&out.stderr).trim(), "osascript_cmdv_failed");
-            false
-        }
-        Err(e) => {
-            warn!(error = %e, "osascript_spawn_failed");
-            false
-        }
-    };
+    let ok = paste_cmd_v_enigo();
 
+    // enigo paste is fast (~10-20 ms); restore clipboard soon after
     unsafe {
-        schedule_on_main(500, move || match saved {
+        schedule_on_main(100, move || match saved {
             Some(items) => {
                 pb_restore(&items);
                 info!("clipboard_restored");
@@ -303,6 +289,46 @@ fn try_clipboard_paste(text: &str) -> bool {
         });
     }
     ok
+}
+
+fn paste_cmd_v_enigo() -> bool {
+    let mut enigo = match Enigo::new(&Settings::default()) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!(error = %e, "enigo_creation_failed");
+            return false;
+        }
+    };
+
+    // Small sleep to let the target application focus before receiving keys
+    std::thread::sleep(std::time::Duration::from_millis(20));
+
+    let result = (|| -> Result<(), String> {
+        // Use raw keycodes to avoid TISCopyCurrentKeyboardInputSource()
+        // which is not thread-safe and crashes on non-main threads.
+        // 0x37 = Command, 0x09 = 'v' on macOS.
+        enigo
+            .key(enigo::Key::Meta, enigo::Direction::Press)
+            .map_err(|e| format!("cmd_press_failed: {e}"))?;
+        enigo
+            .raw(0x09, enigo::Direction::Click)
+            .map_err(|e| format!("v_click_failed: {e}"))?;
+        enigo
+            .key(enigo::Key::Meta, enigo::Direction::Release)
+            .map_err(|e| format!("cmd_release_failed: {e}"))?;
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => {
+            info!("enigo_cmdv_succeeded");
+            true
+        }
+        Err(e) => {
+            warn!(error = %e, "enigo_cmdv_failed");
+            false
+        }
+    }
 }
 
 impl super::TextInjector for MacosInjector {

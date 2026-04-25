@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## Unreleased
+
+### Features
+
+- Optimize text inject performance (938bc4b)
+
 ## v0.4.0 (2026-04-25)
 
 ### Features

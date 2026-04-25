@@ -100,19 +100,19 @@ impl WindowsInjector {
         let mut enigo =
             Enigo::new(&Settings::default()).map_err(|e| format!("Failed to create Enigo: {e}"))?;
 
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         enigo
             .key(Key::Control, enigo::Direction::Press)
-            .map_err(|e| format!("Failed to press Control: {e}"))?;
+            .map_err(|e| format!("ctrl_press_failed: {e}"))?;
 
         enigo
-            .key(Key::Layout('v'), enigo::Direction::Click)
-            .map_err(|e| format!("Failed to press V: {e}"))?;
+            .key(Key::Unicode('v'), enigo::Direction::Click)
+            .map_err(|e| format!("v_click_failed: {e}"))?;
 
         enigo
             .key(Key::Control, enigo::Direction::Release)
-            .map_err(|e| format!("Failed to release Control: {e}"))?;
+            .map_err(|e| format!("ctrl_release_failed: {e}"))?;
 
         info!("clipboard_paste_ctrlv_sent");
         Ok(())
