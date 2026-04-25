@@ -54,12 +54,12 @@ pub fn unload_model(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_polish_model_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let (polish_enabled, polish_model_id) = {
+    let polish_model_id = {
         let settings = state.settings.lock();
-        (settings.polish_enabled, settings.polish_model.clone())
+        settings.polish_model.clone()
     };
 
-    if !polish_enabled || polish_model_id.is_empty() {
+    if polish_model_id.is_empty() {
         return Ok(serde_json::json!({
             "is_loaded": false,
             "current_model": "",
@@ -90,13 +90,13 @@ pub fn get_polish_model_status(state: State<'_, AppState>) -> Result<serde_json:
 #[tauri::command]
 #[instrument(skip(state), err)]
 pub fn preload_polish_model(state: State<'_, AppState>) -> Result<(), String> {
-    let (polish_enabled, polish_model_id) = {
+    let polish_model_id = {
         let settings = state.settings.lock();
-        (settings.polish_enabled, settings.polish_model.clone())
+        settings.polish_model.clone()
     };
 
-    if !polish_enabled || polish_model_id.is_empty() {
-        return Err("Polish is not enabled or no model selected".to_string());
+    if polish_model_id.is_empty() {
+        return Err("No polish model selected".to_string());
     }
 
     // Auto-detect engine type

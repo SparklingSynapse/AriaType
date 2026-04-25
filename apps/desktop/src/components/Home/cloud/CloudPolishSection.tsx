@@ -121,9 +121,9 @@ export function CloudPolishSection() {
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between space-x-4">
           <div>
-            <Label htmlFor="cloud-polish">{t("model.polish.cloud.enable")}</Label>
+            <Label htmlFor="cloud-polish">{t("model.polish.cloud.enable", "Enable Cloud Polish")}</Label>
             <p className="text-xs text-muted-foreground">
-              {t("model.polish.cloud.enableDesc")}
+              {t("model.polish.cloud.enableDesc", "Use cloud API for polishing transcription results.")}
             </p>
           </div>
           <Switch

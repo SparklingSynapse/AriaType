@@ -5,6 +5,7 @@ interface SettingsPageLayoutProps {
   description?: string;
   children: ReactNode;
   className?: string;
+  testId?: string;
 }
 
 export function SettingsPageLayout({
@@ -12,9 +13,10 @@ export function SettingsPageLayout({
   description,
   children,
   className = "",
+  testId,
 }: SettingsPageLayoutProps) {
   return (
-    <div className={`mx-auto max-w-6xl p-10 ${className}`}>
+    <div className={`mx-auto max-w-6xl p-10 ${className}`} data-testid={testId}>
       {(title || description) && (
         <div className="mb-6 md:mb-8">
           {title && (

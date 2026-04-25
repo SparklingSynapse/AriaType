@@ -204,7 +204,6 @@ pub struct SettingsChangedEvent {
     pub stt_engine_language: String,
     pub beep_on_record: bool,
     pub audio_device: String,
-    pub polish_enabled: bool,
     pub polish_system_prompt: String,
     pub polish_model: String,
     pub theme_mode: String,

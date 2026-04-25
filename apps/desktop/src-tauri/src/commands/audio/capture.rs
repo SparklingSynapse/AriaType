@@ -29,6 +29,7 @@ pub(super) fn start_unified_recording(
     cloud_stt_enabled: bool,
     config: CloudSttConfig,
     language: String,
+    resolved_polish_template_id: Option<String>,
 ) -> Result<(), String> {
     let state = app
         .try_state::<AppState>()
@@ -194,6 +195,7 @@ pub(super) fn start_unified_recording(
     let ch_for_async = ch;
 
     let app_clone = app.clone();
+    let resolved_polish_template_id_clone = resolved_polish_template_id.clone();
     let handle = tauri::async_runtime::spawn(async move {
         let consumer: Box<dyn RecordingConsumer> = if cloud_stt_enabled {
             let (domain, subdomain, glossary) = (
@@ -346,6 +348,7 @@ pub(super) fn start_unified_recording(
                             &state,
                             task_id,
                             text,
+                            resolved_polish_template_id_clone.clone(),
                         )
                         .await
                     };

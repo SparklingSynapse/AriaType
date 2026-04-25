@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { MultiSwitch } from "@/components/ui/multi-switch";
-import { systemCommands, settingsCommands, modelCommands } from "@/lib/tauri";
+import { systemCommands, settingsCommands } from "@/lib/tauri";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
@@ -21,8 +21,6 @@ import { useSettingsContext } from "@/contexts/SettingsContext";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 import langCodes from "@/lib/lang-codes.json";
 import { cn } from "@/lib/utils";
-import { TemplateSelector } from "./TemplateSelector";
-import type { CustomPolishTemplate } from "@/lib/tauri";
 
 function getLanguageLabel(code: string): string {
   return (langCodes as Record<string, string>)[code] || code;
@@ -33,10 +31,8 @@ export function GeneralSettings() {
   const { settings, updateSetting } = useSettingsContext();
   const [audioDevices, setAudioDevices] = useState<string[]>(["default"]);
   const [isMacOS, setIsMacOS] = useState(false);
-  const [activeTab, setActiveTab] = useState<"general" | "transcription" | "polish">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "transcription">("general");
   const [availableSubdomains, setAvailableSubdomains] = useState<string[]>([]);
-  const [polishSelectedTemplate, setPolishSelectedTemplate] = useState<string>("filler");
-  const [polishCustomTemplates, setPolishCustomTemplates] = useState<CustomPolishTemplate[]>([]);
 
   useEffect(() => {
     systemCommands.getAudioDevices().then(setAudioDevices).catch((err: unknown) => logger.error("failed_to_get_audio_devices", { error: String(err) }));
@@ -53,12 +49,6 @@ export function GeneralSettings() {
         .catch((err: unknown) => logger.error("failed_to_get_available_subdomains", { error: String(err) }));
     }
   }, [settings?.stt_engine_work_domain]);
-
-  useEffect(() => {
-    if (!settings) return;
-    setPolishSelectedTemplate(settings.polish_selected_template || "filler");
-    setPolishCustomTemplates(settings.polish_custom_templates || []);
-  }, [settings?.polish_selected_template, settings?.polish_custom_templates]);
 
   if (!settings) return null;
 
@@ -162,29 +152,11 @@ export function GeneralSettings() {
     await updateSetting("stt_engine_user_glossary", value);
   };
 
-  const handlePolishTemplateChange = async (templateId: string) => {
-    setPolishSelectedTemplate(templateId);
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "polish_template", value: templateId });
-    try {
-      await modelCommands.selectPolishTemplate(templateId);
-    } catch (err) {
-      logger.error("failed_to_select_template", { error: String(err) });
-    }
-  };
-
-  const handlePolishTemplatesChange = async () => {
-    try {
-      const templates = await modelCommands.getPolishCustomTemplates();
-      setPolishCustomTemplates(templates);
-    } catch (err) {
-      logger.error("failed_to_get_custom_templates", { error: String(err) });
-    }
-  };
-
   return (
     <SettingsPageLayout
       title={t("general.title")}
       description={t("general.description")}
+      testId="settings-page"
     >
       <div className="inline-flex h-10 items-center justify-center rounded-full bg-secondary p-1 text-muted-foreground">
         <button
@@ -208,17 +180,6 @@ export function GeneralSettings() {
           )}
         >
           {t("general.tabs.transcription")}
-        </button>
-        <button
-          onClick={() => setActiveTab("polish")}
-          className={cn(
-            "inline-flex items-center justify-center whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-            activeTab === "polish"
-              ? "bg-background text-foreground shadow-sm"
-              : "hover:text-foreground"
-          )}
-        >
-          {t("general.tabs.polish")}
         </button>
       </div>
 
@@ -496,36 +457,6 @@ export function GeneralSettings() {
                 <p className="text-xs text-muted-foreground">
                   {t("model.domain.glossaryDesc")}
                 </p>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {activeTab === "polish" && (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("general.polish.templateTitle")}</CardTitle>
-              <CardDescription>{t("general.polish.templateDesc")}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>{t("model.polish.template")}</Label>
-                <TemplateSelector
-                  selectedTemplate={polishSelectedTemplate}
-                  customTemplates={polishCustomTemplates}
-                  onSelect={handlePolishTemplateChange}
-                  onTemplatesChange={handlePolishTemplatesChange}
-                />
-              </div>
-              <div className="pt-2">
-                <a
-                  href="/polish-templates"
-                  className="text-sm text-primary hover:underline"
-                >
-                  {t("polishTemplates.manageTemplates")} →
-                </a>
               </div>
             </CardContent>
           </Card>

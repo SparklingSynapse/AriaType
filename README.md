@@ -34,7 +34,7 @@ It stays in the background. When you want to type, hold a global hotkey, speak n
 
 - ⚡️ **Fast** – average transcribe duration under 500ms, boost your vibe coding/writing
 - 🔒 **Privacy-first** – local STT/Polish by default, your voice never leaves your device
-- 🎙 **Global hotkey** – press `Shift+Space`, speak, release, text appears in any app
+- 🎙 **Two shortcuts** – `Cmd+/` for dictation (raw), `Opt+/` for polished output
 - 🇨🇳 **CJK-friendly** – SenseVoice optimized for Chinese, Japanese, Korean
 - ✨ **Smart polish** – remove fillers, fix punctuation, clean up phrasing automatically
 - 🧩 **Custom templates** – create your own polish styles for recurring tasks

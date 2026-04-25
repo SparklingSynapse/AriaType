@@ -60,6 +60,7 @@ export function LogViewer() {
     <SettingsPageLayout
       title={t("logs.title")}
       description={t("logs.description")}
+      testId="logs-page"
       className="flex flex-col h-full"
     >
       <div className="flex items-center gap-2">

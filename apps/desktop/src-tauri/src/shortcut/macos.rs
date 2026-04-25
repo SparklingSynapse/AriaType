@@ -15,7 +15,8 @@ use std::ptr::NonNull;
 /// When permissions are missing, the application cannot intercept keyboard
 /// events globally.
 pub fn check_accessibility() -> bool {
-    handy_keys::check_accessibility()
+    crate::permissions::check_permission(crate::permissions::PermissionKind::Accessibility)
+        == crate::permissions::PermissionStatus::Granted
 }
 
 /// Create and immediately tear down a fresh keyboard-only event tap.
@@ -61,16 +62,12 @@ pub fn fresh_event_tap_probe() -> Result<(), String> {
 ///
 /// Guides the user to grant accessibility permissions to the application.
 pub fn open_accessibility_settings() -> Result<(), String> {
-    // Use handy-keys' helper if available, otherwise fall back to manual approach
-    if let Err(_e) = handy_keys::open_accessibility_settings() {
-        // Fallback: open System Settings directly
-        let result = Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-            .spawn();
+    let result = Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .spawn();
 
-        if let Err(e) = result {
-            return Err(format!("failed to open accessibility settings: {}", e));
-        }
+    if let Err(e) = result {
+        return Err(format!("failed to open accessibility settings: {}", e));
     }
     Ok(())
 }

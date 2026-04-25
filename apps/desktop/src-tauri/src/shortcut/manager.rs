@@ -1,20 +1,16 @@
-//! Shortcut manager running in a background thread.
-//!
-//! Handles hotkey registration, triggering, and event emission.
-//! Uses `handy_keys::HotkeyManager` for cross-platform support.
+//! Shortcut manager implementation.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-#[cfg(target_os = "macos")]
 use std::time::Instant;
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use tauri::{Emitter, Manager};
 
-use crate::commands::settings::save_settings_internal;
 use crate::events::EventName;
 use crate::services::shortcut::{
     cancel_hotkey_release_unregister_owner, capture_cancel_hotkey_release_owner,
@@ -22,252 +18,365 @@ use crate::services::shortcut::{
     PrimaryShortcutAction,
 };
 
-use super::listener::RecordingListener;
+use super::hotkey_codec::{analyze_pressed_sequence, PressedInput};
+use super::hotkey_codec::{canonicalize_hotkey_string, parse_hotkey_pattern};
+use super::matcher::{MatcherEvent, MatcherSnapshot};
+use super::platform::{
+    start_platform_runner, PlatformRunner, RunnerMode, RuntimeEvent, SharedMatcherSnapshot,
+};
+use super::profile_types::{ShortcutProfile, ShortcutTriggerMode};
 use super::types::{ShortcutEvent, ShortcutState};
 
-#[cfg(target_os = "macos")]
-use super::FnEmojiBlocker;
-
-/// Command sent to the background thread.
-#[derive(Clone, Debug)]
-enum ShortcutCommand {
-    Register(String),
-    Unregister,
-    RegisterCancel { owner_task_id: u64 },
-    UnregisterCancel { owner_task_id: Option<u64> },
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct RuntimeSnapshot {
+    desired_profiles: HashMap<String, String>,
+    live_profiles: HashMap<String, String>,
+    capture_active: bool,
 }
 
-/// Internal state shared between main thread and background thread.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum MutationMode {
+    Immediate,
+    Deferred,
+}
+
+trait RuntimeApplier {
+    fn apply_profiles(&mut self, desired_profiles: &HashMap<String, String>) -> Result<(), String>;
+}
+
+#[derive(Default)]
 struct ManagerState {
-    /// App handle stored after startup for manager-owned side effects.
-    app_handle: Mutex<Option<tauri::AppHandle>>,
-    /// Commands to execute on next cycle.
-    pending_commands: Mutex<Vec<ShortcutCommand>>,
-    /// Desired hotkey string that should be registered whenever runtime is available.
-    desired_hotkey: Mutex<Option<String>>,
-    /// Current registered hotkey ID (stored directly as HotkeyId which is Copy).
-    current_id: Mutex<Option<handy_keys::HotkeyId>>,
-    /// Cancel hotkey IDs. Hold mode may need modifier-aware Escape variants.
-    cancel_ids: Mutex<Vec<handy_keys::HotkeyId>>,
-    /// Task that currently owns the cancel hotkey registration.
-    cancel_owner_task_id: Mutex<Option<u64>>,
-    /// Task whose cancel hotkey should be unregistered after ESC is released.
-    pending_cancel_release_owner_task_id: Mutex<Option<u64>>,
-    /// Listener used for hotkey recording capture.
-    recording_listener: Mutex<Option<RecordingListener>>,
-    /// Signal to shut down the background thread.
-    shutdown: AtomicBool,
+    desired_profiles: HashMap<String, ShortcutProfile>,
+    live_profiles: HashMap<String, String>,
 }
 
-/// Manager for global keyboard shortcuts.
-///
-/// Spawns a background thread that runs the `HotkeyManager` event loop.
-/// Commands are sent via shared state; events are emitted back to main thread.
-///
-/// On macOS, also runs `FnEmojiBlocker` to prevent system FN shortcuts
-/// (emoji picker, input source switching) when FN is used as hotkey.
-pub struct ShortcutManager {
-    /// Channel to send events from background thread to main thread.
+impl ManagerState {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn register_profile(
+        &mut self,
+        profile_id: &str,
+        profile: ShortcutProfile,
+        runtime_applier: Option<&mut dyn RuntimeApplier>,
+    ) -> Result<MutationMode, String> {
+        let previous_desired = self.desired_profiles.clone();
+        let previous_live = self.live_profiles.clone();
+
+        self.desired_profiles
+            .retain(|existing_profile_id, existing_profile| {
+                existing_profile_id == profile_id || existing_profile.hotkey != profile.hotkey
+            });
+
+        self.desired_profiles
+            .insert(profile_id.to_string(), profile.clone());
+
+        let mode = if let Some(runtime_applier) = runtime_applier {
+            let desired_hotkeys = self
+                .desired_profiles
+                .iter()
+                .map(|(desired_profile_id, desired_profile)| {
+                    (desired_profile_id.clone(), desired_profile.hotkey.clone())
+                })
+                .collect::<HashMap<_, _>>();
+
+            if let Err(error) = runtime_applier.apply_profiles(&desired_hotkeys) {
+                self.desired_profiles = previous_desired;
+                self.live_profiles = previous_live;
+                return Err(error);
+            }
+
+            self.live_profiles = desired_hotkeys
+                .into_iter()
+                .filter(|(_, hotkey)| !hotkey.is_empty())
+                .collect();
+            MutationMode::Immediate
+        } else {
+            MutationMode::Deferred
+        };
+
+        Ok(mode)
+    }
+
+    fn unregister_profile(
+        &mut self,
+        profile_id: &str,
+        runtime_applier: Option<&mut dyn RuntimeApplier>,
+    ) -> Result<MutationMode, String> {
+        let previous_desired = self.desired_profiles.clone();
+        let previous_live = self.live_profiles.clone();
+
+        self.desired_profiles.remove(profile_id);
+
+        let mode = if let Some(runtime_applier) = runtime_applier {
+            let desired_hotkeys = self
+                .desired_profiles
+                .iter()
+                .map(|(desired_profile_id, desired_profile)| {
+                    (desired_profile_id.clone(), desired_profile.hotkey.clone())
+                })
+                .collect::<HashMap<_, _>>();
+
+            if let Err(error) = runtime_applier.apply_profiles(&desired_hotkeys) {
+                self.desired_profiles = previous_desired;
+                self.live_profiles = previous_live;
+                return Err(error);
+            }
+
+            self.live_profiles = desired_hotkeys;
+            MutationMode::Immediate
+        } else {
+            self.live_profiles.remove(profile_id);
+            MutationMode::Deferred
+        };
+
+        Ok(mode)
+    }
+
+    fn runtime_became_unavailable(&mut self) {
+        self.live_profiles.clear();
+    }
+
+    fn replayed_live_profiles(&mut self) {
+        self.live_profiles = self
+            .desired_profiles
+            .iter()
+            .map(|(profile_id, profile)| (profile_id.clone(), profile.hotkey.clone()))
+            .collect();
+    }
+
+    fn snapshot(&self) -> RuntimeSnapshot {
+        RuntimeSnapshot {
+            desired_profiles: self
+                .desired_profiles
+                .iter()
+                .map(|(profile_id, profile)| (profile_id.clone(), profile.hotkey.clone()))
+                .collect(),
+            live_profiles: self.live_profiles.clone(),
+            capture_active: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ManagerCommand {
+    Start {
+        app_handle: tauri::AppHandle,
+        reply: Sender<Result<(), String>>,
+    },
+    Shutdown {
+        reply: Sender<Result<(), String>>,
+    },
+    RegisterProfile {
+        profile_id: String,
+        profile: ShortcutProfile,
+        reply: Sender<Result<(), String>>,
+    },
+    UnregisterProfile {
+        profile_id: String,
+        reply: Sender<Result<(), String>>,
+    },
+    RegisterCancel {
+        owner_task_id: u64,
+        reply: Sender<Result<(), String>>,
+    },
+    UnregisterCancel {
+        owner_task_id: Option<u64>,
+        reply: Sender<Result<(), String>>,
+    },
+    StartCapture {
+        reply: Sender<Result<(), String>>,
+    },
+    StopCapture {
+        reply: Sender<Result<Option<String>, String>>,
+    },
+    CancelCapture {
+        reply: Sender<()>,
+    },
+}
+
+struct FacadeState {
+    capture_active: AtomicBool,
+    last_captured_hotkey: Mutex<Option<String>>,
+}
+
+struct OwnerState {
+    app_handle: Option<tauri::AppHandle>,
+    started: bool,
+    shutdown: bool,
+    command_rx: Receiver<ManagerCommand>,
+    runtime_event_rx: Receiver<RuntimeEvent>,
+    runtime_event_tx: Sender<RuntimeEvent>,
     event_tx: Sender<ShortcutEvent>,
-    /// Channel to receive events from background thread (protected for Sync).
+    facade_state: Arc<FacadeState>,
+    manager_state: ManagerState,
+    matcher_snapshot: SharedMatcherSnapshot,
+    main_runner: Option<Box<dyn PlatformRunner>>,
+    main_runner_generation: Option<u64>,
+    capture_runner: Option<Box<dyn PlatformRunner>>,
+    capture_runner_generation: Option<u64>,
+    next_runner_generation: u64,
+    cancel_owner_task_id: Option<u64>,
+    pending_cancel_release_owner_task_id: Option<u64>,
+    capture_sequence: Vec<PressedInput>,
+}
+
+/// Public shortcut manager facade.
+pub struct ShortcutManager {
+    command_tx: Sender<ManagerCommand>,
     event_rx: Mutex<Receiver<ShortcutEvent>>,
-    /// Background thread handle.
     thread_handle: Option<JoinHandle<()>>,
-    /// Shared state with background thread.
-    state: Arc<ManagerState>,
+    facade_state: Arc<FacadeState>,
 }
 
 impl ShortcutManager {
-    /// Create a new shortcut manager without starting the thread.
-    ///
-    /// Use `start()` to begin the event loop.
     pub fn new() -> Result<Self, String> {
-        let (event_tx, event_rx) = std::sync::mpsc::channel();
+        let (command_tx, command_rx) = mpsc::channel();
+        let (event_tx, event_rx) = mpsc::channel();
+        let (runtime_event_tx, runtime_event_rx) = mpsc::channel();
 
-        let state = Arc::new(ManagerState {
-            app_handle: Mutex::new(None),
-            pending_commands: Mutex::new(Vec::new()),
-            desired_hotkey: Mutex::new(None),
-            current_id: Mutex::new(None),
-            cancel_ids: Mutex::new(Vec::new()),
-            cancel_owner_task_id: Mutex::new(None),
-            pending_cancel_release_owner_task_id: Mutex::new(None),
-            recording_listener: Mutex::new(None),
-            shutdown: AtomicBool::new(false),
+        let facade_state = Arc::new(FacadeState {
+            capture_active: AtomicBool::new(false),
+            last_captured_hotkey: Mutex::new(None),
         });
 
-        Ok(Self {
+        let owner_state = OwnerState {
+            app_handle: None,
+            started: false,
+            shutdown: false,
+            command_rx,
+            runtime_event_rx,
+            runtime_event_tx,
             event_tx,
+            facade_state: Arc::clone(&facade_state),
+            manager_state: ManagerState::new(),
+            matcher_snapshot: Arc::new(RwLock::new(MatcherSnapshot::default())),
+            main_runner: None,
+            main_runner_generation: None,
+            capture_runner: None,
+            capture_runner_generation: None,
+            next_runner_generation: 1,
+            cancel_owner_task_id: None,
+            pending_cancel_release_owner_task_id: None,
+            capture_sequence: Vec::new(),
+        };
+
+        let handle = thread::spawn(move || owner_loop(owner_state));
+
+        Ok(Self {
+            command_tx,
             event_rx: Mutex::new(event_rx),
-            thread_handle: None,
-            state,
+            thread_handle: Some(handle),
+            facade_state,
         })
     }
 
-    /// Start the background thread with the event loop.
-    ///
-    /// The thread runs `HotkeyManager::recv()` and handles commands.
-    ///
-    /// On macOS, also starts `FnEmojiBlocker` to prevent system FN shortcuts
-    /// (emoji picker, input source switching) when FN is used as hotkey.
     pub fn start(&mut self, app_handle: tauri::AppHandle) -> Result<(), String> {
-        if self.thread_handle.is_some() {
-            return Err("shortcut manager already started".to_string());
-        }
-
-        self.state.shutdown.store(false, Ordering::SeqCst);
-        *self.state.app_handle.lock() = Some(app_handle.clone());
-
-        let state = Arc::clone(&self.state);
-        let event_tx = self.event_tx.clone();
-
-        // Spawn the hotkey manager thread
-        let handle = thread::spawn(move || {
-            run_hotkey_loop(state, event_tx, app_handle);
-        });
-
-        self.thread_handle = Some(handle);
-        tracing::info!("shortcut_manager_started");
-        Ok(())
+        self.request(|reply| ManagerCommand::Start { app_handle, reply })
     }
 
-    /// Register a new hotkey, replacing any existing one.
-    ///
-    /// Stores in shared state; background thread will pick it up.
-    pub fn register_primary(&self, hotkey: &str) -> Result<(), String> {
-        // Store in pending state; background thread will pick it up
-        let mut pending = self.state.pending_commands.lock();
-        pending.push(ShortcutCommand::Register(hotkey.to_string()));
-
-        tracing::info!(hotkey = %hotkey, "primary_shortcut_register_requested");
-        Ok(())
+    pub fn register_profile(&self, key: &str, profile: &ShortcutProfile) -> Result<(), String> {
+        self.request(|reply| ManagerCommand::RegisterProfile {
+            profile_id: key.to_string(),
+            profile: profile.clone(),
+            reply,
+        })
     }
 
-    /// Unregister the current hotkey.
-    pub fn unregister_primary(&self) -> Result<(), String> {
-        let mut pending = self.state.pending_commands.lock();
-        pending.push(ShortcutCommand::Unregister);
-
-        tracing::info!("primary_shortcut_unregister_requested");
-        Ok(())
+    pub fn unregister_profile(&self, key: &str) -> Result<(), String> {
+        self.request(|reply| ManagerCommand::UnregisterProfile {
+            profile_id: key.to_string(),
+            reply,
+        })
     }
 
-    /// Register the cancel hotkey (ESC).
     pub fn register_cancel(&self, owner_task_id: u64) -> Result<(), String> {
-        let mut pending = self.state.pending_commands.lock();
-        pending.push(ShortcutCommand::RegisterCancel { owner_task_id });
-        tracing::info!(owner_task_id, "shortcut_register_cancel_requested");
-        Ok(())
-    }
-
-    /// Unregister the cancel hotkey.
-    pub fn unregister_cancel(&self) -> Result<(), String> {
-        let mut pending = self.state.pending_commands.lock();
-        pending.push(ShortcutCommand::UnregisterCancel {
-            owner_task_id: None,
-        });
-        tracing::info!("shortcut_unregister_cancel_requested");
-        Ok(())
-    }
-
-    /// Unregister the cancel hotkey only if the calling task still owns it.
-    pub fn unregister_cancel_for_task(&self, owner_task_id: u64) -> Result<(), String> {
-        let mut pending = self.state.pending_commands.lock();
-        pending.push(ShortcutCommand::UnregisterCancel {
-            owner_task_id: Some(owner_task_id),
-        });
-        tracing::info!(
+        self.request(|reply| ManagerCommand::RegisterCancel {
             owner_task_id,
-            "shortcut_unregister_cancel_requested_for_task"
-        );
-        Ok(())
+            reply,
+        })
     }
 
-    /// Start the hotkey recording capture runtime.
+    pub fn unregister_cancel(&self) -> Result<(), String> {
+        self.request(|reply| ManagerCommand::UnregisterCancel {
+            owner_task_id: None,
+            reply,
+        })
+    }
+
+    pub fn unregister_cancel_for_task(&self, owner_task_id: u64) -> Result<(), String> {
+        self.request(|reply| ManagerCommand::UnregisterCancel {
+            owner_task_id: Some(owner_task_id),
+            reply,
+        })
+    }
+
     pub fn start_recording_capture(&self) -> Result<(), String> {
-        let app_handle = self.app_handle()?;
-        let mut recording_listener = self.state.recording_listener.lock();
-
-        if recording_listener
-            .as_ref()
-            .is_some_and(|listener| listener.is_active())
-        {
-            return Err("hotkey recording already in progress".to_string());
-        }
-
-        let mut listener = RecordingListener::new()
-            .map_err(|error| format!("failed to create recording listener: {error}"))?;
-        listener
-            .start(app_handle)
-            .map_err(|error| format!("failed to start recording listener: {error}"))?;
-        *recording_listener = Some(listener);
-
-        tracing::info!("recording_capture_started");
-        Ok(())
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.command_tx
+            .send(ManagerCommand::StartCapture { reply: reply_tx })
+            .map_err(|error| format!("shortcut manager command send failed: {error}"))?;
+        reply_rx
+            .recv()
+            .map_err(|error| format!("shortcut manager reply receive failed: {error}"))?
     }
 
-    /// Stop the recording capture runtime and commit the captured hotkey if present.
     pub fn stop_recording_capture(&self) -> Result<Option<String>, String> {
-        let captured_hotkey = stop_recording_capture_listener(&self.state, "explicit_stop");
-
-        if let Some(ref hotkey) = captured_hotkey {
-            let app_handle = self.app_handle()?;
-            commit_captured_primary_hotkey(self, &app_handle, hotkey)?;
-        }
-
-        Ok(captured_hotkey)
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.command_tx
+            .send(ManagerCommand::StopCapture { reply: reply_tx })
+            .map_err(|error| format!("shortcut manager command send failed: {error}"))?;
+        reply_rx
+            .recv()
+            .map_err(|error| format!("shortcut manager reply receive failed: {error}"))?
     }
 
-    /// Cancel the recording capture runtime without persisting the result.
     pub fn cancel_recording_capture(&self) {
-        let _ = stop_recording_capture_listener(&self.state, "cancelled");
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let _ = self
+            .command_tx
+            .send(ManagerCommand::CancelCapture { reply: reply_tx });
+        let _ = reply_rx.recv();
     }
 
-    /// Inspect the captured hotkey without stopping capture.
     pub fn peek_recording_capture(&self) -> Option<String> {
-        self.state
-            .recording_listener
-            .lock()
-            .as_ref()
-            .and_then(RecordingListener::peek_captured)
+        self.facade_state.last_captured_hotkey.lock().clone()
     }
 
-    /// Whether the recording capture runtime is active.
     pub fn is_recording_capture_active(&self) -> bool {
-        self.state
-            .recording_listener
-            .lock()
-            .as_ref()
-            .is_some_and(|listener| listener.is_active())
+        self.facade_state.capture_active.load(Ordering::SeqCst)
     }
 
-    /// Stop the background thread and cleanup.
     pub fn stop(&mut self) -> Result<(), String> {
         if self.thread_handle.is_none() {
             return Ok(());
         }
 
-        self.state.shutdown.store(true, Ordering::SeqCst);
+        let result = self.request(|reply| ManagerCommand::Shutdown { reply });
 
         if let Some(handle) = self.thread_handle.take() {
             let _ = handle.join();
         }
 
-        tracing::info!("shortcut_manager_stopped");
-        Ok(())
+        result
     }
 
-    /// Get the event receiver for handling shortcut triggers.
     pub fn event_receiver(&self) -> parking_lot::MutexGuard<'_, Receiver<ShortcutEvent>> {
         self.event_rx.lock()
     }
 
-    fn app_handle(&self) -> Result<tauri::AppHandle, String> {
-        self.state
-            .app_handle
-            .lock()
-            .clone()
-            .ok_or_else(|| "shortcut manager app handle unavailable".to_string())
+    fn request(
+        &self,
+        build_command: impl FnOnce(Sender<Result<(), String>>) -> ManagerCommand,
+    ) -> Result<(), String> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.command_tx
+            .send(build_command(reply_tx))
+            .map_err(|error| format!("shortcut manager command send failed: {error}"))?;
+        reply_rx
+            .recv()
+            .map_err(|error| format!("shortcut manager reply receive failed: {error}"))?
     }
 }
 
@@ -279,23 +388,11 @@ impl Default for ShortcutManager {
 
 #[cfg(target_os = "macos")]
 const SHORTCUT_PERMISSION_POLL_INTERVAL: Duration = Duration::from_millis(100);
-
 #[cfg(target_os = "macos")]
 const SHORTCUT_RUNTIME_PROBE_INTERVAL: Duration = Duration::from_millis(500);
-
-struct ShortcutRuntime {
-    manager: handy_keys::HotkeyManager,
-    #[cfg(target_os = "macos")]
-    fn_emoji_blocker: FnEmojiBlocker,
-}
-
 #[cfg(target_os = "macos")]
-impl Drop for ShortcutRuntime {
-    fn drop(&mut self) {
-        self.fn_emoji_blocker.stop();
-        tracing::info!("fn_emoji_blocker_stopped_for_shortcut_manager");
-    }
-}
+const SHORTCUT_CAPTURE_RECONCILE_INTERVAL: Duration = Duration::from_millis(500);
+const SHORTCUT_RUNTIME_RESTART_INTERVAL: Duration = Duration::from_millis(500);
 
 #[cfg(target_os = "macos")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -326,7 +423,6 @@ fn runtime_permission_action(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RuntimeProbeAction {
     Mount,
-    Unmount,
     Keep,
 }
 
@@ -334,572 +430,747 @@ enum RuntimeProbeAction {
 fn runtime_probe_action(runtime_is_mounted: bool, probe_ok: bool) -> RuntimeProbeAction {
     match (runtime_is_mounted, probe_ok) {
         (false, true) => RuntimeProbeAction::Mount,
-        (true, false) => RuntimeProbeAction::Unmount,
         _ => RuntimeProbeAction::Keep,
     }
 }
 
-fn run_hotkey_loop(
-    state: Arc<ManagerState>,
-    event_tx: Sender<ShortcutEvent>,
-    app_handle: tauri::AppHandle,
-) {
-    #[cfg(target_os = "macos")]
-    let mut runtime: Option<ShortcutRuntime> = None;
-    #[cfg(not(target_os = "macos"))]
-    let mut runtime: Option<ShortcutRuntime> =
-        match mount_shortcut_runtime(&state, &event_tx, &app_handle) {
-            Ok(runtime) => Some(runtime),
-            Err(error) => {
-                emit_registration_failure(&event_tx, &app_handle, error);
-                return;
-            }
-        };
-
+fn owner_loop(mut state: OwnerState) {
     #[cfg(target_os = "macos")]
     let mut last_permission_poll_at = Instant::now() - SHORTCUT_PERMISSION_POLL_INTERVAL;
     #[cfg(target_os = "macos")]
     let mut last_accessibility_granted: Option<bool> = None;
     #[cfg(target_os = "macos")]
     let mut last_probe_at = Instant::now() - SHORTCUT_RUNTIME_PROBE_INTERVAL;
+    #[cfg(target_os = "macos")]
+    let mut last_capture_reconcile_at = Instant::now() - SHORTCUT_CAPTURE_RECONCILE_INTERVAL;
+    let mut last_main_restart_at = Instant::now() - SHORTCUT_RUNTIME_RESTART_INTERVAL;
+    let mut last_capture_restart_at = Instant::now() - SHORTCUT_RUNTIME_RESTART_INTERVAL;
 
-    loop {
-        if state.shutdown.load(Ordering::SeqCst) {
-            tracing::info!("hotkey_manager_shutdown_requested");
-            break;
+    while !state.shutdown {
+        while let Ok(command) = state.command_rx.try_recv() {
+            handle_command(&mut state, command);
+        }
+
+        while let Ok(runtime_event) = state.runtime_event_rx.try_recv() {
+            handle_runtime_event(
+                &mut state,
+                runtime_event,
+                &mut last_main_restart_at,
+                &mut last_capture_restart_at,
+            );
         }
 
         #[cfg(target_os = "macos")]
-        if last_permission_poll_at.elapsed() >= SHORTCUT_PERMISSION_POLL_INTERVAL {
-            let permission_snapshot = crate::permissions::report_permission_snapshot_if_changed(
-                "shortcut_runtime_permission_poll",
-            );
-            let accessibility_granted =
-                permission_snapshot.accessibility == crate::permissions::PermissionStatus::Granted;
-            let action = runtime_permission_action(
-                runtime.is_some(),
-                last_accessibility_granted,
-                accessibility_granted,
-            );
-
-            match action {
-                RuntimePermissionAction::Mount => {
-                    tracing::info!("shortcut_runtime_permission_available");
-                    if let Err(error) =
-                        remount_shortcut_runtime(&mut runtime, &state, &event_tx, &app_handle)
-                    {
-                        tracing::warn!(error = %error, "shortcut_runtime_mount_failed");
-                    }
-                }
-                RuntimePermissionAction::Unmount => {
-                    tracing::warn!("shortcut_runtime_permission_lost");
-                    unmount_shortcut_runtime(&mut runtime, &state, "accessibility_permission_lost");
-                }
-                RuntimePermissionAction::Keep => {}
-            }
-
-            last_accessibility_granted = Some(accessibility_granted);
-            last_permission_poll_at = Instant::now();
-        }
-
-        #[cfg(target_os = "macos")]
-        if last_probe_at.elapsed() >= SHORTCUT_RUNTIME_PROBE_INTERVAL {
-            let probe_result = super::macos::fresh_event_tap_probe();
-            let action = runtime_probe_action(runtime.is_some(), probe_result.is_ok());
-
-            match action {
-                RuntimeProbeAction::Mount => {
-                    tracing::info!("shortcut_runtime_probe_recovered");
-                    if let Err(error) =
-                        remount_shortcut_runtime(&mut runtime, &state, &event_tx, &app_handle)
-                    {
-                        tracing::warn!(error = %error, "shortcut_runtime_mount_failed");
-                    }
-                }
-                RuntimeProbeAction::Unmount => {
-                    let error = probe_result
-                        .err()
-                        .unwrap_or_else(|| "fresh event tap probe failed".to_string());
-                    tracing::warn!(error = %error, "shortcut_runtime_probe_failed");
-                    unmount_shortcut_runtime(&mut runtime, &state, "permission_probe_failed");
-                }
-                RuntimeProbeAction::Keep => {}
-            }
-
-            last_probe_at = Instant::now();
-        }
-
-        process_pending_commands(&mut runtime, &state, &event_tx, &app_handle);
-
-        if let Some(runtime) = runtime.as_ref() {
-            match runtime.manager.try_recv() {
-                Some(event) => handle_hotkey_event(event, &state, &event_tx, &app_handle),
-                None => thread::sleep(Duration::from_millis(50)),
-            }
-        } else {
-            thread::sleep(Duration::from_millis(50));
-        }
-    }
-
-    unmount_shortcut_runtime(&mut runtime, &state, "shutdown");
-    tracing::info!("hotkey_manager_loop_exited");
-}
-
-fn process_pending_commands(
-    runtime: &mut Option<ShortcutRuntime>,
-    state: &Arc<ManagerState>,
-    event_tx: &Sender<ShortcutEvent>,
-    app_handle: &tauri::AppHandle,
-) {
-    let mut pending = state.pending_commands.lock();
-    let commands: Vec<ShortcutCommand> = pending.drain(..).collect();
-    drop(pending);
-
-    for command in commands {
-        match command {
-            ShortcutCommand::Register(hotkey_str) => {
-                *state.desired_hotkey.lock() = Some(hotkey_str);
-
-                if runtime.is_some() {
-                    if let Err(error) =
-                        remount_shortcut_runtime(runtime, state, event_tx, app_handle)
-                    {
-                        tracing::warn!(error = %error, "shortcut_runtime_remount_failed");
-                    }
-                } else {
-                    tracing::info!("shortcut_register_deferred_until_runtime_available");
-                }
-            }
-            ShortcutCommand::Unregister => {
-                *state.desired_hotkey.lock() = None;
-                if let Some(runtime) = runtime.as_ref() {
-                    unregister_current_hotkey(&runtime.manager, state, "explicit");
-                } else {
-                    clear_live_registrations(state);
-                }
-            }
-            ShortcutCommand::RegisterCancel { owner_task_id } => {
-                *state.cancel_owner_task_id.lock() = Some(owner_task_id);
-
-                if let Some(runtime) = runtime.as_ref() {
-                    let mut current = state.cancel_ids.lock();
-                    unregister_cancel_hotkeys(&runtime.manager, &mut current);
-                    let cancel_hotkeys = build_cancel_hotkeys_for_app(app_handle);
-                    *current = register_cancel_hotkeys(&runtime.manager, &cancel_hotkeys);
-                }
-            }
-            ShortcutCommand::UnregisterCancel { owner_task_id } => {
-                let mut cancel_owner_task_id = state.cancel_owner_task_id.lock();
-                if should_unregister_cancel_hotkeys(*cancel_owner_task_id, owner_task_id) {
-                    *cancel_owner_task_id = None;
-                    drop(cancel_owner_task_id);
-
-                    if let Some(runtime) = runtime.as_ref() {
-                        let mut current = state.cancel_ids.lock();
-                        unregister_cancel_hotkeys(&runtime.manager, &mut current);
-                    } else {
-                        state.cancel_ids.lock().clear();
-                    }
-                } else {
-                    tracing::info!(
-                        current_owner_task_id = ?*cancel_owner_task_id,
-                        requested_owner_task_id = ?owner_task_id,
-                        "stale_cancel_hotkey_unregister_ignored"
-                    );
-                }
-            }
-        }
-    }
-}
-
-fn handle_hotkey_event(
-    event: handy_keys::HotkeyEvent,
-    state: &Arc<ManagerState>,
-    event_tx: &Sender<ShortcutEvent>,
-    app_handle: &tauri::AppHandle,
-) {
-    let state_enum = match event.state {
-        handy_keys::HotkeyState::Pressed => ShortcutState::Pressed,
-        handy_keys::HotkeyState::Released => ShortcutState::Released,
-    };
-
-    let current_id = *state.current_id.lock();
-    let cancel_ids = state.cancel_ids.lock().clone();
-
-    if Some(event.id) == current_id {
-        tracing::info!(state = %state_enum.as_str(), "hotkey_triggered");
-        let _ = event_tx.send(ShortcutEvent::Triggered { state: state_enum });
-        let _ = app_handle.emit(EventName::SHORTCUT_TRIGGERED, state_enum.as_str());
-        handle_recording_trigger(app_handle, state_enum);
-    } else if cancel_ids.contains(&event.id) {
-        tracing::info!(state = %state_enum.as_str(), "cancel_hotkey_triggered");
-        let _ = event_tx.send(ShortcutEvent::CancelTriggered { state: state_enum });
-        handle_cancel_trigger(app_handle, state_enum);
-    }
-}
-
-fn remount_shortcut_runtime(
-    runtime: &mut Option<ShortcutRuntime>,
-    state: &Arc<ManagerState>,
-    event_tx: &Sender<ShortcutEvent>,
-    app_handle: &tauri::AppHandle,
-) -> Result<(), String> {
-    unmount_shortcut_runtime(runtime, state, "remount");
-    let new_runtime = mount_shortcut_runtime(state, event_tx, app_handle)?;
-    *runtime = Some(new_runtime);
-    Ok(())
-}
-
-fn mount_shortcut_runtime(
-    state: &Arc<ManagerState>,
-    event_tx: &Sender<ShortcutEvent>,
-    app_handle: &tauri::AppHandle,
-) -> Result<ShortcutRuntime, String> {
-    #[cfg(target_os = "macos")]
-    super::macos::fresh_event_tap_probe()?;
-
-    let manager = create_hotkey_manager().map_err(|e| e.to_string())?;
-
-    #[cfg(target_os = "macos")]
-    let runtime = {
-        let mut blocker = FnEmojiBlocker::new();
-        blocker.start()?;
-        tracing::info!("fn_emoji_blocker_started_for_shortcut_manager");
-        ShortcutRuntime {
-            manager,
-            fn_emoji_blocker: blocker,
-        }
-    };
-
-    #[cfg(not(target_os = "macos"))]
-    let runtime = ShortcutRuntime { manager };
-
-    apply_runtime_registrations(&runtime, state, event_tx, app_handle);
-    tracing::info!("shortcut_runtime_mounted");
-    Ok(runtime)
-}
-
-fn unmount_shortcut_runtime(
-    runtime: &mut Option<ShortcutRuntime>,
-    state: &Arc<ManagerState>,
-    reason: &'static str,
-) {
-    if runtime.take().is_some() {
-        tracing::info!(reason, "shortcut_runtime_unmounted");
-    }
-    let _ = stop_recording_capture_listener(state, reason);
-    clear_live_registrations(state);
-}
-
-fn clear_live_registrations(state: &Arc<ManagerState>) {
-    *state.current_id.lock() = None;
-    state.cancel_ids.lock().clear();
-}
-
-fn apply_runtime_registrations(
-    runtime: &ShortcutRuntime,
-    state: &Arc<ManagerState>,
-    event_tx: &Sender<ShortcutEvent>,
-    app_handle: &tauri::AppHandle,
-) {
-    clear_live_registrations(state);
-
-    if state.cancel_owner_task_id.lock().is_some() {
-        let cancel_hotkeys = build_cancel_hotkeys_for_app(app_handle);
-        let registered_ids = register_cancel_hotkeys(&runtime.manager, &cancel_hotkeys);
-        tracing::info!(
-            cancel_hotkeys = ?cancel_hotkeys,
-            count = registered_ids.len(),
-            "cancel_hotkeys_registered"
+        poll_macos_runtime_health(
+            &mut state,
+            &mut last_permission_poll_at,
+            &mut last_accessibility_granted,
+            &mut last_probe_at,
+            &mut last_capture_reconcile_at,
         );
-        *state.cancel_ids.lock() = registered_ids;
+
+        #[cfg(not(target_os = "macos"))]
+        if state.started && state.main_runner.is_none() {
+            let _ = ensure_main_runner(&mut state);
+        }
+
+        thread::sleep(Duration::from_millis(20));
     }
 
-    if let Some(hotkey_str) = state.desired_hotkey.lock().clone() {
-        match register_hotkey(&runtime.manager, &hotkey_str) {
-            Ok(id) => {
-                tracing::info!(hotkey = %hotkey_str, id = id.as_u32(), "hotkey_registered");
-                *state.current_id.lock() = Some(id);
-            }
-            Err(error) => {
-                *state.desired_hotkey.lock() = None;
-                tracing::error!(
-                    hotkey = %hotkey_str,
-                    error = %error,
-                    "hotkey_registration_failed"
-                );
-                emit_registration_failure(event_tx, app_handle, error);
-            }
+    stop_main_runner(&mut state);
+}
+
+fn handle_command(state: &mut OwnerState, command: ManagerCommand) {
+    match command {
+        ManagerCommand::Start { app_handle, reply } => {
+            let result = if state.started {
+                Err("shortcut manager already started".to_string())
+            } else {
+                state.app_handle = Some(app_handle);
+                state.started = true;
+                match ensure_main_runner(state) {
+                    Ok(()) => Ok(()),
+                    Err(error)
+                        if error.contains("Accessibility permission not granted")
+                            || error.contains("Failed to create fresh event tap probe") =>
+                    {
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
+            };
+            let _ = reply.send(result);
+        }
+        ManagerCommand::Shutdown { reply } => {
+            state.shutdown = true;
+            stop_main_runner(state);
+            stop_capture_runtime(state, false);
+            let _ = reply.send(Ok(()));
+        }
+        ManagerCommand::RegisterProfile {
+            profile_id,
+            mut profile,
+            reply,
+        } => {
+            let result = if profile.hotkey.is_empty() {
+                if runtime_is_live(state.main_runner.is_some(), state.capture_runner.is_some()) {
+                    let mut applier = SnapshotApplier {
+                        matcher_snapshot: Arc::clone(&state.matcher_snapshot),
+                        app_handle: state.app_handle.clone(),
+                        cancel_owner_task_id: state.cancel_owner_task_id,
+                        capture_active: state.facade_state.capture_active.load(Ordering::SeqCst),
+                    };
+                    state
+                        .manager_state
+                        .register_profile(&profile_id, profile, Some(&mut applier))
+                        .map(|_| ())
+                } else {
+                    state
+                        .manager_state
+                        .register_profile(&profile_id, profile, None)
+                        .map(|_| ())
+                }
+            } else {
+                match canonicalize_hotkey_string(&profile.hotkey) {
+                    Ok(canonical_hotkey) => {
+                        profile.hotkey = canonical_hotkey;
+                        if runtime_is_live(
+                            state.main_runner.is_some(),
+                            state.capture_runner.is_some(),
+                        ) {
+                            let mut applier = SnapshotApplier {
+                                matcher_snapshot: Arc::clone(&state.matcher_snapshot),
+                                app_handle: state.app_handle.clone(),
+                                cancel_owner_task_id: state.cancel_owner_task_id,
+                                capture_active: state
+                                    .facade_state
+                                    .capture_active
+                                    .load(Ordering::SeqCst),
+                            };
+                            state
+                                .manager_state
+                                .register_profile(&profile_id, profile, Some(&mut applier))
+                                .map(|_| ())
+                        } else {
+                            state
+                                .manager_state
+                                .register_profile(&profile_id, profile, None)
+                                .map(|_| ())
+                        }
+                    }
+                    Err(error) => Err(error),
+                }
+            };
+            let _ = reply.send(result);
+        }
+        ManagerCommand::UnregisterProfile { profile_id, reply } => {
+            let result =
+                if runtime_is_live(state.main_runner.is_some(), state.capture_runner.is_some()) {
+                    let mut applier = SnapshotApplier {
+                        matcher_snapshot: Arc::clone(&state.matcher_snapshot),
+                        app_handle: state.app_handle.clone(),
+                        cancel_owner_task_id: state.cancel_owner_task_id,
+                        capture_active: state.facade_state.capture_active.load(Ordering::SeqCst),
+                    };
+                    state
+                        .manager_state
+                        .unregister_profile(&profile_id, Some(&mut applier))
+                        .map(|_| ())
+                } else {
+                    state
+                        .manager_state
+                        .unregister_profile(&profile_id, None)
+                        .map(|_| ())
+                };
+            let _ = reply.send(result);
+        }
+        ManagerCommand::RegisterCancel {
+            owner_task_id,
+            reply,
+        } => {
+            state.cancel_owner_task_id = Some(owner_task_id);
+            let result = refresh_matcher_snapshot(state);
+            let _ = reply.send(result);
+        }
+        ManagerCommand::UnregisterCancel {
+            owner_task_id,
+            reply,
+        } => {
+            let result =
+                if should_unregister_cancel_hotkeys(state.cancel_owner_task_id, owner_task_id) {
+                    state.cancel_owner_task_id = None;
+                    refresh_matcher_snapshot(state)
+                } else {
+                    Ok(())
+                };
+            let _ = reply.send(result);
+        }
+        ManagerCommand::StartCapture { reply } => {
+            let result = start_capture(state);
+            let _ = reply.send(result);
+        }
+        ManagerCommand::StopCapture { reply } => {
+            let captured = stop_capture_runtime(state, true);
+            let _ = reply.send(Ok(captured));
+        }
+        ManagerCommand::CancelCapture { reply } => {
+            stop_capture_runtime(state, false);
+            let _ = reply.send(());
         }
     }
 }
 
-fn unregister_current_hotkey(
-    manager: &handy_keys::HotkeyManager,
-    state: &Arc<ManagerState>,
-    reason: &'static str,
+fn handle_runtime_event(
+    state: &mut OwnerState,
+    runtime_event: RuntimeEvent,
+    last_main_restart_at: &mut Instant,
+    last_capture_restart_at: &mut Instant,
 ) {
-    let mut current = state.current_id.lock();
-    if let Some(old_id) = current.take() {
-        tracing::info!(old_id = old_id.as_u32(), reason, "unregistering_old_hotkey");
-        if let Err(error) = manager.unregister(old_id) {
-            tracing::warn!(error = ?error, reason, "old_hotkey_unregister_failed");
-        } else {
-            tracing::info!(reason, "old_hotkey_unregistered");
+    if let Some((mode, generation)) = runtime_restart_request(&runtime_event) {
+        if !restart_request_matches_current_generation(
+            current_runner_generation(state, mode),
+            generation,
+        ) {
+            return;
+        }
+
+        let last_restart_at = match mode {
+            RunnerMode::Main => last_main_restart_at,
+            RunnerMode::CaptureOnly => last_capture_restart_at,
+        };
+        match runtime_restart_action(last_restart_at.elapsed(), SHORTCUT_RUNTIME_RESTART_INTERVAL) {
+            RuntimeRestartAction::TeardownOnly => teardown_runner(state, mode),
+            RuntimeRestartAction::TeardownAndRemount => {
+                restart_runner(state, mode);
+                *last_restart_at = Instant::now();
+            }
+        }
+        return;
+    }
+
+    let RuntimeEvent::Matcher(matcher_event) = runtime_event else {
+        return;
+    };
+
+    match matcher_event {
+        MatcherEvent::ProfilePressed { profile_id } => {
+            tracing::info!(profile_id = %profile_id, "shortcut_profile_pressed");
+            emit_shortcut_event(state, ShortcutState::Pressed, &profile_id);
+            if let Some(app_handle) = state.app_handle.clone() {
+                handle_recording_trigger_owner_loop(
+                    state,
+                    &app_handle,
+                    ShortcutState::Pressed,
+                    &profile_id,
+                );
+                if let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>()
+                {
+                    if app_state.is_recording.load(Ordering::SeqCst) {
+                        let task_id = app_state.task_counter.load(Ordering::SeqCst);
+                        state.cancel_owner_task_id = Some(task_id);
+                        let _ = refresh_matcher_snapshot(state);
+                    }
+                }
+            }
+        }
+        MatcherEvent::ProfileReleased { profile_id } => {
+            tracing::info!(profile_id = %profile_id, "shortcut_profile_released");
+            emit_shortcut_event(state, ShortcutState::Released, &profile_id);
+            if let Some(app_handle) = state.app_handle.clone() {
+                handle_recording_trigger_owner_loop(
+                    state,
+                    &app_handle,
+                    ShortcutState::Released,
+                    &profile_id,
+                );
+            }
+        }
+        MatcherEvent::CancelPressed => {
+            let _ = state.event_tx.send(ShortcutEvent::CancelTriggered {
+                state: ShortcutState::Pressed,
+            });
+            if let Some(app_handle) = state.app_handle.as_ref() {
+                handle_cancel_trigger(app_handle, &mut state.pending_cancel_release_owner_task_id);
+            }
+        }
+        MatcherEvent::CancelReleased => {
+            let _ = state.event_tx.send(ShortcutEvent::CancelTriggered {
+                state: ShortcutState::Released,
+            });
+            if let Some(app_handle) = state.app_handle.clone() {
+                handle_cancel_release_owner_loop(state, &app_handle);
+            }
+        }
+        MatcherEvent::CapturePressed(input) => {
+            if state.facade_state.capture_active.load(Ordering::SeqCst) {
+                state.capture_sequence.push(input);
+            }
+        }
+        MatcherEvent::CaptureReleased => {
+            if !state.facade_state.capture_active.load(Ordering::SeqCst) {
+                return;
+            }
+
+            match analyze_pressed_sequence(&state.capture_sequence) {
+                Ok(hotkey) => {
+                    *state.facade_state.last_captured_hotkey.lock() = Some(hotkey.clone());
+                    stop_capture_runtime(state, true);
+                    if let Some(app_handle) = state.app_handle.as_ref() {
+                        let _ = app_handle.emit(EventName::HOTKEY_CAPTURED, hotkey);
+                    }
+                }
+                Err(_) => {
+                    state.capture_sequence.clear();
+                }
+            }
         }
     }
 }
 
-fn take_recording_listener(state: &Arc<ManagerState>) -> Option<RecordingListener> {
-    state.recording_listener.lock().take()
+fn runtime_restart_request(runtime_event: &RuntimeEvent) -> Option<(RunnerMode, u64)> {
+    match runtime_event {
+        RuntimeEvent::RunnerNeedsRestart { mode, generation } => Some((*mode, *generation)),
+        RuntimeEvent::Matcher(_) => None,
+    }
 }
 
-fn stop_recording_capture_listener(
-    state: &Arc<ManagerState>,
-    reason: &'static str,
-) -> Option<String> {
-    let mut listener = take_recording_listener(state)?;
-    let captured_hotkey = listener.stop();
-    tracing::info!(reason, captured = ?captured_hotkey, "recording_capture_stopped");
-    captured_hotkey
+fn current_runner_generation(state: &OwnerState, mode: RunnerMode) -> Option<u64> {
+    match mode {
+        RunnerMode::Main => state.main_runner_generation,
+        RunnerMode::CaptureOnly => state.capture_runner_generation,
+    }
 }
 
-fn commit_captured_primary_hotkey(
-    manager: &ShortcutManager,
-    app_handle: &tauri::AppHandle,
-    new_hotkey: &str,
-) -> Result<(), String> {
-    let app_state = app_handle
-        .try_state::<crate::state::app_state::AppState>()
-        .ok_or_else(|| "app state unavailable".to_string())?;
+fn capture_runner_reconcile_needed(
+    capture_active: bool,
+    main_runner_is_present: bool,
+    capture_runner_is_present: bool,
+) -> bool {
+    capture_active && !main_runner_is_present && !capture_runner_is_present
+}
 
-    manager.unregister_primary()?;
-    manager.register_primary(new_hotkey)?;
+fn main_runner_mount_allowed(
+    main_runner_is_present: bool,
+    capture_runner_is_present: bool,
+    capture_active: bool,
+) -> bool {
+    !main_runner_is_present && !capture_runner_is_present && !capture_active
+}
 
-    {
-        let mut settings = app_state.settings.lock();
-        settings.hotkey = new_hotkey.to_string();
+fn runtime_is_live(main_runner_is_present: bool, capture_runner_is_present: bool) -> bool {
+    main_runner_is_present || capture_runner_is_present
+}
+
+fn restart_request_matches_current_generation(
+    current_generation: Option<u64>,
+    request_generation: u64,
+) -> bool {
+    current_generation == Some(request_generation)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeRestartAction {
+    TeardownOnly,
+    TeardownAndRemount,
+}
+
+fn runtime_restart_action(elapsed: Duration, min_interval: Duration) -> RuntimeRestartAction {
+    if runtime_restart_allowed(elapsed, min_interval) {
+        RuntimeRestartAction::TeardownAndRemount
+    } else {
+        RuntimeRestartAction::TeardownOnly
+    }
+}
+
+fn runtime_restart_allowed(elapsed: Duration, min_interval: Duration) -> bool {
+    elapsed >= min_interval
+}
+
+fn teardown_runner(state: &mut OwnerState, mode: RunnerMode) {
+    match mode {
+        RunnerMode::Main => stop_main_runner(state),
+        RunnerMode::CaptureOnly => stop_capture_runner(state),
+    }
+}
+
+fn allocate_runner_generation(state: &mut OwnerState, mode: RunnerMode) -> u64 {
+    let generation = state.next_runner_generation;
+    state.next_runner_generation += 1;
+
+    match mode {
+        RunnerMode::Main => state.main_runner_generation = Some(generation),
+        RunnerMode::CaptureOnly => state.capture_runner_generation = Some(generation),
     }
 
-    save_settings_internal(app_handle)?;
+    generation
+}
 
-    let settings = app_state.settings.lock().clone();
-    app_handle
-        .emit(EventName::SETTINGS_CHANGED, settings)
-        .map_err(|error| format!("failed to emit settings changed: {error}"))?;
+fn restart_runner(state: &mut OwnerState, mode: RunnerMode) {
+    match mode {
+        RunnerMode::Main => {
+            teardown_runner(state, RunnerMode::Main);
+            match replacement_runner_mode_after_restart(
+                RunnerMode::Main,
+                state.facade_state.capture_active.load(Ordering::SeqCst),
+            ) {
+                RunnerMode::Main => {
+                    let _ = ensure_main_runner(state);
+                }
+                RunnerMode::CaptureOnly => {
+                    let _ = ensure_capture_runner(state);
+                }
+            }
+        }
+        RunnerMode::CaptureOnly => {
+            teardown_runner(state, RunnerMode::CaptureOnly);
+            if state.facade_state.capture_active.load(Ordering::SeqCst)
+                && state.main_runner.is_none()
+            {
+                let _ = ensure_capture_runner(state);
+            }
+        }
+    }
+}
+
+fn replacement_runner_mode_after_restart(mode: RunnerMode, capture_active: bool) -> RunnerMode {
+    match (mode, capture_active) {
+        (RunnerMode::Main, true) => RunnerMode::CaptureOnly,
+        _ => mode,
+    }
+}
+
+fn emit_shortcut_event(state: &mut OwnerState, shortcut_state: ShortcutState, profile_id: &str) {
+    let _ = state.event_tx.send(ShortcutEvent::Triggered {
+        state: shortcut_state,
+        profile_id: profile_id.to_string(),
+    });
+    if let Some(app_handle) = state.app_handle.as_ref() {
+        let _ = app_handle.emit(
+            EventName::SHORTCUT_TRIGGERED,
+            serde_json::json!({ "state": shortcut_state.as_str(), "profile_id": profile_id }),
+        );
+    }
+}
+
+fn ensure_main_runner(state: &mut OwnerState) -> Result<(), String> {
+    if !state.started
+        || !main_runner_mount_allowed(
+            state.main_runner.is_some(),
+            state.capture_runner.is_some(),
+            state.facade_state.capture_active.load(Ordering::SeqCst),
+        )
+    {
+        return Ok(());
+    }
+
+    refresh_matcher_snapshot(state)?;
+    let generation = allocate_runner_generation(state, RunnerMode::Main);
+    let runner = start_platform_runner(
+        RunnerMode::Main,
+        Arc::clone(&state.matcher_snapshot),
+        state.runtime_event_tx.clone(),
+        generation,
+    )?;
+    state.main_runner = Some(runner);
+    state.manager_state.replayed_live_profiles();
+    Ok(())
+}
+
+fn ensure_capture_runner(state: &mut OwnerState) -> Result<(), String> {
+    if state.main_runner.is_some() || state.capture_runner.is_some() {
+        return Ok(());
+    }
+
+    let generation = allocate_runner_generation(state, RunnerMode::CaptureOnly);
+    let runner = start_platform_runner(
+        RunnerMode::CaptureOnly,
+        Arc::clone(&state.matcher_snapshot),
+        state.runtime_event_tx.clone(),
+        generation,
+    )?;
+    state.capture_runner = Some(runner);
+    Ok(())
+}
+
+fn stop_main_runner(state: &mut OwnerState) {
+    if let Some(mut runner) = state.main_runner.take() {
+        let _ = runner.stop();
+    }
+    state.main_runner_generation = None;
+    state.manager_state.runtime_became_unavailable();
+}
+
+fn stop_capture_runner(state: &mut OwnerState) {
+    if let Some(mut runner) = state.capture_runner.take() {
+        let _ = runner.stop();
+    }
+    state.capture_runner_generation = None;
+}
+
+fn start_capture(state: &mut OwnerState) -> Result<(), String> {
+    if state.facade_state.capture_active.load(Ordering::SeqCst) {
+        return Err("hotkey recording already in progress".to_string());
+    }
+
+    if state.main_runner.is_none() && state.capture_runner.is_none() {
+        ensure_capture_runner(state)?;
+    }
+
+    state
+        .facade_state
+        .capture_active
+        .store(true, Ordering::SeqCst);
+    *state.facade_state.last_captured_hotkey.lock() = None;
+    state.capture_sequence.clear();
+    if let Err(error) = refresh_matcher_snapshot(state) {
+        state
+            .facade_state
+            .capture_active
+            .store(false, Ordering::SeqCst);
+        stop_capture_runner(state);
+        return Err(error);
+    }
 
     Ok(())
 }
 
-fn emit_registration_failure(
-    event_tx: &Sender<ShortcutEvent>,
-    app_handle: &tauri::AppHandle,
-    error: String,
-) {
-    let _ = event_tx.send(ShortcutEvent::RegistrationFailed {
-        error: error.clone(),
-    });
-    let _ = app_handle.emit(EventName::SHORTCUT_REGISTRATION_FAILED, error);
-}
-
-fn create_hotkey_manager() -> Result<handy_keys::HotkeyManager, handy_keys::Error> {
-    // The blocking constructor is required so the active app does not also receive
-    // the shortcut's key events, such as Slash in Cmd+Slash.
-    handy_keys::HotkeyManager::new_with_blocking()
-}
-
-fn handle_cancel_trigger(app_handle: &tauri::AppHandle, state: ShortcutState) {
-    match state {
-        ShortcutState::Pressed => {
-            if let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() {
-                let is_recording = app_state.is_recording.load(Ordering::SeqCst);
-                let is_transcribing = app_state.is_transcribing.load(Ordering::SeqCst);
-                let task_id = app_state.task_counter.load(Ordering::SeqCst);
-
-                if let Some(shortcut_manager) =
-                    app_handle.try_state::<crate::shortcut::ShortcutManager>()
-                {
-                    *shortcut_manager
-                        .state
-                        .pending_cancel_release_owner_task_id
-                        .lock() =
-                        capture_cancel_hotkey_release_owner(is_recording, is_transcribing, task_id);
-                }
-            }
-
-            tracing::info!("cancel_hotkey_pressed, canceling recording");
-            let _ = crate::commands::audio::cancel_recording_from_hotkey_sync(app_handle.clone());
-        }
-        ShortcutState::Released => {
-            let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>()
-            else {
-                return;
-            };
-
-            let is_recording = app_state.is_recording.load(Ordering::SeqCst);
-            let is_transcribing = app_state.is_transcribing.load(Ordering::SeqCst);
-
-            let pending_owner_task_id = app_handle
-                .try_state::<crate::shortcut::ShortcutManager>()
-                .and_then(|shortcut_manager| {
-                    shortcut_manager
-                        .state
-                        .pending_cancel_release_owner_task_id
-                        .lock()
-                        .take()
-                });
-
-            if let Some(owner_task_id) = cancel_hotkey_release_unregister_owner(
-                is_recording,
-                is_transcribing,
-                pending_owner_task_id,
-            ) {
-                tracing::info!("cancel_hotkey_released_after_cancel, unregistering_cancel_hotkey");
-                if let Some(shortcut_manager) =
-                    app_handle.try_state::<crate::shortcut::ShortcutManager>()
-                {
-                    let _ = shortcut_manager.unregister_cancel_for_task(owner_task_id);
-                }
-            }
-        }
+fn stop_capture_runtime(state: &mut OwnerState, preserve_captured: bool) -> Option<String> {
+    let captured = state.facade_state.last_captured_hotkey.lock().clone();
+    state
+        .facade_state
+        .capture_active
+        .store(false, Ordering::SeqCst);
+    if !preserve_captured {
+        *state.facade_state.last_captured_hotkey.lock() = None;
+    }
+    state.capture_sequence.clear();
+    stop_capture_runner(state);
+    let _ = refresh_matcher_snapshot(state);
+    if preserve_captured {
+        captured
+    } else {
+        None
     }
 }
 
-fn build_cancel_hotkeys_for_app(app_handle: &tauri::AppHandle) -> Vec<String> {
+fn refresh_matcher_snapshot(state: &mut OwnerState) -> Result<(), String> {
+    let desired_hotkeys = state.manager_state.snapshot().desired_profiles;
+    *state.matcher_snapshot.write() = build_matcher_snapshot(
+        &desired_hotkeys,
+        state.app_handle.as_ref(),
+        state.cancel_owner_task_id,
+        state.facade_state.capture_active.load(Ordering::SeqCst),
+    )?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn poll_macos_runtime_health(
+    state: &mut OwnerState,
+    last_permission_poll_at: &mut Instant,
+    last_accessibility_granted: &mut Option<bool>,
+    last_probe_at: &mut Instant,
+    last_capture_reconcile_at: &mut Instant,
+) {
+    if !state.started {
+        return;
+    }
+
+    if last_permission_poll_at.elapsed() >= SHORTCUT_PERMISSION_POLL_INTERVAL {
+        let permission_snapshot = crate::permissions::report_permission_snapshot_if_changed(
+            "shortcut_runtime_permission_poll",
+        );
+        let accessibility_granted =
+            permission_snapshot.accessibility == crate::permissions::PermissionStatus::Granted;
+        let action = runtime_permission_action(
+            state.main_runner.is_some(),
+            *last_accessibility_granted,
+            accessibility_granted,
+        );
+
+        match action {
+            RuntimePermissionAction::Mount => {
+                let _ = ensure_main_runner(state);
+            }
+            RuntimePermissionAction::Unmount => {
+                stop_main_runner(state);
+            }
+            RuntimePermissionAction::Keep => {}
+        }
+
+        *last_accessibility_granted = Some(accessibility_granted);
+        *last_permission_poll_at = Instant::now();
+    }
+
+    if last_probe_at.elapsed() >= SHORTCUT_RUNTIME_PROBE_INTERVAL {
+        let probe_result = super::macos::fresh_event_tap_probe();
+        let action = runtime_probe_action(state.main_runner.is_some(), probe_result.is_ok());
+        if let Err(error) = &probe_result {
+            tracing::warn!(
+                runtime_is_mounted = state.main_runner.is_some(),
+                action = ?action,
+                error = %error,
+                "shortcut_runtime_probe_failed"
+            );
+        }
+        match action {
+            RuntimeProbeAction::Mount => {
+                tracing::info!("shortcut_runtime_probe_mount_requested");
+                let _ = ensure_main_runner(state);
+            }
+            RuntimeProbeAction::Keep => {}
+        }
+        *last_probe_at = Instant::now();
+    }
+
+    if last_capture_reconcile_at.elapsed() >= SHORTCUT_CAPTURE_RECONCILE_INTERVAL {
+        if capture_runner_reconcile_needed(
+            state.facade_state.capture_active.load(Ordering::SeqCst),
+            state.main_runner.is_some(),
+            state.capture_runner.is_some(),
+        ) {
+            let _ = ensure_capture_runner(state);
+        }
+
+        *last_capture_reconcile_at = Instant::now();
+    }
+}
+
+struct SnapshotApplier {
+    matcher_snapshot: SharedMatcherSnapshot,
+    app_handle: Option<tauri::AppHandle>,
+    cancel_owner_task_id: Option<u64>,
+    capture_active: bool,
+}
+
+impl RuntimeApplier for SnapshotApplier {
+    fn apply_profiles(&mut self, desired_profiles: &HashMap<String, String>) -> Result<(), String> {
+        *self.matcher_snapshot.write() = build_matcher_snapshot(
+            desired_profiles,
+            self.app_handle.as_ref(),
+            self.cancel_owner_task_id,
+            self.capture_active,
+        )?;
+
+        Ok(())
+    }
+}
+
+fn build_matcher_snapshot(
+    desired_profiles: &HashMap<String, String>,
+    app_handle: Option<&tauri::AppHandle>,
+    cancel_owner_task_id: Option<u64>,
+    capture_active: bool,
+) -> Result<MatcherSnapshot, String> {
+    let cancel_patterns = if cancel_owner_task_id.is_some() {
+        build_cancel_hotkeys_for_app(app_handle)
+            .into_iter()
+            .map(|hotkey| parse_hotkey_pattern(&hotkey))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Vec::new()
+    };
+
+    let mut profiles = HashMap::new();
+    for (profile_id, hotkey) in desired_profiles {
+        if hotkey.is_empty() {
+            continue;
+        }
+        profiles.insert(profile_id.clone(), parse_hotkey_pattern(hotkey)?);
+    }
+
+    Ok(MatcherSnapshot {
+        profiles,
+        cancel: cancel_patterns,
+        capture_active,
+    })
+}
+
+fn build_cancel_hotkeys_for_app(app_handle: Option<&tauri::AppHandle>) -> Vec<String> {
+    let Some(app_handle) = app_handle else {
+        return vec!["Escape".to_string()];
+    };
     let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() else {
         return vec!["Escape".to_string()];
     };
 
-    let settings = app_state.settings.lock();
-    build_cancel_hotkeys(&settings.recording_mode, &settings.hotkey)
-}
-
-fn register_cancel_hotkeys(
-    manager: &handy_keys::HotkeyManager,
-    hotkeys: &[String],
-) -> Vec<handy_keys::HotkeyId> {
-    let mut ids = Vec::new();
-
-    for hotkey in hotkeys {
-        match register_hotkey(manager, hotkey) {
-            Ok(id) => {
-                tracing::info!(hotkey = %hotkey, id = id.as_u32(), "cancel_hotkey_registered");
-                ids.push(id);
-            }
-            Err(e) => {
-                tracing::error!(hotkey = %hotkey, error = %e, "cancel_hotkey_registration_failed");
-            }
-        }
+    match app_state.current_cancel_profile() {
+        Some((hotkey, trigger_mode)) => build_cancel_hotkeys(trigger_mode, &hotkey),
+        None => vec!["Escape".to_string()],
     }
-
-    ids
 }
 
-fn unregister_cancel_hotkeys(
-    manager: &handy_keys::HotkeyManager,
-    current: &mut Vec<handy_keys::HotkeyId>,
+fn handle_cancel_trigger(
+    app_handle: &tauri::AppHandle,
+    pending_cancel_release_owner_task_id: &mut Option<u64>,
 ) {
-    for old_id in current.drain(..) {
-        tracing::info!(old_id = old_id.as_u32(), "unregistering_cancel_hotkey");
-        if let Err(e) = manager.unregister(old_id) {
-            tracing::warn!(error = ?e, "cancel_hotkey_unregister_failed");
-        } else {
-            tracing::info!("cancel_hotkey_unregistered");
-        }
+    if let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() {
+        let is_recording = app_state.is_recording.load(Ordering::SeqCst);
+        let is_transcribing = app_state.is_transcribing.load(Ordering::SeqCst);
+        let task_id = app_state.task_counter.load(Ordering::SeqCst);
+        *pending_cancel_release_owner_task_id =
+            capture_cancel_hotkey_release_owner(is_recording, is_transcribing, task_id);
     }
+    let _ = crate::commands::audio::cancel_recording_from_hotkey_sync(app_handle.clone());
 }
 
-/// Handle recording trigger based on hotkey state and recording mode.
-///
-/// This function replicates the logic from the old register_global_shortcut:
-/// - Hold mode: Press to start, Release to stop
-/// - Toggle mode: Press to toggle recording
-///
-/// IMPORTANT: If capture mode is active, do NOT trigger recording.
-/// This allows users to press their current hotkey during capture to re-register it.
-fn handle_recording_trigger(app_handle: &tauri::AppHandle, state: ShortcutState) {
-    tracing::debug!(state = %state.as_str(), "handle_recording_trigger_entered");
-
+fn handle_cancel_release_owner_loop(state: &mut OwnerState, app_handle: &tauri::AppHandle) {
     let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() else {
-        tracing::error!("app_state_unavailable_for_recording_trigger");
         return;
     };
 
-    let capture_active = app_handle
-        .try_state::<crate::shortcut::ShortcutManager>()
-        .is_some_and(|shortcut_manager| shortcut_manager.is_recording_capture_active());
-    let context = primary_shortcut_context(&app_state, capture_active);
-    tracing::debug!(
-        capture_active = context.capture_active,
-        is_recording = context.is_recording,
-        recording_mode = ?context.recording_mode,
-        "handle_recording_trigger_state"
-    );
+    let is_recording = app_state.is_recording.load(Ordering::SeqCst);
+    let is_transcribing = app_state.is_transcribing.load(Ordering::SeqCst);
+    let pending_owner_task_id = state.pending_cancel_release_owner_task_id.take();
+    if cancel_hotkey_release_unregister_owner(is_recording, is_transcribing, pending_owner_task_id)
+        .is_some()
+    {
+        state.cancel_owner_task_id = None;
+        let _ = refresh_matcher_snapshot(state);
+    }
+}
+
+fn handle_recording_trigger_owner_loop(
+    owner_state: &mut OwnerState,
+    app_handle: &tauri::AppHandle,
+    state: ShortcutState,
+    profile_id: &str,
+) {
+    let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() else {
+        return;
+    };
+
+    let capture_active = owner_state
+        .facade_state
+        .capture_active
+        .load(Ordering::SeqCst);
+    let profile = {
+        let settings = app_state.settings.lock();
+        crate::services::shortcut::get_profile_by_key(&settings.shortcut_profiles, profile_id)
+            .cloned()
+    };
+    let context = primary_shortcut_context(&app_state, capture_active, profile.as_ref());
 
     match primary_shortcut_action(context, state) {
-        PrimaryShortcutAction::Ignore => {
-            if context.capture_active {
-                tracing::info!("capture_mode_active_hotkey_trigger_ignored");
-            }
-        }
+        PrimaryShortcutAction::Ignore => {}
         PrimaryShortcutAction::StartRecording => {
-            tracing::info!("shortcut_start_recording_requested");
-            match crate::commands::audio::start_recording_sync(app_handle.clone()) {
-                Ok(_) => tracing::info!("shortcut_recording_started"),
-                Err(e) => tracing::error!(error = %e, "shortcut_start_failed"),
-            }
+            let _ = crate::commands::audio::start_recording_sync_internal(
+                app_handle,
+                profile.as_ref(),
+                false,
+            );
         }
         PrimaryShortcutAction::StopRecording => {
-            tracing::info!("shortcut_stop_recording_requested");
-            match crate::commands::audio::stop_recording_sync(app_handle.clone()) {
-                Ok(_) => tracing::info!("shortcut_recording_stopped"),
-                Err(e) => tracing::error!(error = %e, "shortcut_stop_failed"),
-            }
+            let _ = crate::commands::audio::stop_recording_sync(app_handle.clone());
         }
     }
 }
 
-/// Register a hotkey with the manager.
-///
-/// Parses the string and registers, returning the HotkeyId for later unregister.
-fn register_hotkey(
-    manager: &handy_keys::HotkeyManager,
-    hotkey_str: &str,
-) -> Result<handy_keys::HotkeyId, String> {
-    // Handle FN key specially (macOS Globe/FN key)
-    // FN is a hardware-level modifier that may be parsed differently
-    if hotkey_str == FN_KEY_NAME || hotkey_str == "globe" {
-        // Create FN-only hotkey
-        let hotkey = handy_keys::Hotkey::new(handy_keys::Modifiers::FN, None)
-            .map_err(|e| format!("failed to create FN hotkey: {:?}", e))?;
-
-        // Register with manager (returns HotkeyId)
-        let id = manager
-            .register(hotkey)
-            .map_err(|e| format!("FN registration failed: {:?}", e))?;
-
-        tracing::info!(id = id.as_u32(), "fn_hotkey_registered");
-        return Ok(id);
-    }
-
-    // Parse hotkey string using handy-keys built-in parser
-    let hotkey: handy_keys::Hotkey = hotkey_str
-        .parse()
-        .map_err(|e| format!("invalid hotkey '{}': {:?}", hotkey_str, e))?;
-
-    // Register with manager (returns HotkeyId)
-    let id = manager
-        .register(hotkey)
-        .map_err(|e| format!("registration failed: {:?}", e))?;
-
-    tracing::info!(hotkey = %hotkey_str, id = id.as_u32(), "hotkey_registered");
-    Ok(id)
-}
-
-fn build_cancel_hotkeys(recording_mode: &str, hotkey: &str) -> Vec<String> {
+fn build_cancel_hotkeys(trigger_mode: ShortcutTriggerMode, hotkey: &str) -> Vec<String> {
     let mut cancel_hotkeys = vec!["Escape".to_string()];
 
-    if recording_mode.eq_ignore_ascii_case("hold") {
+    if trigger_mode == ShortcutTriggerMode::Hold {
         let modifiers = hotkey
             .split('+')
             .map(str::trim)
@@ -944,12 +1215,57 @@ fn is_modifier_token(token: &str) -> bool {
     )
 }
 
-/// FN/Globe key name constant
-const FN_KEY_NAME: &str = "fn";
-
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
+    use crate::shortcut::{ShortcutAction, ShortcutProfile, ShortcutTriggerMode};
+
+    struct FakeRuntimeApplier {
+        should_fail: bool,
+        applied: Vec<HashMap<String, String>>,
+    }
+
+    impl FakeRuntimeApplier {
+        fn successful() -> Self {
+            Self {
+                should_fail: false,
+                applied: Vec::new(),
+            }
+        }
+
+        fn failing() -> Self {
+            Self {
+                should_fail: true,
+                applied: Vec::new(),
+            }
+        }
+    }
+
+    impl RuntimeApplier for FakeRuntimeApplier {
+        fn apply_profiles(
+            &mut self,
+            desired_profiles: &HashMap<String, String>,
+        ) -> Result<(), String> {
+            self.applied.push(desired_profiles.clone());
+            if self.should_fail {
+                Err("runtime_apply_failed".to_string())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    fn profile(hotkey: &str) -> ShortcutProfile {
+        ShortcutProfile {
+            hotkey: hotkey.to_string(),
+            trigger_mode: ShortcutTriggerMode::Hold,
+            action: ShortcutAction::Record {
+                polish_template_id: None,
+            },
+        }
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -962,85 +1278,108 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn runtime_permission_action_unmounts_when_accessibility_is_revoked() {
-        assert_eq!(
-            runtime_permission_action(true, Some(true), false),
-            RuntimePermissionAction::Unmount
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn runtime_permission_action_mounts_when_accessibility_recovers() {
-        assert_eq!(
-            runtime_permission_action(false, Some(false), true),
-            RuntimePermissionAction::Mount
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn runtime_permission_action_keeps_existing_state_without_transition() {
-        assert_eq!(
-            runtime_permission_action(true, Some(true), true),
-            RuntimePermissionAction::Keep
-        );
-        assert_eq!(
-            runtime_permission_action(false, Some(true), true),
-            RuntimePermissionAction::Keep
-        );
-        assert_eq!(
-            runtime_permission_action(false, None, false),
-            RuntimePermissionAction::Keep
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn runtime_probe_action_mounts_when_probe_recovers() {
-        assert_eq!(runtime_probe_action(false, true), RuntimeProbeAction::Mount);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn runtime_probe_action_unmounts_when_probe_fails_while_active() {
+    fn runtime_probe_action_keeps_mounted_runner_on_probe_failure() {
         assert_eq!(
             runtime_probe_action(true, false),
-            RuntimeProbeAction::Unmount
+            RuntimeProbeAction::Keep
         );
+    }
+
+    #[test]
+    fn runtime_restart_request_targets_the_signaled_runner() {
+        assert_eq!(
+            runtime_restart_request(&RuntimeEvent::RunnerNeedsRestart {
+                mode: RunnerMode::Main,
+                generation: 7,
+            }),
+            Some((RunnerMode::Main, 7))
+        );
+        assert_eq!(
+            runtime_restart_request(&RuntimeEvent::RunnerNeedsRestart {
+                mode: RunnerMode::CaptureOnly,
+                generation: 9,
+            }),
+            Some((RunnerMode::CaptureOnly, 9))
+        );
+    }
+
+    #[test]
+    fn capture_runner_reconcile_requires_active_capture_and_no_live_runner() {
+        assert!(capture_runner_reconcile_needed(true, false, false));
+        assert!(!capture_runner_reconcile_needed(false, false, false));
+        assert!(!capture_runner_reconcile_needed(true, true, false));
+        assert!(!capture_runner_reconcile_needed(true, false, true));
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn runtime_probe_action_keeps_existing_state_when_no_transition_is_needed() {
-        assert_eq!(runtime_probe_action(true, true), RuntimeProbeAction::Keep);
-        assert_eq!(runtime_probe_action(false, false), RuntimeProbeAction::Keep);
+    fn main_runner_mount_waits_for_capture_runtime_to_release_ownership() {
+        assert!(main_runner_mount_allowed(false, false, false));
+        assert!(!main_runner_mount_allowed(true, false, false));
+        assert!(!main_runner_mount_allowed(false, true, false));
+        assert!(!main_runner_mount_allowed(false, false, true));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn runtime_restart_is_rate_limited() {
+        assert!(runtime_restart_allowed(
+            Duration::from_millis(500),
+            Duration::from_millis(500)
+        ));
+        assert!(!runtime_restart_allowed(
+            Duration::from_millis(499),
+            Duration::from_millis(500)
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn throttled_restart_still_requires_runner_teardown() {
+        assert_eq!(
+            runtime_restart_action(Duration::from_millis(499), Duration::from_millis(500)),
+            RuntimeRestartAction::TeardownOnly
+        );
+        assert_eq!(
+            runtime_restart_action(Duration::from_millis(500), Duration::from_millis(500)),
+            RuntimeRestartAction::TeardownAndRemount
+        );
     }
 
     #[test]
-    fn test_manager_new() {
-        let manager = ShortcutManager::new();
-        assert!(manager.is_ok());
+    fn restart_request_must_match_current_runner_generation() {
+        assert!(restart_request_matches_current_generation(Some(7), 7));
+        assert!(!restart_request_matches_current_generation(Some(8), 7));
+        assert!(!restart_request_matches_current_generation(None, 7));
     }
 
     #[test]
-    fn test_manager_default() {
-        let manager = ShortcutManager::default();
-        assert!(manager.event_receiver().try_recv().is_err()); // Empty channel
+    fn main_restart_hands_off_to_capture_runner_during_active_capture() {
+        assert_eq!(
+            replacement_runner_mode_after_restart(RunnerMode::Main, true),
+            RunnerMode::CaptureOnly
+        );
+        assert_eq!(
+            replacement_runner_mode_after_restart(RunnerMode::Main, false),
+            RunnerMode::Main
+        );
+        assert_eq!(
+            replacement_runner_mode_after_restart(RunnerMode::CaptureOnly, true),
+            RunnerMode::CaptureOnly
+        );
     }
 
     #[test]
-    fn test_manager_register_updates_state() {
+    fn runtime_is_live_includes_capture_only_runner() {
+        assert!(runtime_is_live(true, false));
+        assert!(runtime_is_live(false, true));
+        assert!(!runtime_is_live(false, false));
+    }
+
+    #[test]
+    fn manager_new_has_empty_event_receiver() {
         let manager = ShortcutManager::new().unwrap();
-        let result = manager.register_primary("Shift+Space");
-        assert!(result.is_ok());
-
-        let pending = manager.state.pending_commands.lock();
-        if let Some(ShortcutCommand::Register(ref h)) = pending.last() {
-            assert_eq!(h, "Shift+Space");
-        } else {
-            panic!("Expected ShortcutCommand::Register");
-        }
+        assert!(manager.event_receiver().try_recv().is_err());
     }
 
     #[test]
@@ -1059,105 +1398,148 @@ mod tests {
     #[test]
     fn cancel_recording_capture_clears_listener_state() {
         let manager = ShortcutManager::new().unwrap();
-        *manager.state.recording_listener.lock() = Some(RecordingListener::default());
+        manager
+            .facade_state
+            .capture_active
+            .store(true, Ordering::SeqCst);
+        *manager.facade_state.last_captured_hotkey.lock() = Some("Cmd+Slash".to_string());
 
         manager.cancel_recording_capture();
 
-        assert!(manager.state.recording_listener.lock().is_none());
+        assert!(!manager.is_recording_capture_active());
+        assert_eq!(manager.peek_recording_capture(), None);
     }
 
     #[test]
     fn test_manager_stop_without_start() {
         let mut manager = ShortcutManager::new().unwrap();
-        let result = manager.stop();
-        assert!(result.is_ok()); // Should handle gracefully
-    }
-
-    #[test]
-    fn test_cancel_hotkeys_toggle_mode_uses_plain_escape_only() {
-        assert_eq!(
-            build_cancel_hotkeys("toggle", "Shift+Space"),
-            vec!["Escape".to_string()]
-        );
+        assert!(manager.stop().is_ok());
     }
 
     #[test]
     fn test_cancel_hotkeys_hold_mode_includes_active_modifiers() {
         assert_eq!(
-            build_cancel_hotkeys("hold", "Cmd+Shift+Space"),
+            build_cancel_hotkeys(ShortcutTriggerMode::Hold, "Cmd+Shift+Space"),
             vec!["Escape".to_string(), "Cmd+Shift+Escape".to_string()]
         );
     }
 
     #[test]
-    fn test_cancel_hotkeys_hold_mode_ignores_non_modifier_key() {
+    fn test_cancel_hotkeys_toggle_mode_uses_escape_only() {
         assert_eq!(
-            build_cancel_hotkeys("hold", "F13"),
+            build_cancel_hotkeys(ShortcutTriggerMode::Toggle, "Cmd+Shift+Space"),
             vec!["Escape".to_string()]
         );
     }
 
     #[test]
-    fn stale_unregister_does_not_clear_new_cancel_owner() {
-        let mut cancel_owner_task_id = Some(2);
+    fn register_profile_before_start_is_deferred_but_succeeds() {
+        let manager = ShortcutManager::new().unwrap();
+        let profile = profile("Cmd+Slash");
 
-        if should_unregister_cancel_hotkeys(cancel_owner_task_id, Some(1)) {
-            cancel_owner_task_id = None;
-        }
-
-        assert_eq!(cancel_owner_task_id, Some(2));
+        assert!(manager.register_profile("dictate", &profile).is_ok());
     }
 
     #[test]
-    fn matching_unregister_clears_current_cancel_owner() {
-        let mut cancel_owner_task_id = Some(3);
+    fn unregister_profile_is_deferred_when_runtime_is_unavailable() {
+        let mut state = ManagerState::new();
 
-        if should_unregister_cancel_hotkeys(cancel_owner_task_id, Some(3)) {
-            cancel_owner_task_id = None;
-        }
+        state
+            .register_profile("dictate", profile("Cmd+Slash"), None)
+            .unwrap();
 
-        assert_eq!(cancel_owner_task_id, None);
+        let result = state.unregister_profile("dictate", None).unwrap();
+
+        assert_eq!(result, MutationMode::Deferred);
+        let snapshot = state.snapshot();
+        assert!(!snapshot.desired_profiles.contains_key("dictate"));
+        assert!(!snapshot.live_profiles.contains_key("dictate"));
     }
 
     #[test]
-    fn unconditional_unregister_still_clears_current_cancel_owner() {
-        let mut cancel_owner_task_id = Some(4);
+    fn register_profile_updates_desired_and_live_when_runtime_is_healthy() {
+        let mut state = ManagerState::new();
+        let mut runtime = FakeRuntimeApplier::successful();
 
-        if should_unregister_cancel_hotkeys(cancel_owner_task_id, None) {
-            cancel_owner_task_id = None;
-        }
+        let result = state
+            .register_profile("dictate", profile("Cmd+Slash"), Some(&mut runtime))
+            .unwrap();
 
-        assert_eq!(cancel_owner_task_id, None);
-    }
-
-    #[test]
-    fn cancel_hotkey_press_captures_owner_only_while_session_is_active() {
-        assert_eq!(capture_cancel_hotkey_release_owner(true, false, 8), Some(8));
-        assert_eq!(capture_cancel_hotkey_release_owner(false, true, 8), Some(8));
-        assert_eq!(capture_cancel_hotkey_release_owner(false, false, 8), None);
-    }
-
-    #[test]
-    fn cancel_hotkey_release_unregisters_the_observed_task_only_when_idle() {
+        assert_eq!(result, MutationMode::Immediate);
+        let snapshot = state.snapshot();
         assert_eq!(
-            cancel_hotkey_release_unregister_owner(false, false, Some(7)),
-            Some(7)
+            snapshot.desired_profiles.get("dictate"),
+            Some(&"Cmd+Slash".to_string())
         );
         assert_eq!(
-            cancel_hotkey_release_unregister_owner(true, false, Some(7)),
-            None
+            snapshot.live_profiles.get("dictate"),
+            Some(&"Cmd+Slash".to_string())
+        );
+        assert_eq!(runtime.applied.len(), 1);
+    }
+
+    #[test]
+    fn register_profile_keeps_previous_authoritative_value_when_runtime_apply_fails() {
+        let mut state = ManagerState::new();
+        let mut healthy_runtime = FakeRuntimeApplier::successful();
+        state
+            .register_profile("dictate", profile("Cmd+Slash"), Some(&mut healthy_runtime))
+            .unwrap();
+
+        let mut failing_runtime = FakeRuntimeApplier::failing();
+        let error = state
+            .register_profile("dictate", profile("Opt+Slash"), Some(&mut failing_runtime))
+            .unwrap_err();
+
+        assert_eq!(error, "runtime_apply_failed");
+        let snapshot = state.snapshot();
+        assert_eq!(
+            snapshot.desired_profiles.get("dictate"),
+            Some(&"Cmd+Slash".to_string())
         );
         assert_eq!(
-            cancel_hotkey_release_unregister_owner(false, true, Some(7)),
-            None
+            snapshot.live_profiles.get("dictate"),
+            Some(&"Cmd+Slash".to_string())
         );
     }
 
     #[test]
-    fn cancel_hotkey_release_drops_when_no_cancel_owner_was_captured() {
+    fn register_profile_evicts_existing_duplicate_hotkey() {
+        let mut state = ManagerState::new();
+        let mut runtime = FakeRuntimeApplier::successful();
+
+        state
+            .register_profile("dictate", profile("Cmd+Slash"), Some(&mut runtime))
+            .unwrap();
+        state
+            .register_profile("chat", profile("Cmd+Slash"), Some(&mut runtime))
+            .unwrap();
+
+        let snapshot = state.snapshot();
         assert_eq!(
-            cancel_hotkey_release_unregister_owner(false, false, None),
-            None
+            snapshot.live_profiles.get("chat"),
+            Some(&"Cmd+Slash".to_string())
         );
+        assert!(!snapshot.live_profiles.contains_key("dictate"));
+    }
+
+    #[test]
+    fn empty_hotkey_removes_live_binding_when_runtime_is_healthy() {
+        let mut state = ManagerState::new();
+        let mut runtime = FakeRuntimeApplier::successful();
+
+        state
+            .register_profile("dictate", profile("Cmd+Slash"), Some(&mut runtime))
+            .unwrap();
+        state
+            .register_profile("dictate", profile(""), Some(&mut runtime))
+            .unwrap();
+
+        let snapshot = state.snapshot();
+        assert_eq!(
+            snapshot.desired_profiles.get("dictate"),
+            Some(&"".to_string())
+        );
+        assert!(!snapshot.live_profiles.contains_key("dictate"));
     }
 }

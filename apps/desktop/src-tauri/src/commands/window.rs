@@ -2,9 +2,9 @@ use crate::state::app_state::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-const PILL_W_LOGICAL: f64 = 140.0;
-const PILL_H_LOGICAL: f64 = 80.0;
-const MARGIN_LOGICAL: f64 = 20.0;
+const PILL_W_LOGICAL: f64 = 160.0;
+const PILL_H_LOGICAL: f64 = 120.0;
+const MARGIN_LOGICAL: f64 = 4.0;
 
 /// Update pill window visibility based on indicator mode and recording state.
 /// This is the single source of truth for pill visibility logic.

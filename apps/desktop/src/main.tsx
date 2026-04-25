@@ -15,6 +15,9 @@ import { useTranslation } from "react-i18next";
 
 initAnalytics();
 
+let lastRegistrationError: string | null = null;
+let lastRegistrationErrorTime = 0;
+
 function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { settings } = useSettingsContext();
 
@@ -49,10 +52,22 @@ function PermissionNotice() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    events.onShortcutRegistrationFailed((error) => {
-      logger.error("shortcut_registration_failed", { error });
-      setShowPermissionPrompt(true);
-      showToast(t("permission.description"));
+    events.onShortcutRegistrationFailed((payload) => {
+      const now = Date.now();
+      if (lastRegistrationError === payload.error && now - lastRegistrationErrorTime < 1000) return;
+      lastRegistrationError = payload.error;
+      lastRegistrationErrorTime = now;
+      logger.error("shortcut_registration_failed", { error: payload.error, profile_id: payload.profile_id });
+      
+      const isPermissionError = payload.error.toLowerCase().includes("permission") 
+        || payload.error.toLowerCase().includes("accessibility");
+      
+      if (isPermissionError) {
+        setShowPermissionPrompt(true);
+        showToast(t("permission.description"));
+      } else {
+        showToast(t("hotkey.registrationFailed", "Hotkey registration failed"));
+      }
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, [t]);
@@ -69,21 +84,21 @@ function PermissionNotice() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-card border border-border rounded-3xl p-8 max-w-sm mx-4 shadow-lg">
+      <div className="bg-card border border-border rounded-3xl p-8 w-[420px] mx-4 shadow-lg text-center">
         <h3 className="text-lg font-semibold mb-2">{t("permission.title")}</h3>
-        <p className="text-muted-foreground text-sm mb-4">
+        <p className="text-muted-foreground text-sm mb-6">
           {t("permission.description")}
         </p>
-        <div className="flex gap-3">
+        <div className="grid grid-cols-2 gap-3 max-w-[280px] mx-auto">
           <button
             onClick={() => setShowPermissionPrompt(false)}
-            className="flex-1 px-5 py-2 text-sm border border-border rounded-full hover:bg-secondary transition-colors"
+            className="px-4 py-2.5 text-sm border border-border rounded-full hover:bg-secondary transition-colors whitespace-nowrap"
           >
             {t("permission.later")}
           </button>
           <button
             onClick={handleOpenSettings}
-            className="flex-1 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-full hover:opacity-90 transition-opacity"
+            className="px-4 py-2.5 text-sm bg-primary text-primary-foreground rounded-full hover:opacity-90 transition-opacity whitespace-nowrap"
           >
             {t("permission.openSystemSettings")}
           </button>
@@ -93,8 +108,6 @@ function PermissionNotice() {
   );
 }
 
-// Prime the initial theme before the first React paint to avoid a flash of opaque
-// light surfaces before the cached or persisted theme is restored.
 applyInitialTheme();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

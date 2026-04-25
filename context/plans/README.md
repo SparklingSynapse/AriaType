@@ -32,6 +32,7 @@ A plan is only completed when all implementation units are closed, verification 
 | Plan | Type | Date | Status |
 |------|------|------|--------|
 | [Logging Standardization](./active/2026-04-03-001-fix-logging-standardization-plan.md) | fix | 2026-04-03 | Active |
+| [Multi-Shortcut Profiles](./active/2026-04-20-001-feat-multi-shortcut-profiles-plan.md) | feat | 2026-04-20 | Active |
 
 ## Completed Plans
 

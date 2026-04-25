@@ -5,6 +5,7 @@ description = "AriaType - Voice to Text Application"
 authors = ["AriaType Team"]
 edition = "2021"
 license = "AGPL-3.0-only"
+default-run = "ariatype"
 
 [lib]
 name = "ariatype_lib"
@@ -17,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["devtools", "tray-icon"] }
 tauri-plugin-aptabase = "1.0.0"
-handy-keys = "0.2.4"
+rdev = { version = "0.5.3", features = ["unstable_grab"] }
 tauri-plugin-store = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-shell = "2"
@@ -68,6 +69,7 @@ objc2-core-graphics = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 enigo = { version = "0.6", default-features = false }
+winapi = { version = "0.3", features = ["winuser", "libloaderapi", "processthreadsapi"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2.4.1"

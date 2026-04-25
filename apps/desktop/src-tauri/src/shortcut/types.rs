@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// metadata for future extensibility.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HotkeyConfig {
-    /// The hotkey string in handy-keys format (e.g., "Shift+Space", "Cmd+K").
+    /// The hotkey string in canonical shortcut format (e.g., "Shift+Space", "Cmd+K").
     /// Use platform-appropriate modifier names: Cmd/Ctrl, Alt/Opt, Shift.
     pub hotkey: String,
 }
@@ -38,8 +38,7 @@ impl Default for HotkeyConfig {
 
 /// State of a triggered shortcut.
 ///
-/// Mirrors handy-keys' HotkeyState for internal use without
-/// exposing external library types.
+/// Internal shortcut trigger state for press/release events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ShortcutState {
@@ -72,12 +71,18 @@ pub enum ShortcutCommand {
 /// Events emitted from the ShortcutManager to the main thread.
 #[derive(Debug, Clone)]
 pub enum ShortcutEvent {
-    /// Hotkey was triggered with the given state.
-    Triggered { state: ShortcutState },
+    /// Hotkey was triggered with the given state and profile.
+    Triggered {
+        state: ShortcutState,
+        profile_id: String,
+    },
     /// Cancel hotkey (ESC) was triggered.
     CancelTriggered { state: ShortcutState },
     /// Hotkey registration failed with an error message.
-    RegistrationFailed { error: String },
+    RegistrationFailed {
+        error: String,
+        profile_id: Option<String>,
+    },
 }
 
 #[cfg(test)]
@@ -122,10 +127,32 @@ mod tests {
     }
 
     #[test]
+    fn test_shortcut_event_triggered_with_profile_id() {
+        let event = ShortcutEvent::Triggered {
+            state: ShortcutState::Pressed,
+            profile_id: "default".to_string(),
+        };
+        match event {
+            ShortcutEvent::Triggered { state, profile_id } => {
+                assert_eq!(state, ShortcutState::Pressed);
+                assert_eq!(profile_id, "default");
+            }
+            _ => panic!("Expected Triggered event"),
+        }
+    }
+
+    #[test]
     fn test_shortcut_event_triggered() {
         let event = ShortcutEvent::Triggered {
             state: ShortcutState::Pressed,
+            profile_id: "test-id".to_string(),
         };
-        assert!(matches!(event, ShortcutEvent::Triggered { .. }));
+        match event {
+            ShortcutEvent::Triggered { state, profile_id } => {
+                assert_eq!(state, ShortcutState::Pressed);
+                assert_eq!(profile_id, "test-id");
+            }
+            _ => panic!("Expected Triggered event"),
+        }
     }
 }

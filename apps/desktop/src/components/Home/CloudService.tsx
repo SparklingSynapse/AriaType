@@ -13,6 +13,7 @@ export function CloudService() {
     <SettingsPageLayout
       title={t("cloud.title")}
       description={t("cloud.description")}
+      testId="cloud-page"
     >
       <div className="inline-flex h-11 items-center justify-center rounded-full bg-secondary p-1.5 text-muted-foreground">
         <button

@@ -79,14 +79,27 @@ describe("useRecording", () => {
     analyticsTrackMock.mockReset();
     getSettingsMock.mockReset();
     listenMock.mockClear();
-    getSettingsMock.mockResolvedValue({ hotkey: "cmd+shift+space" });
+    getSettingsMock.mockResolvedValue({
+      shortcut_profiles: {
+        dictate: {
+          hotkey: "Cmd+Slash",
+          trigger_mode: "hold",
+          action: { Record: { polish_template_id: null } },
+        },
+        chat: {
+          hotkey: "Opt+Slash",
+          trigger_mode: "toggle",
+          action: { Record: { polish_template_id: "filler" } },
+        },
+      },
+    });
   });
 
   it("ignores stale recording events from older tasks", async () => {
     const { result } = renderHook(() => useRecording());
 
     await waitFor(() => {
-      expect(result.current.hotkey).toBe("cmd+shift+space");
+      expect(result.current.hotkey).toBe("Cmd+Slash");
     });
 
     act(() => {

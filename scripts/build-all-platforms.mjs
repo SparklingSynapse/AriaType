@@ -20,11 +20,12 @@
  *     rustup target add x86_64-pc-windows-msvc
  */
 
-import { execSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, rmSync } from 'fs';
 import { platform } from 'os';
+import { execSync } from 'child_process';
+import { runCommand } from './build-all-platforms-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -76,29 +77,6 @@ function cleanTarget(targetTriple) {
   }
 }
 
-function runCommand(command, description) {
-  console.log(`\n${'═'.repeat(50)}`);
-  console.log(`📦 ${description}`);
-  console.log(`${'═'.repeat(50)}\n`);
-  
-  const startTime = Date.now();
-  
-  try {
-    execSync(command, {
-      cwd: desktopDir,
-      stdio: 'inherit',
-      env: { ...process.env }
-    });
-    
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`\n✅ ${description} completed in ${elapsed}s\n`);
-    return true;
-  } catch (error) {
-    console.error(`\n❌ ${description} failed\n`);
-    return false;
-  }
-}
-
 console.log('\n🚀 AriaType Multi-Platform Build\n');
 console.log(`   Host platform: ${isMacOS ? 'macOS' : isWindows ? 'Windows' : hostPlatform}\n`);
 
@@ -109,12 +87,19 @@ if (!autoSkipMacArm) {
   cleanTarget('aarch64-apple-darwin');
 
   const cmd = unsigned
-    ? 'env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.macos.unsigned.conf.json --target aarch64-apple-darwin'
+    ? 'env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --target aarch64-apple-darwin'
     : 'node ../../scripts/sign-macos-binaries.mjs && pnpm tauri build --config src-tauri/tauri.macos.conf.json --target aarch64-apple-darwin';
 
-  const success = runCommand(cmd, 'Building macOS ARM');
+  const success = runCommand(cmd, 'Building macOS ARM', {
+    cwd: desktopDir,
+    env: { ...process.env },
+    maxAttempts: unsigned ? 1 : 2,
+  });
   if (success) {
-    runCommand('pnpm copy-installer', 'Copying macOS ARM installer');
+    runCommand('pnpm copy-installer', 'Copying macOS ARM installer', {
+      cwd: desktopDir,
+      env: { ...process.env },
+    });
   }
   results.push({
     platform: 'macOS ARM (Apple Silicon)',
@@ -130,12 +115,19 @@ if (!autoSkipMacIntel) {
   cleanTarget('x86_64-apple-darwin');
 
   const cmd = unsigned
-    ? 'env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.macos.unsigned.conf.json --target x86_64-apple-darwin'
+    ? 'env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --target x86_64-apple-darwin'
     : 'node ../../scripts/sign-macos-binaries.mjs && pnpm tauri build --config src-tauri/tauri.macos.conf.json --target x86_64-apple-darwin';
 
-  const success = runCommand(cmd, 'Building macOS Intel');
+  const success = runCommand(cmd, 'Building macOS Intel', {
+    cwd: desktopDir,
+    env: { ...process.env },
+    maxAttempts: unsigned ? 1 : 2,
+  });
   if (success) {
-    runCommand('pnpm copy-installer', 'Copying macOS Intel installer');
+    runCommand('pnpm copy-installer', 'Copying macOS Intel installer', {
+      cwd: desktopDir,
+      env: { ...process.env },
+    });
   }
   results.push({
     platform: 'macOS Intel (x64)',
@@ -174,9 +166,19 @@ if (!autoSkipWin) {
   }
 
   if (!skipBuild) {
-    const success = runCommand(cmd, 'Building Windows (x64)' + (canCrossCompile ? ' [cross]' : ''));
+    const success = runCommand(
+      cmd,
+      'Building Windows (x64)' + (canCrossCompile ? ' [cross]' : ''),
+      {
+        cwd: desktopDir,
+        env: { ...process.env },
+      }
+    );
     if (success) {
-      runCommand('pnpm copy-installer', 'Copying Windows installer');
+      runCommand('pnpm copy-installer', 'Copying Windows installer', {
+        cwd: desktopDir,
+        env: { ...process.env },
+      });
     }
     results.push({
       platform: 'Windows',

@@ -102,7 +102,7 @@ export function ChangelogPage() {
   const isEmpty = parsedHtml.trim().length === 0;
 
   return (
-    <div className="h-full p-6">
+    <div className="h-full p-6" data-testid="changelog-page">
       <div className="h-full rounded-2xl border border-border bg-card p-6 overflow-hidden">
         {loading && (
           <div className="flex items-center justify-center h-full">

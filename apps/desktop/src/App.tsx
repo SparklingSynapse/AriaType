@@ -25,9 +25,6 @@ function App() {
         closeButton={false}
         duration={2000}
         offset={16}
-        style={{
-          left: "calc(50% + 112px)",
-        }}
         toastOptions={{
           unstyled: true,
           classNames: {

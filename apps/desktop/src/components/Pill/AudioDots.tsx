@@ -1,23 +1,5 @@
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
 import type { RecordingStatus } from "@/types";
-
-function useIsDark() {
-  const [isDark, setIsDark] = useState(() =>
-    document.documentElement.classList.contains("dark")
-  );
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains("dark"));
-    });
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
-    return () => observer.disconnect();
-  }, []);
-  return isDark;
-}
 
 interface AudioDotsProps {
   status: RecordingStatus;
@@ -102,7 +84,6 @@ function dotTransition(i: number, isRecording: boolean) {
 }
 
 export function AudioDots({ status, audioLevel, hasAudioActivity }: AudioDotsProps) {
-  const isDark = useIsDark();
   const isRecording = status === "recording";
   const isSttRunning = status === "transcribing" || status === "processing";
   const isPolishing = status === "polishing";
@@ -139,8 +120,8 @@ export function AudioDots({ status, audioLevel, hasAudioActivity }: AudioDotsPro
                     : isRecording
                       ? hasAudio
                         ? "rgb(3, 227, 52)"
-                        : isDark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.15)"
-                      : isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.15)",
+                        : "rgba(255,255,255,0.7)"
+                      : "rgba(255,255,255,0.7)",
               }}
               transition={
                 showAnimatedState
