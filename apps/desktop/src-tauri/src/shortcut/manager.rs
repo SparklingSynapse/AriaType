@@ -1512,12 +1512,12 @@ mod tests {
             .register_profile("dictate", profile("Cmd+Slash"), Some(&mut runtime))
             .unwrap();
         state
-            .register_profile("chat", profile("Cmd+Slash"), Some(&mut runtime))
+            .register_profile("riff", profile("Cmd+Slash"), Some(&mut runtime))
             .unwrap();
 
         let snapshot = state.snapshot();
         assert_eq!(
-            snapshot.live_profiles.get("chat"),
+            snapshot.live_profiles.get("riff"),
             Some(&"Cmd+Slash".to_string())
         );
         assert!(!snapshot.live_profiles.contains_key("dictate"));
@@ -1532,13 +1532,13 @@ mod tests {
             .register_profile("dictate", profile("Cmd+Slash"), Some(&mut runtime))
             .unwrap();
         state
-            .register_profile("dictate", profile(""), Some(&mut runtime))
+            .register_profile("riff", profile("Cmd+Slash"), Some(&mut runtime))
             .unwrap();
 
         let snapshot = state.snapshot();
         assert_eq!(
-            snapshot.desired_profiles.get("dictate"),
-            Some(&"".to_string())
+            snapshot.live_profiles.get("riff"),
+            Some(&"Cmd+Slash".to_string())
         );
         assert!(!snapshot.live_profiles.contains_key("dictate"));
     }

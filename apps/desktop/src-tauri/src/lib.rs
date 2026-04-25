@@ -611,7 +611,7 @@ pub fn run() {
                     }
 
                     register_profile(&shortcut_manager, "dictate", &profiles.dictate, app.handle());
-                    register_profile(&shortcut_manager, "chat", &profiles.chat, app.handle());
+                    register_profile(&shortcut_manager, "riff", &profiles.riff, app.handle());
                     if let Some(custom) = &profiles.custom {
                         register_profile(&shortcut_manager, "custom", custom, app.handle());
                     }

@@ -71,7 +71,7 @@ struct LegacyCloudSttConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
-    /// Shortcut profiles map with fixed keys: { dictate, chat, custom? }
+    /// Shortcut profiles map with fixed keys: { dictate, riff, custom? }
     pub shortcut_profiles: ShortcutProfilesMap,
     pub recording_mode: String,
     pub model: String,
@@ -188,12 +188,12 @@ impl AppSettings {
         self.shortcut_profiles.dictate.hotkey = hotkey.to_string();
     }
 
-    pub fn get_chat_hotkey(&self) -> String {
-        self.shortcut_profiles.chat.hotkey.clone()
+    pub fn get_riff_hotkey(&self) -> String {
+        self.shortcut_profiles.riff.hotkey.clone()
     }
 
-    pub fn set_chat_hotkey(&mut self, hotkey: &str) {
-        self.shortcut_profiles.chat.hotkey = hotkey.to_string();
+    pub fn set_riff_hotkey(&mut self, hotkey: &str) {
+        self.shortcut_profiles.riff.hotkey = hotkey.to_string();
     }
 
     pub fn get_custom_hotkey(&self) -> Option<String> {
@@ -420,17 +420,17 @@ fn migrate_to_profiles_map(json: &mut serde_json::Value) -> bool {
                 );
             }
 
-            // Second element → chat
+            // Second element → riff
             if let Some(second) = arr.get(1) {
-                let chat = convert_array_item_to_profile(
+                let riff = convert_array_item_to_profile(
                     second,
                     Some("filler"),
-                    profile_trigger_mode("chat", legacy_recording_mode.as_deref()),
+                    profile_trigger_mode("riff", legacy_recording_mode.as_deref()),
                 );
-                map.insert("chat".to_string(), chat);
+                map.insert("riff".to_string(), riff);
             } else {
                 map.insert(
-                    "chat".to_string(),
+                    "riff".to_string(),
                     serde_json::json!({
                         "hotkey": "",
                         "trigger_mode": "toggle",
@@ -468,9 +468,9 @@ fn migrate_to_profiles_map(json: &mut serde_json::Value) -> bool {
             "trigger_mode": profile_trigger_mode("dictate", legacy_recording_mode.as_deref()),
             "action": { "Record": { "polish_template_id": null } }
         },
-        "chat": {
+        "riff": {
             "hotkey": "",
-            "trigger_mode": profile_trigger_mode("chat", legacy_recording_mode.as_deref()),
+            "trigger_mode": profile_trigger_mode("riff", legacy_recording_mode.as_deref()),
             "action": { "Record": { "polish_template_id": "filler" } }
         }
     });
@@ -514,7 +514,7 @@ fn ensure_profile_trigger_modes(
     };
 
     let mut migrated = false;
-    for key in ["dictate", "chat", "custom"] {
+    for key in ["dictate", "riff", "custom"] {
         let Some(profile) = map.get_mut(key) else {
             continue;
         };
@@ -547,7 +547,7 @@ fn profile_trigger_mode(profile_key: &str, legacy_recording_mode: Option<&str>) 
 
     match profile_key {
         "dictate" => "hold",
-        "chat" | "custom" => "toggle",
+        "riff" | "custom" => "toggle",
         _ => "hold",
     }
 }

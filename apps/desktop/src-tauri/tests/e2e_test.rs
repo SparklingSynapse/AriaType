@@ -41,7 +41,7 @@ fn test_e2e_settings_default() {
     let settings = ariatype_lib::commands::settings::AppSettings::default();
 
     assert_eq!(settings.shortcut_profiles.dictate.hotkey, "Cmd+Slash");
-    assert_eq!(settings.shortcut_profiles.chat.hotkey, "Opt+Slash");
+    assert_eq!(settings.shortcut_profiles.riff.hotkey, "Opt+Slash");
     assert!(settings.shortcut_profiles.custom.is_none());
     assert_eq!(settings.model, "whisper-base");
     assert_eq!(settings.language, "auto");
@@ -386,7 +386,7 @@ mod shortcut_profiles {
         let profiles = &settings.shortcut_profiles;
 
         assert_eq!(profiles.dictate.hotkey, "Cmd+Slash");
-        assert_eq!(profiles.chat.hotkey, "Opt+Slash");
+        assert_eq!(profiles.riff.hotkey, "Opt+Slash");
         assert!(profiles.custom.is_none());
     }
 
@@ -398,9 +398,9 @@ mod shortcut_profiles {
     }
 
     #[test]
-    fn default_chat_has_polish_template() {
+    fn default_riff_has_polish_template() {
         let profiles = ShortcutProfilesMap::default();
-        let ShortcutAction::Record { polish_template_id } = &profiles.chat.action;
+        let ShortcutAction::Record { polish_template_id } = &profiles.riff.action;
         assert!(polish_template_id.is_some());
         assert_eq!(polish_template_id.as_deref(), Some("filler"));
     }
@@ -415,7 +415,7 @@ mod shortcut_profiles {
                     polish_template_id: None,
                 },
             },
-            chat: ShortcutProfile {
+            riff: ShortcutProfile {
                 hotkey: "Opt+Slash".to_string(),
                 trigger_mode: ShortcutTriggerMode::Toggle,
                 action: ShortcutAction::Record {
@@ -447,7 +447,7 @@ mod shortcut_profiles {
     fn custom_profile_serializes_when_present() {
         let profiles = ShortcutProfilesMap {
             dictate: ShortcutProfile::default_dictate(),
-            chat: ShortcutProfile::default_chat(),
+            riff: ShortcutProfile::default_riff(),
             custom: Some(ShortcutProfile {
                 hotkey: "Cmd+Alt+Space".to_string(),
                 trigger_mode: ShortcutTriggerMode::Toggle,
@@ -475,8 +475,8 @@ mod shortcut_profiles {
         let profiles = json_value.get("shortcut_profiles").unwrap();
         let dictate_hotkey = profiles.get("dictate").unwrap().get("hotkey").unwrap();
         assert_eq!(dictate_hotkey.as_str(), Some("Shift+Space"));
-        let chat_hotkey = profiles.get("chat").unwrap().get("hotkey").unwrap();
-        assert_eq!(chat_hotkey.as_str(), Some(""));
+        let riff_hotkey = profiles.get("riff").unwrap().get("hotkey").unwrap();
+        assert_eq!(riff_hotkey.as_str(), Some(""));
     }
 
     #[test]
@@ -486,9 +486,9 @@ mod shortcut_profiles {
     }
 
     #[test]
-    fn settings_get_chat_hotkey() {
+    fn settings_get_riff_hotkey() {
         let settings = AppSettings::default();
-        assert_eq!(settings.get_chat_hotkey(), "Opt+Slash");
+        assert_eq!(settings.get_riff_hotkey(), "Opt+Slash");
     }
 
     #[test]
@@ -545,7 +545,7 @@ mod shortcut_profiles {
         );
         assert_eq!(
             profiles
-                .get("chat")
+                .get("riff")
                 .unwrap()
                 .get("hotkey")
                 .unwrap()

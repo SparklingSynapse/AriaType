@@ -135,17 +135,17 @@ export function HotkeySettings() {
     });
   };
 
-  const handleUpdateChat = async (
+  const handleUpdateRiff = async (
     hotkey: string,
     templateId: string | null,
     triggerMode: "hold" | "toggle",
   ) => {
     if (!templateId) {
-      showErrorToast(t("hotkey.chatTemplateRequired", "Chat profile requires a polish template"));
+      showErrorToast(t("hotkey.riffTemplateRequired", "Riff profile requires a polish template"));
       return;
     }
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "chat_profile", value: `${hotkey}:${templateId}` });
-    await hotkeyCommands.updateProfile("chat", {
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "riff_profile", value: `${hotkey}:${templateId}` });
+    await hotkeyCommands.updateProfile("riff", {
       hotkey,
       trigger_mode: triggerMode,
       action: { Record: { polish_template_id: templateId } },
@@ -206,18 +206,18 @@ export function HotkeySettings() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("hotkey.profiles.chat", "Chat")}</CardTitle>
-          <CardDescription>{t("hotkey.profiles.chatDesc", "Voice-to-text with polish formatting")}</CardDescription>
+          <CardTitle>{t("hotkey.profiles.riff", "Riff")}</CardTitle>
+          <CardDescription>{t("hotkey.profiles.riffDesc", "Free-form voice with AI refinement")}</CardDescription>
         </CardHeader>
         <CardContent>
           <ProfileSection
-            profileKey="chat"
-            profile={profiles?.chat}
+            profileKey="riff"
+            profile={profiles?.riff}
             templates={templates}
             canChangeTemplate={true}
             allowNullTemplate={false}
-            onUpdate={handleUpdateChat}
-            testId="profile-chat"
+            onUpdate={handleUpdateRiff}
+            testId="profile-riff"
           />
         </CardContent>
       </Card>

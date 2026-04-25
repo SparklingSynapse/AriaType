@@ -23,7 +23,7 @@ fn migrate_from_legacy_hotkey_copies_global_recording_mode_into_profiles() {
         json["shortcut_profiles"]["dictate"]["trigger_mode"],
         "toggle"
     );
-    assert_eq!(json["shortcut_profiles"]["chat"]["trigger_mode"], "toggle");
+    assert_eq!(json["shortcut_profiles"]["riff"]["trigger_mode"], "toggle");
 }
 
 #[test]
@@ -49,6 +49,6 @@ fn migrate_array_profiles_copies_global_recording_mode_into_existing_profiles() 
     migrate_to_profiles_map_for_test(&mut json);
 
     assert_eq!(json["shortcut_profiles"]["dictate"]["trigger_mode"], "hold");
-    assert_eq!(json["shortcut_profiles"]["chat"]["trigger_mode"], "hold");
+    assert_eq!(json["shortcut_profiles"]["riff"]["trigger_mode"], "hold");
     assert_eq!(json["shortcut_profiles"]["custom"]["trigger_mode"], "hold");
 }

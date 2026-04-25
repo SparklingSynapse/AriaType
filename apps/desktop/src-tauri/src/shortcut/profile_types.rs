@@ -1,8 +1,8 @@
 //! Profile types for multi-shortcut support.
 //!
-//! Fixed-key map structure: { dictate, chat, custom? }
+//! Fixed-key map structure: { dictate, riff, custom? }
 //! - dictate: system profile, polish_template_id = null (fixed)
-//! - chat: system profile, polish_template_id non-null (default first template)
+//! - riff: system profile, polish_template_id non-null (default first template)
 //! - custom: optional user profile (max 1), polish_template_id can be null
 
 use serde::{Deserialize, Serialize};
@@ -33,7 +33,7 @@ pub struct ShortcutProfilesMap {
 
     /// System profile: always exists, cannot be deleted.
     /// polish_template_id defaults to first template, cannot be None.
-    pub chat: ShortcutProfile,
+    pub riff: ShortcutProfile,
 
     /// Optional user profile: can be created and deleted (max 1).
     /// polish_template_id can be None or any template.
@@ -45,7 +45,7 @@ impl Default for ShortcutProfilesMap {
     fn default() -> Self {
         Self {
             dictate: ShortcutProfile::default_dictate(),
-            chat: ShortcutProfile::default_chat(),
+            riff: ShortcutProfile::default_riff(),
             custom: None,
         }
     }
@@ -61,7 +61,7 @@ impl ShortcutProfilesMap {
                     polish_template_id: None,
                 },
             },
-            chat: ShortcutProfile::default_chat(),
+            riff: ShortcutProfile::default_riff(),
             custom: None,
         }
     }
@@ -95,8 +95,8 @@ impl ShortcutProfile {
         }
     }
 
-    /// Chat profile: Opt+Slash, default polish template.
-    pub fn default_chat() -> Self {
+    /// Riff profile: Opt+Slash, default polish template.
+    pub fn default_riff() -> Self {
         Self {
             hotkey: "Opt+Slash".to_string(),
             trigger_mode: ShortcutTriggerMode::Toggle,
@@ -148,7 +148,7 @@ mod tests {
                     polish_template_id: None,
                 },
             },
-            chat: ShortcutProfile {
+            riff: ShortcutProfile {
                 hotkey: "Cmd+Space".to_string(),
                 trigger_mode: ShortcutTriggerMode::Toggle,
                 action: ShortcutAction::Record {
@@ -160,7 +160,7 @@ mod tests {
 
         let json = serde_json::to_string(&profiles).unwrap();
         assert!(json.contains("\"dictate\""));
-        assert!(json.contains("\"chat\""));
+        assert!(json.contains("\"riff\""));
         assert!(!json.contains("\"custom\""));
     }
 
@@ -168,7 +168,7 @@ mod tests {
     fn profiles_map_with_custom_serializes() {
         let profiles = ShortcutProfilesMap {
             dictate: ShortcutProfile::default_dictate(),
-            chat: ShortcutProfile::default_chat(),
+            riff: ShortcutProfile::default_riff(),
             custom: Some(ShortcutProfile {
                 hotkey: "Cmd+Alt+Space".to_string(),
                 trigger_mode: ShortcutTriggerMode::Toggle,
@@ -227,8 +227,8 @@ mod tests {
     }
 
     #[test]
-    fn default_chat_has_template() {
-        let profile = ShortcutProfile::default_chat();
+    fn default_riff_has_template() {
+        let profile = ShortcutProfile::default_riff();
         assert_eq!(profile.trigger_mode, ShortcutTriggerMode::Toggle);
         match &profile.action {
             ShortcutAction::Record { polish_template_id } => {
@@ -249,12 +249,12 @@ mod tests {
     }
 
     #[test]
-    fn profiles_map_default_dictate_chat_no_custom() {
+    fn profiles_map_default_dictate_riff_no_custom() {
         let profiles = ShortcutProfilesMap::default();
         assert_eq!(profiles.dictate.hotkey, "Cmd+Slash");
         assert_eq!(profiles.dictate.trigger_mode, ShortcutTriggerMode::Hold);
-        assert_eq!(profiles.chat.hotkey, "Opt+Slash");
-        assert_eq!(profiles.chat.trigger_mode, ShortcutTriggerMode::Toggle);
+        assert_eq!(profiles.riff.hotkey, "Opt+Slash");
+        assert_eq!(profiles.riff.trigger_mode, ShortcutTriggerMode::Toggle);
         assert!(profiles.custom.is_none());
     }
 
@@ -262,7 +262,7 @@ mod tests {
     fn default_profiles_serialize_with_expected_trigger_modes() {
         let profiles = ShortcutProfilesMap {
             dictate: ShortcutProfile::default_dictate(),
-            chat: ShortcutProfile::default_chat(),
+            riff: ShortcutProfile::default_riff(),
             custom: Some(ShortcutProfile {
                 hotkey: String::new(),
                 trigger_mode: ShortcutTriggerMode::Toggle,
@@ -274,13 +274,13 @@ mod tests {
 
         let value = serde_json::to_value(&profiles).unwrap();
         assert_eq!(value["dictate"]["trigger_mode"], "hold");
-        assert_eq!(value["chat"]["trigger_mode"], "toggle");
+        assert_eq!(value["riff"]["trigger_mode"], "toggle");
         assert_eq!(value["custom"]["trigger_mode"], "toggle");
     }
 
     #[test]
     fn profiles_map_deserializes_missing_custom() {
-        let json = r#"{"dictate":{"hotkey":"Shift+Space","action":{"Record":{"polish_template_id":null}}},"chat":{"hotkey":"","action":{"Record":{"polish_template_id":"filler"}}}}"#;
+        let json = r#"{"dictate":{"hotkey":"Shift+Space","action":{"Record":{"polish_template_id":null}}},"riff":{"hotkey":"","action":{"Record":{"polish_template_id":"filler"}}}}"#;
         let profiles: ShortcutProfilesMap = serde_json::from_str(json).unwrap();
         assert!(profiles.custom.is_none());
     }

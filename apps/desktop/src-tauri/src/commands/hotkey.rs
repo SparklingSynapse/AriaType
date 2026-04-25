@@ -1,7 +1,7 @@
 //! IPC commands for hotkey recording and profile management.
 //!
-//! Profile management uses map structure: { dictate, chat, custom? }
-//! - dictate/chat: system profiles, cannot be deleted
+//! Profile management uses map structure: { dictate, riff, custom? }
+//! - dictate/riff: system profiles, cannot be deleted
 //! - custom: optional user profile (max 1)
 
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -94,7 +94,7 @@ fn get_current_template_id(
     let profiles = &settings.shortcut_profiles;
     match profile_key {
         "dictate" => None,
-        "chat" => match &profiles.chat.action {
+        "riff" => match &profiles.riff.action {
             crate::shortcut::ShortcutAction::Record { polish_template_id } => {
                 polish_template_id.clone()
             }
@@ -116,7 +116,7 @@ fn get_current_trigger_mode(
     let profiles = &settings.shortcut_profiles;
     match profile_key {
         "dictate" => profiles.dictate.trigger_mode,
-        "chat" => profiles.chat.trigger_mode,
+        "riff" => profiles.riff.trigger_mode,
         "custom" => profiles
             .custom
             .as_ref()
@@ -154,7 +154,7 @@ pub fn get_shortcut_profiles(state: State<'_, AppState>) -> Result<ShortcutProfi
 ///
 /// Validates:
 /// - dictate: template_id must remain None
-/// - chat: template_id cannot be None
+/// - riff: template_id cannot be None
 /// - custom: no constraints
 /// - hotkey uniqueness across all profiles
 #[tauri::command]
@@ -243,7 +243,7 @@ pub fn create_custom_profile(
 
 /// Delete custom profile.
 ///
-/// Cannot delete dictate or chat (system profiles).
+/// Cannot delete dictate or riff (system profiles).
 #[tauri::command]
 pub fn delete_custom_profile(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let shortcut_manager = app
@@ -272,7 +272,7 @@ pub fn delete_custom_profile(app: AppHandle, state: State<'_, AppState>) -> Resu
 
 fn validate_profile_key(key: &str) -> Result<(), String> {
     match key {
-        "dictate" | "chat" | "custom" => Ok(()),
+        "dictate" | "riff" | "custom" => Ok(()),
         _ => Err(format!("unknown_profile_key: {}", key)),
     }
 }
@@ -285,9 +285,9 @@ fn validate_profile_constraints(key: &str, profile: &ShortcutProfile) -> Result<
                     return Err("cannot_update_dictate_template".to_string());
                 }
             }
-            "chat" => {
+            "riff" => {
                 if polish_template_id.is_none() {
-                    return Err("chat_template_cannot_be_null".to_string());
+                    return Err("riff_template_cannot_be_null".to_string());
                 }
             }
             "custom" => {}
@@ -312,8 +312,8 @@ fn validate_hotkey_uniqueness(
         return Err("hotkey_conflict:dictate".to_string());
     }
 
-    if exclude_key != "chat" && profiles.chat.hotkey == hotkey {
-        return Err("hotkey_conflict:chat".to_string());
+    if exclude_key != "riff" && profiles.riff.hotkey == hotkey {
+        return Err("hotkey_conflict:riff".to_string());
     }
 
     if let Some(custom) = &profiles.custom {
@@ -328,7 +328,7 @@ fn validate_hotkey_uniqueness(
 fn update_profile_in_map(map: &mut ShortcutProfilesMap, key: &str, profile: ShortcutProfile) {
     match key {
         "dictate" => map.dictate = profile,
-        "chat" => map.chat = profile,
+        "riff" => map.riff = profile,
         "custom" => map.custom = Some(profile),
         _ => {}
     }
