@@ -99,8 +99,24 @@ export interface CloudProviderSchemas {
   polish: ProviderSchema[];
 }
 
-export interface AppSettings {
+export interface ShortcutProfile {
   hotkey: string;
+  trigger_mode: "hold" | "toggle";
+  action: {
+    Record?: {
+      polish_template_id?: string | null;
+    };
+  };
+}
+
+export interface ShortcutProfilesMap {
+  dictate: ShortcutProfile;
+  chat: ShortcutProfile;
+  custom?: ShortcutProfile;
+}
+
+export interface AppSettings {
+  hotkey?: string;
   recording_mode: "hold" | "toggle";
   model: string;
   stt_engine: string;
@@ -112,7 +128,6 @@ export interface AppSettings {
   stt_engine_language: string;
   beep_on_record: boolean;
   audio_device: string;
-  polish_enabled: boolean;
   polish_system_prompt: string;
   polish_model: string;
   theme_mode: "system" | "light" | "dark";
@@ -133,8 +148,8 @@ export interface AppSettings {
   cloud_polish_configs: Record<string, CloudProviderConfig>;
   vad_enabled: boolean;
   stay_in_tray: boolean;
-  polish_selected_template: string;
   polish_custom_templates: CustomPolishTemplate[];
+  shortcut_profiles: ShortcutProfilesMap;
 }
 
 export interface ModelInfo {
@@ -201,10 +216,17 @@ export const settingsCommands = {
 };
 
 export const hotkeyCommands = {
-  startRecording: () => invokeWithLogging<void>("start_hotkey_recording"),
-  stopRecording: () => invokeWithLogging<string | null>("stop_hotkey_recording"),
-  cancelRecording: () => invokeWithLogging<void>("cancel_hotkey_recording"),
-  peekRecording: () => invokeWithLogging<string | null>("peek_hotkey_recording"),
+  startCapture: (profileKey: string) => invokeWithLogging<void>("start_hotkey_capture", { profileKey }),
+  stopCapture: (profileKey: string) => invokeWithLogging<string>("stop_hotkey_capture", { profileKey }),
+  cancelCapture: () => invokeWithLogging<void>("cancel_hotkey_capture"),
+  peekCapture: () => invokeWithLogging<string | null>("peek_hotkey_capture"),
+  getProfiles: () => invokeWithLogging<ShortcutProfilesMap>("get_shortcut_profiles"),
+  updateProfile: (key: string, profile: ShortcutProfile) =>
+    invokeWithLogging<void>("update_shortcut_profile", { key, profile }),
+  createCustom: (profile: ShortcutProfile) =>
+    invokeWithLogging<void>("create_custom_profile", { profile }),
+  deleteCustom: () =>
+    invokeWithLogging<void>("delete_custom_profile"),
 };
 
 export const systemCommands = {
@@ -264,10 +286,6 @@ export const modelCommands = {
     invokeWithLogging<void>("update_polish_custom_template", { id, name, systemPrompt }),
   deletePolishCustomTemplate: (id: string) =>
     invokeWithLogging<void>("delete_polish_custom_template", { id }),
-  selectPolishTemplate: (templateId: string) =>
-    invokeWithLogging<void>("select_polish_template", { templateId }),
-  getPolishSelectedTemplate: () =>
-    invokeWithLogging<string>("get_polish_selected_template"),
   getPolishCustomTemplates: () =>
     invokeWithLogging<CustomPolishTemplate[]>("get_polish_custom_templates"),
 };
@@ -498,10 +516,17 @@ export const events = {
       callback(event.payload);
     });
   },
-  onShortcutRegistrationFailed: (callback: (error: string) => void) => {
-    return listen<string>("shortcut-registration-failed", (event) => {
-      const error = event.payload;
-      logger.error("event_received-shortcut_registration_failed", { error });
+  onShortcutRegistrationFailed: (callback: (payload: { error: string; profile_id: string }) => void) => {
+    return listen<{ error: string; profile_id: string }>("shortcut-registration-failed", (event) => {
+      const { error, profile_id } = event.payload;
+      logger.error("shortcut_registration_failed", { error, profile_id });
+      callback(event.payload);
+    });
+  },
+  onShortcutTriggered: (callback: (payload: { state: string; profile_id: string }) => void) => {
+    return listen<{ state: string; profile_id: string }>("shortcut-triggered", (event) => {
+      const { state, profile_id } = event.payload;
+      logger.info("event_received-shortcut_triggered", { state, profile_id });
       callback(event.payload);
     });
   },

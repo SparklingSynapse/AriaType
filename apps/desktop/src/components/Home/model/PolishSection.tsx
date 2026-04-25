@@ -8,7 +8,6 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -57,11 +56,6 @@ export function PolishSection({
     }
   }, [polishModels, selectedPolishModel, settings]);
 
-  const handlePolishToggle = async (checked: boolean) => {
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "polish_enabled", value: String(checked) });
-    await updateSetting("polish_enabled", checked);
-  };
-
   const handlePolishModelSelect = async (modelId: string) => {
     setSelectedPolishModel(modelId);
     analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "polish_model", value: modelId });
@@ -80,21 +74,6 @@ export function PolishSection({
           <CardDescription>{t("model.polishSection.description")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between space-x-4">
-            <div>
-              <Label htmlFor="polish">{t("model.polish.enable")}</Label>
-              <p className="text-xs text-muted-foreground">
-                {t("model.polish.enableDesc")}
-              </p>
-            </div>
-            <Switch
-              id="polish"
-              checked={settings.polish_enabled}
-              onCheckedChange={handlePolishToggle}
-              disabled={downloadedPolishModels.length === 0}
-            />
-          </div>
-
           <div className="space-y-2">
             <Label>{t("model.polish.selectModel")}</Label>
             <Select

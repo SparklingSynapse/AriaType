@@ -7,11 +7,15 @@ use std::sync::{
 use tauri::async_runtime::JoinHandle;
 use tokio::sync::mpsc as async_mpsc;
 
+use crate::shortcut::{ShortcutProfile, ShortcutTriggerMode};
+
 #[derive(Debug, Clone, Default)]
 pub struct SessionState {
     pub task_id: u64,
     pub accumulated_text: String,
     pub chunk_count: usize,
+    pub cancel_hotkey: Option<String>,
+    pub cancel_trigger_mode: Option<ShortcutTriggerMode>,
 }
 
 /// Recording consumer state for all STT engines.
@@ -264,13 +268,24 @@ impl AppState {
         self.recording_state.current()
     }
 
-    pub fn start_session(&self, task_id: u64) {
+    pub fn start_session(&self, task_id: u64, profile: Option<&ShortcutProfile>) {
         let mut session = self.session_state.lock();
         *session = Some(SessionState {
             task_id,
             accumulated_text: String::new(),
             chunk_count: 0,
+            cancel_hotkey: profile.map(|item| item.hotkey.clone()),
+            cancel_trigger_mode: profile.map(|item| item.trigger_mode),
         });
+    }
+
+    pub fn current_cancel_profile(&self) -> Option<(String, ShortcutTriggerMode)> {
+        let session = self.session_state.lock();
+        let active_session = session.as_ref()?;
+        Some((
+            active_session.cancel_hotkey.clone()?,
+            active_session.cancel_trigger_mode?,
+        ))
     }
 
     pub fn append_session_text(&self, task_id: u64, text: &str) {

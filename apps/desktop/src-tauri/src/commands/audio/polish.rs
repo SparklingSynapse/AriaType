@@ -1,5 +1,6 @@
 use tracing::{info, instrument, warn};
 
+use crate::polish_engine::{get_template_by_id, DEFAULT_POLISH_PROMPT};
 use crate::state::app_state::AppState;
 
 use super::shared::ProcessingEventTarget;
@@ -24,6 +25,15 @@ async fn run_local_polish(
         model_id,
         log_context,
     } = context;
+
+    if model_id.is_empty() {
+        warn!(
+            task_id,
+            context = log_context,
+            "polish_model_not_configured"
+        );
+        return (accumulated_text, 0);
+    }
 
     match crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&model_id) {
         Some(engine_type) => {
@@ -93,103 +103,109 @@ pub(super) async fn maybe_polish_transcription_text(
     state: &AppState,
     task_id: u64,
     accumulated_text: String,
+    resolved_polish_template_id: Option<String>,
 ) -> (String, u64) {
-    let (polish_enabled, cloud_polish_enabled) = {
-        let settings = state.settings.lock();
-        (settings.polish_enabled, settings.cloud_polish_enabled)
-    };
+    match resolved_polish_template_id {
+        None => {
+            info!(task_id, "polish_skipped-no_template");
+            (accumulated_text, 0)
+        }
+        Some(template_id) => {
+            let (system_prompt, language, provider_type, cloud_config, polish_model_id, cloud_polish_enabled) = {
+                let settings = state.settings.lock();
 
-    if !polish_enabled && !cloud_polish_enabled {
-        return (accumulated_text, 0);
-    }
+                let system_prompt: String = get_template_by_id(&template_id)
+                    .map(|t| t.system_prompt.to_string())
+                    .or_else(|| {
+                        settings
+                            .polish_custom_templates
+                            .iter()
+                            .find(|t| t.id == template_id)
+                            .map(|t| t.system_prompt.clone())
+                    })
+                    .unwrap_or_else(|| {
+                        warn!(task_id, template_id = %template_id, "template_not_found_fallback");
+                        get_template_by_id("filler")
+                            .map(|t| t.system_prompt.to_string())
+                            .unwrap_or_else(|| DEFAULT_POLISH_PROMPT.to_string())
+                    });
 
-    let (polish_system_prompt, polish_language, polish_model_id, cloud_polish_config) = {
-        let settings = state.settings.lock();
-        let prompt = settings.polish_system_prompt.clone();
-        (
-            if prompt.is_empty() {
-                crate::polish_engine::DEFAULT_POLISH_PROMPT.to_string()
-            } else {
-                prompt
-            },
-            settings.stt_engine_language.clone(),
-            settings.polish_model.clone(),
-            settings.get_active_cloud_polish_config(),
-        )
-    };
+                let language = settings.stt_engine_language.clone();
+                let provider_type = settings.active_cloud_polish_provider.clone();
+                let cloud_config = settings.cloud_polish_configs.get(&provider_type).cloned();
+                let polish_model_id = settings.polish_model.clone();
+                let cloud_polish_enabled = settings.cloud_polish_enabled;
 
-    if cloud_polish_config.enabled {
-        if cloud_polish_config.api_key.is_empty() || cloud_polish_config.model.is_empty() {
-            warn!(task_id, provider = %cloud_polish_config.provider_type, api_key_empty = cloud_polish_config.api_key.is_empty(), model_empty = cloud_polish_config.model.is_empty(), "cloud_polish_config_incomplete-fallback_local");
+                (
+                    system_prompt,
+                    language,
+                    provider_type,
+                    cloud_config,
+                    polish_model_id,
+                    cloud_polish_enabled,
+                )
+            };
 
-            return run_local_polish(
+            if cloud_polish_enabled {
+                if let Some(cfg) = cloud_config {
+                    if !cfg.api_key.is_empty() && !cfg.model.is_empty() {
+                    info!(task_id, provider = %provider_type, model = %cfg.model, "polish_started-cloud");
+
+                    let request = crate::polish_engine::PolishRequest::new(
+                        accumulated_text.clone(),
+                        system_prompt,
+                        language,
+                    );
+
+                    event_target.emit_polishing(task_id);
+
+                    return match state
+                        .polish_manager
+                        .polish_cloud(
+                            request,
+                            &provider_type,
+                            &cfg.api_key,
+                            &cfg.base_url,
+                            &cfg.model,
+                            cfg.enable_thinking,
+                        )
+                        .await
+                    {
+                        Ok(result) if !result.text.is_empty() => {
+                            info!(
+                                task_id,
+                                chars = result.text.len(),
+                                polish_ms = result.total_ms,
+                                "polish_completed-cloud"
+                            );
+                            (result.text, result.total_ms)
+                        }
+                        Ok(_) => {
+                            warn!(task_id, provider = %provider_type, "polish_empty_result-cloud_using_raw");
+                            (accumulated_text, 0)
+                        }
+                        Err(e) => {
+                            warn!(task_id, provider = %provider_type, error = %e, "polish_failed-cloud_using_raw");
+                            (accumulated_text, 0)
+                        }
+                    };
+                    }
+                }
+            }
+
+            run_local_polish(
                 event_target,
                 state,
                 task_id,
                 accumulated_text,
                 LocalPolishContext {
-                    system_prompt: polish_system_prompt,
-                    language: polish_language,
+                    system_prompt,
+                    language,
                     model_id: polish_model_id,
-                    log_context: "cloud_fallback",
+                    log_context: "local",
                 },
             )
-            .await;
-        }
-
-        info!(task_id, provider = %cloud_polish_config.provider_type, model = %cloud_polish_config.model, "polish_started-cloud");
-
-        let request = crate::polish_engine::PolishRequest::new(
-            accumulated_text.clone(),
-            polish_system_prompt,
-            polish_language,
-        );
-
-        event_target.emit_polishing(task_id);
-
-        return match state
-            .polish_manager
-            .polish_cloud(
-                request,
-                &cloud_polish_config.provider_type,
-                &cloud_polish_config.api_key,
-                &cloud_polish_config.base_url,
-                &cloud_polish_config.model,
-                cloud_polish_config.enable_thinking,
-            )
             .await
-        {
-            Ok(result) if !result.text.is_empty() => {
-                info!(
-                    task_id,
-                    chars = result.text.len(),
-                    polish_ms = result.total_ms,
-                    "polish_completed-cloud"
-                );
-                (result.text, result.total_ms)
-            }
-            Ok(_) => {
-                warn!(task_id, provider = %cloud_polish_config.provider_type, "polish_empty_result-cloud_using_raw");
-                (accumulated_text, 0)
-            }
-            Err(e) => {
-                warn!(task_id, provider = %cloud_polish_config.provider_type, error = %e, "polish_failed-cloud_using_raw");
-                (accumulated_text, 0)
-            }
-        };
+        }
     }
-
-    run_local_polish(
-        event_target,
-        state,
-        task_id,
-        accumulated_text,
-        LocalPolishContext {
-            system_prompt: polish_system_prompt,
-            language: polish_language,
-            model_id: polish_model_id,
-            log_context: "local",
-        },
-    )
-    .await
 }

@@ -20,6 +20,7 @@ export function PermissionSettings() {
     <SettingsPageLayout
       title={t("general.permissions.title")}
       description={t("general.permissions.description")}
+      testId="permission-page"
     >
       <Card>
         <CardHeader>

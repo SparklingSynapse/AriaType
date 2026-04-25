@@ -367,9 +367,9 @@ export function Dashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl p-10">
+    <div className="mx-auto max-w-6xl p-10" data-testid="dashboard-page">
       <div className="space-y-5 md:space-y-6">
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.42fr)_minmax(17rem,0.84fr)]">
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.42fr)_minmax(17rem,0.84fr)]" data-testid="dashboard-content">
           <div
             className="rounded-3xl border border-border bg-card px-5 py-5 md:px-6 md:py-6"
             style={{

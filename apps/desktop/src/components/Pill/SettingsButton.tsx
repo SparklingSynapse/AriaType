@@ -17,7 +17,7 @@ export function SettingsButton({}: SettingsButtonProps) {
   return (
     <button
       onClick={handleClick}
-      className="ml-2 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-300 text-primary dark:bg-zinc-700 dark:text-white opacity-60 hover:opacity-100 transition-opacity duration-100"
+      className="ml-2 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-700 text-zinc-400 opacity-60 hover:opacity-100 transition-opacity duration-100"
     >
       <Settings className="h-2.5 w-2.5" />
     </button>

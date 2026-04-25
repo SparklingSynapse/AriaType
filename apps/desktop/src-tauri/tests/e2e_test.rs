@@ -40,10 +40,12 @@ fn test_e2e_audio_system_functions() {
 fn test_e2e_settings_default() {
     let settings = ariatype_lib::commands::settings::AppSettings::default();
 
-    assert_eq!(settings.hotkey, "shift+space");
+    assert_eq!(settings.shortcut_profiles.dictate.hotkey, "Cmd+Slash");
+    assert_eq!(settings.shortcut_profiles.chat.hotkey, "Opt+Slash");
+    assert!(settings.shortcut_profiles.custom.is_none());
     assert_eq!(settings.model, "whisper-base");
     assert_eq!(settings.language, "auto");
-    assert!(!settings.polish_enabled);
+    assert!(!settings.cloud_polish_enabled);
 }
 
 #[test]
@@ -370,4 +372,185 @@ async fn test_e2e_pipeline_polish_failure_recovery() {
         final_text, "um hello world uh",
         "Should return original STT text on polish failure"
     );
+}
+
+mod shortcut_profiles {
+    use ariatype_lib::commands::settings::AppSettings;
+    use ariatype_lib::shortcut::{
+        ShortcutAction, ShortcutProfile, ShortcutProfilesMap, ShortcutTriggerMode,
+    };
+
+    #[test]
+    fn default_profiles_have_correct_hotkeys() {
+        let settings = AppSettings::default();
+        let profiles = &settings.shortcut_profiles;
+
+        assert_eq!(profiles.dictate.hotkey, "Cmd+Slash");
+        assert_eq!(profiles.chat.hotkey, "Opt+Slash");
+        assert!(profiles.custom.is_none());
+    }
+
+    #[test]
+    fn default_dictate_has_no_polish_template() {
+        let profiles = ShortcutProfilesMap::default();
+        let ShortcutAction::Record { polish_template_id } = &profiles.dictate.action;
+        assert!(polish_template_id.is_none());
+    }
+
+    #[test]
+    fn default_chat_has_polish_template() {
+        let profiles = ShortcutProfilesMap::default();
+        let ShortcutAction::Record { polish_template_id } = &profiles.chat.action;
+        assert!(polish_template_id.is_some());
+        assert_eq!(polish_template_id.as_deref(), Some("filler"));
+    }
+
+    #[test]
+    fn profiles_map_serialization_roundtrip() {
+        let profiles = ShortcutProfilesMap {
+            dictate: ShortcutProfile {
+                hotkey: "Cmd+Slash".to_string(),
+                trigger_mode: ShortcutTriggerMode::Hold,
+                action: ShortcutAction::Record {
+                    polish_template_id: None,
+                },
+            },
+            chat: ShortcutProfile {
+                hotkey: "Opt+Slash".to_string(),
+                trigger_mode: ShortcutTriggerMode::Toggle,
+                action: ShortcutAction::Record {
+                    polish_template_id: Some("filler".to_string()),
+                },
+            },
+            custom: Some(ShortcutProfile {
+                hotkey: "Cmd+Shift+Space".to_string(),
+                trigger_mode: ShortcutTriggerMode::Toggle,
+                action: ShortcutAction::Record {
+                    polish_template_id: Some("formal".to_string()),
+                },
+            }),
+        };
+
+        let json = serde_json::to_string(&profiles).unwrap();
+        let decoded: ShortcutProfilesMap = serde_json::from_str(&json).unwrap();
+        assert_eq!(profiles, decoded);
+    }
+
+    #[test]
+    fn custom_profile_serializes_skip_when_none() {
+        let profiles = ShortcutProfilesMap::default();
+        let json = serde_json::to_string(&profiles).unwrap();
+        assert!(!json.contains("\"custom\""));
+    }
+
+    #[test]
+    fn custom_profile_serializes_when_present() {
+        let profiles = ShortcutProfilesMap {
+            dictate: ShortcutProfile::default_dictate(),
+            chat: ShortcutProfile::default_chat(),
+            custom: Some(ShortcutProfile {
+                hotkey: "Cmd+Alt+Space".to_string(),
+                trigger_mode: ShortcutTriggerMode::Toggle,
+                action: ShortcutAction::Record {
+                    polish_template_id: None,
+                },
+            }),
+        };
+        let json = serde_json::to_string(&profiles).unwrap();
+        assert!(json.contains("\"custom\""));
+    }
+
+    #[test]
+    fn migration_from_old_hotkey_field() {
+        let old_json = serde_json::json!({
+            "hotkey": "Shift+Space",
+            "model": "whisper-base",
+            "language": "auto"
+        });
+
+        let mut json_value = old_json.clone();
+        ariatype_lib::commands::settings::migrate_to_profiles_map_for_test(&mut json_value);
+
+        assert!(json_value.get("hotkey").is_none());
+        let profiles = json_value.get("shortcut_profiles").unwrap();
+        let dictate_hotkey = profiles.get("dictate").unwrap().get("hotkey").unwrap();
+        assert_eq!(dictate_hotkey.as_str(), Some("Shift+Space"));
+        let chat_hotkey = profiles.get("chat").unwrap().get("hotkey").unwrap();
+        assert_eq!(chat_hotkey.as_str(), Some(""));
+    }
+
+    #[test]
+    fn settings_get_dictate_hotkey() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.get_dictate_hotkey(), "Cmd+Slash");
+    }
+
+    #[test]
+    fn settings_get_chat_hotkey() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.get_chat_hotkey(), "Opt+Slash");
+    }
+
+    #[test]
+    fn settings_set_dictate_hotkey() {
+        let mut settings = AppSettings::default();
+        settings.set_dictate_hotkey("Cmd+Shift+A");
+        assert_eq!(settings.shortcut_profiles.dictate.hotkey, "Cmd+Shift+A");
+    }
+
+    #[test]
+    fn settings_get_custom_hotkey_none_when_absent() {
+        let settings = AppSettings::default();
+        assert!(settings.get_custom_hotkey().is_none());
+    }
+
+    #[test]
+    fn settings_get_custom_hotkey_when_present() {
+        let mut settings = AppSettings::default();
+        settings.shortcut_profiles.custom = Some(ShortcutProfile {
+            hotkey: "Cmd+Alt+Space".to_string(),
+            trigger_mode: ShortcutTriggerMode::Toggle,
+            action: ShortcutAction::Record {
+                polish_template_id: None,
+            },
+        });
+        assert_eq!(
+            settings.get_custom_hotkey(),
+            Some("Cmd+Alt+Space".to_string())
+        );
+    }
+
+    #[test]
+    fn migration_from_profiles_array_to_map() {
+        let old_json = serde_json::json!({
+            "shortcut_profiles": [
+                {"hotkey": "Shift+Space", "action": {"Record": {"polish_template_id": null}}},
+                {"hotkey": "Cmd+Space", "action": {"Record": {"polish_template_id": "filler"}}}
+            ]
+        });
+
+        let mut json_value = old_json;
+        ariatype_lib::commands::settings::migrate_to_profiles_map_for_test(&mut json_value);
+
+        let profiles = json_value.get("shortcut_profiles").unwrap();
+        assert!(profiles.is_object());
+        assert_eq!(
+            profiles
+                .get("dictate")
+                .unwrap()
+                .get("hotkey")
+                .unwrap()
+                .as_str(),
+            Some("Shift+Space")
+        );
+        assert_eq!(
+            profiles
+                .get("chat")
+                .unwrap()
+                .get("hotkey")
+                .unwrap()
+                .as_str(),
+            Some("Cmd+Space")
+        );
+    }
 }

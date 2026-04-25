@@ -176,7 +176,7 @@ body {
   letter-spacing: -0.01em;
 }
 
-/* Icon container - rounded, status-colored background */
+/* Icon container - rounded, status-colored background with SVG icon */
 .toast-base::before {
   content: "";
   display: inline-flex;
@@ -185,39 +185,34 @@ body {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  font-size: 12px;
-  font-weight: 600;
   flex-shrink: 0;
+  background-size: 12px;
+  background-repeat: no-repeat;
+  background-position: center;
 }
 
-/* Success - green icon */
+/* Success - green check icon */
 .toast-success::before {
-  content: "✓";
-  background: var(--toast-success);
-  color: white;
+  background-color: var(--toast-success);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
 }
 
-/* Error - red icon */
+/* Error - red X icon */
 .toast-error::before {
-  content: "✕";
-  background: var(--toast-error);
-  color: white;
+  background-color: var(--toast-error);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E");
 }
 
-/* Warning - amber/orange icon */
+/* Warning - amber alert triangle icon */
 .toast-warning::before {
-  content: "!";
-  background: var(--toast-warning);
-  color: white;
-  font-weight: 700;
+  background-color: var(--toast-warning);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 2.29 21h16.14a2 2 0 0 0 1.72-3Z'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E");
 }
 
-/* Info - blue icon */
+/* Info - blue info circle icon */
 .toast-info::before {
-  content: "i";
-  background: var(--toast-info);
-  color: white;
-  font-style: italic;
+  background-color: var(--toast-info);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E");
 }
 
 

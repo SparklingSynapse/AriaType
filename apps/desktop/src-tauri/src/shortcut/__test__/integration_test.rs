@@ -2,7 +2,10 @@
 //!
 //! Tests the full flow of shortcut manager and listener.
 
-use crate::shortcut::{HotkeyConfig, ShortcutEvent, ShortcutManager, ShortcutState};
+use crate::shortcut::{
+    HotkeyConfig, ShortcutAction, ShortcutEvent, ShortcutManager, ShortcutProfile,
+    ShortcutState, ShortcutTriggerMode,
+};
 
 #[test]
 fn test_hotkey_config_creation() {
@@ -26,15 +29,19 @@ fn test_shortcut_manager_creation() {
 #[test]
 fn test_shortcut_manager_register() {
     let manager = ShortcutManager::new().unwrap();
-    // Register should succeed even without app handle (stores in pending state)
-    let result = manager.register_primary("Cmd+Space");
+    let profile = ShortcutProfile {
+        hotkey: "Cmd+Space".to_string(),
+        trigger_mode: ShortcutTriggerMode::Hold,
+        action: ShortcutAction::Record { polish_template_id: None },
+    };
+    let result = manager.register_profile("dictate", &profile);
     assert!(result.is_ok());
 }
 
 #[test]
 fn test_shortcut_manager_unregister() {
     let manager = ShortcutManager::new().unwrap();
-    let result = manager.unregister_primary();
+    let result = manager.unregister_profile("dictate");
     assert!(result.is_ok());
 }
 

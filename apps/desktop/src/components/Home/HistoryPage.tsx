@@ -306,7 +306,7 @@ export function HistoryPage() {
   ], [t]);
 
   return (
-    <div className="mx-auto max-w-6xl p-10">
+    <div className="mx-auto max-w-6xl p-10" data-testid="history-page">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
         <div>
           <h1 className="text-[1.7rem] font-semibold tracking-[-0.05em] text-foreground">{t("history.title")}</h1>
@@ -364,7 +364,7 @@ export function HistoryPage() {
             ))}
           </div>
         ) : entries.length > 0 ? (
-          <div className="flex flex-col">
+          <div className="flex flex-col" data-testid="history-entries">
             {entries.map((entry) => (
               <HistoryEntryCard 
                 key={entry.id} 

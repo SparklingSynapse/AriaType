@@ -34,7 +34,7 @@ Se queda en segundo plano y aparece justo cuando la necesitas. Mantienes pulsada
 
 - ⚡️ **Rápido** – tiempo medio de transcripción bajo 500ms, acelera tu coding/writing
 - 🔒 **Privacidad primero** – STT/Polish local por defecto, tu voz no sale del dispositivo
-- 🎙 **Hotkey global** – pulsa `Shift+Space`, habla, suelta, texto aparece en cualquier app
+- 🎙 **Dos atajos** – `Cmd+/` dictar (texto raw), `Opt+/` con formato
 - 🇨🇳 **CJK-friendly** – SenseVoice optimizado para chino, japonés, coreano
 - ✨ **Polish inteligente** – elimina muletillas, corrige puntuación, limpia frases
 - 🧩 **Plantillas custom** – crea tus propios estilos de Polish para tareas recurrentes

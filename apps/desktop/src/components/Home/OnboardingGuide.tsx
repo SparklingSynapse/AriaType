@@ -458,6 +458,9 @@ function HotkeyStep() {
 
   if (!settings) return null;
 
+  const defaultHotkey =
+    settings?.shortcut_profiles?.dictate?.hotkey || "Shift+Space";
+
   // Note: HotkeyInput's onChange is called after backend has already
   // registered the hotkey. Backend emits SETTINGS_CHANGED which auto-refreshes UI.
   // We only track analytics, no updateSetting call.
@@ -478,7 +481,8 @@ function HotkeyStep() {
       <div className="space-y-4 w-full">
         <div className="flex justify-center">
           <HotkeyInput
-            value={settings.hotkey}
+            profileKey="dictate"
+            value={defaultHotkey}
             onChange={handleHotkeyChange}
             placeholder={t("hotkey.recording.pressKeys")}
             className="w-48"
@@ -824,7 +828,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
       case "practice":
         return (
           <PracticeStep
-            hotkey={settings?.hotkey || DEFAULT_HOTKEY.toLowerCase()}
+            hotkey={settings?.shortcut_profiles?.dictate?.hotkey || DEFAULT_HOTKEY.toLowerCase()}
           />
         );
       case "done":

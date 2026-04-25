@@ -552,7 +552,6 @@ pub fn update_polish_custom_template(
 
 #[tauri::command]
 pub fn delete_polish_custom_template(id: String, state: State<'_, AppState>) -> Result<(), String> {
-    let selected_template: String;
     let custom_templates_count: usize;
 
     {
@@ -564,14 +563,8 @@ pub fn delete_polish_custom_template(id: String, state: State<'_, AppState>) -> 
             return Err(format!("template not found: {}", id));
         }
 
-        selected_template = settings.polish_selected_template.clone();
         custom_templates_count = settings.polish_custom_templates.len();
 
-        if settings.polish_selected_template == id {
-            settings.polish_selected_template = polish::POLISH_TEMPLATES[0].id.to_string();
-            settings.polish_system_prompt = polish::POLISH_TEMPLATES[0].system_prompt.to_string();
-        }
-
         let path = crate::utils::AppPaths::data_dir().join("settings.json");
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -580,65 +573,8 @@ pub fn delete_polish_custom_template(id: String, state: State<'_, AppState>) -> 
         std::fs::write(&path, json).map_err(|e| e.to_string())?;
     }
 
-    info!(template_id = %id, was_selected = %selected_template, remaining = custom_templates_count, "polish_custom_template_deleted");
+    info!(template_id = %id, remaining = custom_templates_count, "polish_custom_template_deleted");
     Ok(())
-}
-
-#[tauri::command]
-pub fn select_polish_template(
-    template_id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    {
-        let mut settings = state.settings.lock();
-
-        let prompt = if template_id.starts_with("user_") {
-            settings
-                .polish_custom_templates
-                .iter()
-                .find(|t| t.id == template_id)
-                .map(|t| t.system_prompt.clone())
-                .ok_or_else(|| format!("template not found: {}", template_id))?
-        } else if let Some(t) = polish::get_template_by_id(&template_id) {
-            t.system_prompt.to_string()
-        } else {
-            return Err(format!("unknown template: {}", template_id));
-        };
-
-        settings.polish_selected_template = template_id.clone();
-        settings.polish_system_prompt = prompt;
-
-        let path = crate::utils::AppPaths::data_dir().join("settings.json");
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let json = serde_json::to_string_pretty(&*settings).map_err(|e| e.to_string())?;
-        std::fs::write(&path, json).map_err(|e| e.to_string())?;
-    }
-
-    info!(template_id = %template_id, "polish_template_selected");
-    Ok(())
-}
-
-#[tauri::command]
-pub fn get_polish_selected_template(state: State<'_, AppState>) -> Result<String, String> {
-    let settings = state.settings.lock();
-    let selected = settings.polish_selected_template.clone();
-
-    let valid = if selected.starts_with("user_") {
-        settings
-            .polish_custom_templates
-            .iter()
-            .any(|t| t.id == selected)
-    } else {
-        polish::get_template_by_id(&selected).is_some()
-    };
-
-    if valid {
-        Ok(selected)
-    } else {
-        Ok(polish::POLISH_TEMPLATES[0].id.to_string())
-    }
 }
 
 #[tauri::command]

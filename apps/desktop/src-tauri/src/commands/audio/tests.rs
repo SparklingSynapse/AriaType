@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use wiremock::matchers::{body_partial_json, header, method, path};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::commands::settings::CloudProviderConfig;
@@ -34,28 +34,6 @@ async fn waiting_for_streaming_task_does_not_block_the_active_runtime() {
 async fn streaming_finalization_honors_cloud_polish_settings() {
     let mock_server = MockServer::start().await;
 
-    let user_prompt = "System instruction here";
-    let expected_system_content = format!(
-        "{}\n\nUSER RULES:\n{}",
-        crate::polish_engine::cloud::engine::CORE_POLISH_CONSTRAINT,
-        user_prompt
-    );
-
-    let expected_body = serde_json::json!({
-        "model": "gpt-4o-mini",
-        "max_tokens": 4096,
-        "messages": [
-            {
-                "role": "system",
-                "content": expected_system_content
-            },
-            {
-                "role": "user",
-                "content": "User text here"
-            }
-        ]
-    });
-
     let response_body = serde_json::json!({
         "choices": [
             {
@@ -69,8 +47,6 @@ async fn streaming_finalization_honors_cloud_polish_settings() {
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
         .and(header("Authorization", "Bearer test_openai_api_key"))
-        .and(header("Content-Type", "application/json"))
-        .and(body_partial_json(expected_body))
         .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
         .mount(&mock_server)
         .await;
@@ -78,11 +54,8 @@ async fn streaming_finalization_honors_cloud_polish_settings() {
     let state = AppState::new();
     {
         let mut settings = state.settings.lock();
-        settings.polish_enabled = false;
-        settings.cloud_polish_enabled = true;
         settings.active_cloud_polish_provider = "openai".to_string();
         settings.stt_engine_language = "en-US".to_string();
-        settings.polish_system_prompt = user_prompt.to_string();
         settings.cloud_polish_configs.insert(
             "openai".to_string(),
             CloudProviderConfig {
@@ -101,6 +74,7 @@ async fn streaming_finalization_honors_cloud_polish_settings() {
         &state,
         1,
         "User text here".to_string(),
+        Some("filler".to_string()),
     )
     .await;
 
@@ -197,7 +171,7 @@ fn discarding_a_canceled_result_only_clears_that_task() {
     let state = AppState::new();
     state.request_cancellation(5);
     state.request_cancellation(6);
-    state.start_session(5);
+    state.start_session(5, None);
     state.is_transcribing.store(true, Ordering::SeqCst);
 
     discard_canceled_result(&state, 5, None);

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pencil, Trash2, Check } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { modelCommands } from "@/lib/tauri";
@@ -11,14 +11,12 @@ import { AnalyticsEvents } from "@/lib/events";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "@/components/ui/confirm";
 import { SettingsPageLayout } from "./SettingsPageLayout";
-import { cn } from "@/lib/utils";
 import type { CustomPolishTemplate, PolishTemplate } from "@/lib/tauri";
 
 export function PolishTemplatesPage() {
   const { t } = useTranslation();
   const [builtInTemplates, setBuiltInTemplates] = useState<PolishTemplate[]>([]);
   const [customTemplates, setCustomTemplates] = useState<CustomPolishTemplate[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<CustomPolishTemplate | null>(null);
   const confirm = useConfirm();
@@ -29,26 +27,14 @@ export function PolishTemplatesPage() {
 
   const loadData = async () => {
     try {
-      const [builtIn, custom, selected] = await Promise.all([
+      const [builtIn, custom] = await Promise.all([
         modelCommands.getPolishTemplates(),
         modelCommands.getPolishCustomTemplates(),
-        modelCommands.getPolishSelectedTemplate(),
       ]);
       setBuiltInTemplates(builtIn);
       setCustomTemplates(custom);
-      setSelectedTemplate(selected);
     } catch (err) {
       logger.error("failed_to_load_templates", { error: String(err) });
-    }
-  };
-
-  const handleSelectTemplate = async (templateId: string) => {
-    try {
-      await modelCommands.selectPolishTemplate(templateId);
-      setSelectedTemplate(templateId);
-      analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "polish_template", value: templateId });
-    } catch (err) {
-      logger.error("failed_to_select_template", { error: String(err) });
     }
   };
 
@@ -86,6 +72,7 @@ export function PolishTemplatesPage() {
     <SettingsPageLayout
       title={t("polishTemplates.title")}
       description={t("polishTemplates.description")}
+      testId="polish-templates-page"
     >
       <Card>
         <CardHeader>
@@ -95,15 +82,9 @@ export function PolishTemplatesPage() {
         <CardContent>
           <div className="space-y-2">
             {builtInTemplates.map((template) => (
-              <button
+              <div
                 key={template.id}
-                onClick={() => handleSelectTemplate(template.id)}
-                className={cn(
-                  "w-full flex items-center justify-between p-4 rounded-2xl border transition-all",
-                  selectedTemplate === template.id
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/50"
-                )}
+                className="w-full flex items-center justify-between p-4 rounded-2xl border border-border"
               >
                 <div className="text-left">
                   <div className="font-medium">
@@ -113,10 +94,7 @@ export function PolishTemplatesPage() {
                     {t(`model.polish.template${template.id.charAt(0).toUpperCase() + template.id.slice(1)}Desc`)}
                   </div>
                 </div>
-                {selectedTemplate === template.id && (
-                  <Check className="h-5 w-5 text-green-500" />
-                )}
-              </button>
+              </div>
             ))}
           </div>
         </CardContent>
@@ -143,28 +121,17 @@ export function PolishTemplatesPage() {
               {customTemplates.map((template) => (
                 <div
                   key={template.id}
-                  className={cn(
-                    "flex items-center justify-between p-4 rounded-2xl border transition-all",
-                    selectedTemplate === template.id
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50"
-                  )}
+                  className="flex items-center justify-between p-4 rounded-2xl border border-border hover:border-primary/50 transition-all"
                 >
-                  <button
-                    onClick={() => handleSelectTemplate(template.id)}
-                    className="flex-1 text-left"
-                  >
-                    <div className="font-medium flex items-center gap-2">
+                  <div className="flex-1 text-left">
+                    <div className="font-medium">
                       {template.name}
-                      {selectedTemplate === template.id && (
-                        <Check className="h-4 w-4 text-green-500" />
-                      )}
                     </div>
                     <div className="text-sm text-muted-foreground mt-1 line-clamp-2">
                       {template.system_prompt.slice(0, 100)}
                       {template.system_prompt.length > 100 && "..."}
                     </div>
-                  </button>
+                  </div>
                   <div className="flex gap-1 ml-4">
                     <Button
                       variant="ghost"

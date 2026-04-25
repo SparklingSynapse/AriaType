@@ -1,4 +1,5 @@
 use crate::commands::settings::CloudSttConfig;
+use crate::shortcut::{ShortcutAction, ShortcutProfile};
 use crate::state::app_state::AppState;
 use std::sync::atomic::Ordering;
 
@@ -7,6 +8,7 @@ pub struct PreparedRecordingStart {
     pub cloud_stt_enabled: bool,
     pub cloud_stt_config: CloudSttConfig,
     pub language: String,
+    pub resolved_polish_template_id: Option<String>,
 }
 
 pub struct PreparedRecordingStop {
@@ -56,7 +58,10 @@ pub fn allocate_task_id(state: &AppState) -> u64 {
     state.task_counter.fetch_add(1, Ordering::SeqCst) + 1
 }
 
-pub fn prepare_recording_start(state: &AppState) -> PreparedRecordingStart {
+pub fn prepare_recording_start(
+    state: &AppState,
+    profile: Option<&ShortcutProfile>,
+) -> PreparedRecordingStart {
     let (cloud_stt_enabled, cloud_stt_config, language) = {
         let settings = state.settings.lock();
         (
@@ -67,8 +72,13 @@ pub fn prepare_recording_start(state: &AppState) -> PreparedRecordingStart {
         )
     };
 
+    let resolved_polish_template_id = match profile {
+        Some(p) => resolve_polish_template_from_profile(p),
+        None => None,
+    };
+
     let task_id = allocate_task_id(state);
-    state.start_session(task_id);
+    state.start_session(task_id, profile);
 
     let start_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -81,6 +91,13 @@ pub fn prepare_recording_start(state: &AppState) -> PreparedRecordingStart {
         cloud_stt_enabled,
         cloud_stt_config,
         language,
+        resolved_polish_template_id,
+    }
+}
+
+fn resolve_polish_template_from_profile(profile: &ShortcutProfile) -> Option<String> {
+    match &profile.action {
+        ShortcutAction::Record { polish_template_id } => polish_template_id.clone(),
     }
 }
 
@@ -131,6 +148,7 @@ mod tests {
         RecordingStartGuard,
     };
     use crate::commands::settings::CloudSttConfig;
+    use crate::shortcut::{ShortcutAction, ShortcutProfile, ShortcutTriggerMode};
     use crate::state::app_state::AppState;
     use std::sync::atomic::Ordering;
     use std::sync::mpsc::TryRecvError;
@@ -157,7 +175,7 @@ mod tests {
             );
         }
 
-        let prepared = prepare_recording_start(&state);
+        let prepared = prepare_recording_start(&state, None);
 
         assert_eq!(prepared.task_id, 1);
         assert!(prepared.cloud_stt_enabled);
@@ -171,11 +189,37 @@ mod tests {
     }
 
     #[test]
+    fn prepare_recording_start_tracks_cancel_profile_context() {
+        let state = AppState::new();
+        let profile = ShortcutProfile {
+            hotkey: "Cmd+Shift+Space".to_string(),
+            trigger_mode: ShortcutTriggerMode::Hold,
+            action: ShortcutAction::Record {
+                polish_template_id: Some("filler".to_string()),
+            },
+        };
+
+        let prepared = prepare_recording_start(&state, Some(&profile));
+        let session = state.session_state.lock();
+        let active_session = session.as_ref().expect("session should be started");
+
+        assert_eq!(prepared.task_id, active_session.task_id);
+        assert_eq!(
+            active_session.cancel_hotkey.as_deref(),
+            Some("Cmd+Shift+Space")
+        );
+        assert_eq!(
+            active_session.cancel_trigger_mode,
+            Some(ShortcutTriggerMode::Hold)
+        );
+    }
+
+    #[test]
     fn uncommitted_recording_start_guard_rolls_back_session_state() {
         let state = AppState::new();
         state.is_recording.store(true, Ordering::SeqCst);
         state.is_transcribing.store(false, Ordering::SeqCst);
-        state.start_session(9);
+        state.start_session(9, None);
         state.recording_start_time.store(1234, Ordering::SeqCst);
 
         {
@@ -193,7 +237,7 @@ mod tests {
     fn committed_recording_start_guard_preserves_session_state() {
         let state = AppState::new();
         state.is_recording.store(true, Ordering::SeqCst);
-        state.start_session(10);
+        state.start_session(10, None);
         state.recording_start_time.store(5678, Ordering::SeqCst);
 
         let mut guard = RecordingStartGuard::new(&state, 10);
@@ -243,7 +287,7 @@ mod tests {
         state.is_recording.store(true, Ordering::SeqCst);
         state.is_transcribing.store(true, Ordering::SeqCst);
         state.task_counter.store(14, Ordering::SeqCst);
-        state.start_session(14);
+        state.start_session(14, None);
         state.append_session_text(14, "partial");
         let rx = state
             .level_monitor_rx

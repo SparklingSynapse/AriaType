@@ -250,8 +250,6 @@ pub fn run() {
             model::create_polish_custom_template,
             model::update_polish_custom_template,
             model::delete_polish_custom_template,
-            model::select_polish_template,
-            model::get_polish_selected_template,
             model::get_polish_custom_templates,
             model_cache::get_model_status,
             model_cache::preload_model,
@@ -267,10 +265,14 @@ pub fn run() {
             history::delete_transcription_entry,
             history::clear_transcription_history,
             history::retry_transcription,
-            hotkey::start_hotkey_recording,
-            hotkey::stop_hotkey_recording,
-            hotkey::cancel_hotkey_recording,
-            hotkey::peek_hotkey_recording,
+            hotkey::start_hotkey_capture,
+            hotkey::stop_hotkey_capture,
+            hotkey::cancel_hotkey_capture,
+            hotkey::peek_hotkey_capture,
+            hotkey::get_shortcut_profiles,
+            hotkey::update_shortcut_profile,
+            hotkey::create_custom_profile,
+            hotkey::delete_custom_profile,
         ])
         .setup(|app| {
             let _ = crate::permissions::report_startup_permission_snapshot();
@@ -398,7 +400,6 @@ pub fn run() {
                 let settings = state.settings.lock();
                 let model_resident = settings.model_resident;
                 let model_name = settings.model.clone();
-                let polish_enabled = settings.polish_enabled;
                 let polish_model_id = settings.polish_model.clone();
                 drop(settings);
 
@@ -432,8 +433,8 @@ pub fn run() {
                         warn!(model = %model_name, "model_unknown-cannot_determine_engine");
                     }
 
-                    // Preload polish model if enabled
-                    if polish_enabled && !polish_model_id.is_empty() {
+                    // Preload polish model if configured
+                    if !polish_model_id.is_empty() {
                         if let Some(engine_type) = crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&polish_model_id) {
                             match state.polish_manager.load_model(engine_type, &polish_model_id) {
                                 Ok(_) => {
@@ -575,29 +576,46 @@ pub fn run() {
                 }
             });
 
-            // Initialize ShortcutManager and register global shortcut from settings
-            let hotkey = {
+            // Initialize ShortcutManager and register all profiles from settings
+            let profiles = {
                 let state = app.state::<AppState>();
-                let hotkey = state.settings.lock().hotkey.clone();
-                hotkey
+                let profiles = state.settings.lock().shortcut_profiles.clone();
+                profiles
             };
 
-            // Create and start shortcut manager
             let mut shortcut_manager = crate::shortcut::ShortcutManager::new()
                 .expect("shortcut manager creation should succeed");
             match shortcut_manager.start(app.handle().clone()) {
                 Ok(_) => {
-                    // Register the initial hotkey
-                    match shortcut_manager.register_primary(&hotkey) {
-                        Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
-                        Err(e) => {
-                            warn!(error = %e, "shortcut_registration_failed");
-                            if let Err(emit_err) = app.emit(EventName::SHORTCUT_REGISTRATION_FAILED, e) {
-                                tracing::warn!(error = %emit_err, "event_emit_failed-shortcut_registration");
+                    fn register_profile(
+                        manager: &crate::shortcut::ShortcutManager,
+                        key: &str,
+                        profile: &crate::shortcut::ShortcutProfile,
+                        app: &tauri::AppHandle,
+                    ) {
+                        if profile.hotkey.is_empty() {
+                            return;
+                        }
+                        match manager.register_profile(key, profile) {
+                            Ok(_) => info!(key = %key, hotkey = %profile.hotkey, "shortcut_registered"),
+                            Err(e) => {
+                                warn!(key = %key, error = %e, "shortcut_registration_failed");
+                                if let Err(emit_err) = app.emit(
+                                    EventName::SHORTCUT_REGISTRATION_FAILED,
+                                    serde_json::json!({ "error": e, "profile_id": key }),
+                                ) {
+                                    tracing::warn!(error = %emit_err, "event_emit_failed-shortcut_registration");
+                                }
                             }
                         }
                     }
-                    // Store manager in app state for later access
+
+                    register_profile(&shortcut_manager, "dictate", &profiles.dictate, app.handle());
+                    register_profile(&shortcut_manager, "chat", &profiles.chat, app.handle());
+                    if let Some(custom) = &profiles.custom {
+                        register_profile(&shortcut_manager, "custom", custom, app.handle());
+                    }
+
                     app.manage(shortcut_manager);
                 }
                 Err(e) => {

@@ -191,7 +191,7 @@ fn toggle_recording(app: &AppHandle) {
         }
     } else {
         info!("recording_start_requested-tray");
-        match crate::commands::audio::start_recording_sync(app.clone()) {
+        match crate::commands::audio::start_recording_sync(app, None) {
             Ok(_) => info!("recording_started-tray"),
             Err(e) => error!(error = %e, "recording_start_failed-tray"),
         }

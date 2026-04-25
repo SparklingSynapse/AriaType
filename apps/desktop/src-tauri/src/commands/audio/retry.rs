@@ -58,6 +58,7 @@ pub async fn retry_transcription_internal(
                     &state,
                     retry_task_id,
                     output.raw_text.clone(),
+                    None,
                 )
                 .await
             };

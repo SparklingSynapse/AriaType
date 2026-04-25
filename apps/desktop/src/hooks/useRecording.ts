@@ -19,7 +19,10 @@ export function useRecording() {
     const loadSettings = async () => {
       try {
         const settings = await settingsCommands.getSettings();
-        setHotkey(settings.hotkey);
+        const defaultHotkey =
+          settings?.shortcut_profiles?.dictate?.hotkey ||
+          "shift+space";
+        setHotkey(defaultHotkey);
       } catch (err) {
         logger.error("failed_to_load_settings", { error: String(err) });
       }

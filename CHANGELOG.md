@@ -6,6 +6,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
+- Update pill UI (7142874)
 - Add changelog viewer in about page (0c72a43)
 - Add audio command boundary (b4e7a53)
 - Add single-instance plugin and handle silent recordings (a37e33c)
@@ -13,7 +14,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
-- Update changelog page layout (9ad2908)
+- Update changelog page layout (8380247)
 - Shortcut not working when no permission (ed322f3)
 - Prevent changelog fetch loop and improve UI (254476d)
 

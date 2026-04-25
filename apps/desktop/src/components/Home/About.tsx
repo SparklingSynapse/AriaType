@@ -92,7 +92,7 @@ export function About() {
   }, [navigate]);
 
   return (
-    <SettingsPageLayout>
+    <SettingsPageLayout testId="about-page">
       <div className="text-center py-8">
         <div className="inline-block mb-6">
           <img

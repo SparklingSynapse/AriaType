@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useTranslation } from "react-i18next";
+import { BorderBeam } from "border-beam";
 import { AudioDots } from "./AudioDots";
 import { SettingsButton } from "./SettingsButton";
 import type { RecordingStatus } from "@/types";
@@ -11,7 +11,6 @@ import { settingsCommands, windowCommands, events, type AppSettings } from "@/li
 import type { RecordingStateEvent } from "@/lib/tauri";
 
 export function PillWindow() {
-  const { t } = useTranslation();
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
   const [hasAudioActivity, setHasAudioActivity] = useState(false);
@@ -99,18 +98,11 @@ export function PillWindow() {
     }
   }, [indicatorMode]);
 
-  const statusTooltipKey =
-    status === "recording"
-      ? "pill.status.recording"
-      : status === "transcribing" || status === "processing"
-        ? "pill.status.transcribing"
-        : status === "polishing"
-          ? "pill.status.polishing"
-          : null;
+  const beamActive = status === "transcribing" || status === "processing" || status === "polishing";
 
   return (
     <div
-      className="fixed inset-0 flex items-start justify-center pt-1.5 select-none bg-transparent"
+      className="fixed inset-0 flex items-start justify-center pt-4 select-none bg-transparent"
       onMouseDown={handleDrag}
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
@@ -124,20 +116,33 @@ export function PillWindow() {
             transition={{ duration: 0.16, ease: "easeOut" }}
             className="flex flex-col items-center"
           >
-            <div
-              className="relative flex items-center justify-center rounded-full bg-white dark:bg-zinc-900 shadow-[0_2px_4px_rgba(0,0,0,0.18)] ring-1 ring-black/10 dark:ring-white/20"
-              style={{
-                paddingLeft: isActive ? 16 : 12,
-                paddingRight: isActive ? 16 : 12,
-                paddingTop: isActive ? 7 : 5,
-                paddingBottom: isActive ? 7 : 5,
-                WebkitAppRegion: "no-drag",
-              } as React.CSSProperties}
+            <BorderBeam
+              active={beamActive}
+              size="sm"
+              borderRadius={9999}
+              theme="dark"
+              colorVariant="ocean"
+              strength={0.5}
+              brightness={2}
+              duration={1}
+              className="shadow-[0_0_10px_rgba(0,0,0,0.3),0_4px_12px_rgba(0,0,0,0.3)]"
             >
-              <AudioDots status={status} audioLevel={audioLevel} hasAudioActivity={hasAudioActivity} />
-              <SettingsButton />
-            </div>
-            <AnimatePresence mode="wait">
+              <div
+                className="relative flex items-center justify-center rounded-full bg-[#1d1d1d] shadow-[inset_0_0_0_1px_#2c2f3685,inset_0_0_50px_#ffffff05]"
+                style={{
+                  paddingLeft: isActive ? 16 : 12,
+                  paddingRight: isActive ? 16 : 12,
+                  paddingTop: isActive ? 7 : 5,
+                  paddingBottom: isActive ? 7 : 5,
+                  WebkitAppRegion: "no-drag",
+                } as React.CSSProperties}
+              >
+                <AudioDots status={status} audioLevel={audioLevel} hasAudioActivity={hasAudioActivity} />
+                <SettingsButton />
+              </div>
+            </BorderBeam>
+            {/* TODO: Re-enable tooltip for future use */}
+            {/* <AnimatePresence mode="wait">
               {statusTooltipKey && (
                 <motion.div
                   key={statusTooltipKey}
@@ -150,7 +155,7 @@ export function PillWindow() {
                   {t(statusTooltipKey)}
                 </motion.div>
               )}
-            </AnimatePresence>
+            </AnimatePresence> */}
           </motion.div>
         )}
       </AnimatePresence>

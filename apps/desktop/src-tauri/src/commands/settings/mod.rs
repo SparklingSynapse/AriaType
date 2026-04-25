@@ -7,6 +7,7 @@ use tracing::{info, warn};
 
 use crate::commands::window::position_pill_window;
 use crate::events::EventName;
+use crate::shortcut::ShortcutProfilesMap;
 use crate::state::app_state::AppState;
 use crate::utils::AppPaths;
 
@@ -70,7 +71,8 @@ struct LegacyCloudSttConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
-    pub hotkey: String,
+    /// Shortcut profiles map with fixed keys: { dictate, chat, custom? }
+    pub shortcut_profiles: ShortcutProfilesMap,
     pub recording_mode: String,
     pub model: String,
     pub stt_engine: String,
@@ -82,51 +84,33 @@ pub struct AppSettings {
     pub stt_engine_language: String,
     pub beep_on_record: bool,
     pub audio_device: String,
-    pub polish_enabled: bool,
     pub polish_system_prompt: String,
     pub polish_model: String,
     pub theme_mode: String,
-    /// Script-bias prompt passed directly to Whisper's initial_prompt field.
-    /// Set by the frontend when the user picks a language; backend is unaware of specifics.
     pub stt_engine_initial_prompt: String,
     pub model_resident: bool,
     pub idle_unload_minutes: u32,
     pub denoise_mode: String,
-    /// Domain for transcription (general, it, legal, medical)
     pub stt_engine_work_domain: String,
-    /// Domain-specific prompt template
     pub stt_engine_work_domain_prompt: String,
-    /// Glossary subdomain (e.g., it_general, legal_civil)
     pub stt_engine_work_subdomain: String,
-    /// Glossary terms (comma or newline separated)
     pub stt_engine_user_glossary: String,
     pub analytics_opt_in: bool,
-    /// Whether cloud STT is enabled globally
     pub cloud_stt_enabled: bool,
-    /// Currently active cloud STT provider (e.g., "volcengine-streaming", "openai")
     pub active_cloud_stt_provider: String,
-    /// Per-provider cloud STT configurations, keyed by provider_type
     pub cloud_stt_configs: HashMap<String, CloudSttConfig>,
-    /// Whether cloud polish is enabled globally
     pub cloud_polish_enabled: bool,
-    /// Currently active cloud polish provider (e.g., "anthropic", "openai")
     pub active_cloud_polish_provider: String,
-    /// Per-provider cloud polish configurations, keyed by provider_type
     pub cloud_polish_configs: HashMap<String, CloudProviderConfig>,
-    /// Whether to enable Voice Activity Detection (VAD) for silence trimming
     pub vad_enabled: bool,
-    /// Whether app should stay in system tray when hidden (macOS only)
     pub stay_in_tray: bool,
-    /// Currently selected polish template ID (built-in or user-defined)
-    pub polish_selected_template: String,
-    /// User-defined custom polish templates
     pub polish_custom_templates: Vec<CustomPolishTemplate>,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            hotkey: "shift+space".to_string(),
+            shortcut_profiles: ShortcutProfilesMap::default(),
             recording_mode: "hold".to_string(),
             model: "whisper-base".to_string(),
             stt_engine: "whisper".to_string(),
@@ -138,7 +122,6 @@ impl Default for AppSettings {
             stt_engine_language: "auto".to_string(),
             beep_on_record: true,
             audio_device: "default".to_string(),
-            polish_enabled: false,
             polish_system_prompt: crate::polish_engine::DEFAULT_POLISH_PROMPT.to_string(),
             polish_model: String::new(),
             theme_mode: "system".to_string(),
@@ -159,7 +142,6 @@ impl Default for AppSettings {
             cloud_polish_configs: HashMap::new(),
             vad_enabled: false,
             stay_in_tray: false,
-            polish_selected_template: "filler".to_string(),
             polish_custom_templates: Vec::new(),
         }
     }
@@ -178,14 +160,10 @@ impl AppSettings {
     }
 
     pub fn get_active_cloud_polish_config(&self) -> CloudProviderConfig {
-        let mut config = self
-            .cloud_polish_configs
+        self.cloud_polish_configs
             .get(&self.active_cloud_polish_provider)
             .cloned()
-            .unwrap_or_default();
-        config.enabled = self.cloud_polish_enabled;
-        config.provider_type = self.active_cloud_polish_provider.clone();
-        config
+            .unwrap_or_default()
     }
 
     /// Check if any streaming cloud STT provider is active
@@ -197,10 +175,78 @@ impl AppSettings {
             )
     }
 
-    /// Legacy method - use is_streaming_stt_active instead
     #[deprecated(note = "Use is_streaming_stt_active instead")]
     pub fn is_volcengine_streaming_active(&self) -> bool {
         self.is_streaming_stt_active()
+    }
+
+    pub fn get_dictate_hotkey(&self) -> String {
+        self.shortcut_profiles.dictate.hotkey.clone()
+    }
+
+    pub fn set_dictate_hotkey(&mut self, hotkey: &str) {
+        self.shortcut_profiles.dictate.hotkey = hotkey.to_string();
+    }
+
+    pub fn get_chat_hotkey(&self) -> String {
+        self.shortcut_profiles.chat.hotkey.clone()
+    }
+
+    pub fn set_chat_hotkey(&mut self, hotkey: &str) {
+        self.shortcut_profiles.chat.hotkey = hotkey.to_string();
+    }
+
+    pub fn get_custom_hotkey(&self) -> Option<String> {
+        self.shortcut_profiles
+            .custom
+            .as_ref()
+            .map(|p| p.hotkey.clone())
+    }
+
+    /// Resolve polish provider config.
+    ///
+    /// Provider resolution order:
+    /// 1. Check active_cloud_polish_provider in cloud_polish_configs
+    /// 2. If valid (api_key + model non-empty) → use cloud
+    /// 3. Otherwise → local fallback
+    pub fn resolve_polish_config(
+        &self,
+        provider_override: Option<&str>,
+        model_override: Option<&str>,
+    ) -> (Option<String>, CloudProviderConfig) {
+        match provider_override {
+            Some(provider_key) => match self.cloud_polish_configs.get(provider_key) {
+                Some(cfg) if !cfg.api_key.is_empty() && !cfg.model.is_empty() => {
+                    let mut resolved = cfg.clone();
+                    resolved.enabled = true;
+                    resolved.provider_type = provider_key.to_string();
+                    if let Some(m) = model_override.filter(|m| !m.is_empty()) {
+                        resolved.model = m.to_string();
+                    }
+                    (Some(provider_key.to_string()), resolved)
+                }
+                _ => {
+                    tracing::warn!(
+                        provider = %provider_key,
+                        "polish_override_provider_invalid_fallback_to_global"
+                    );
+                    self.resolve_global_polish_config()
+                }
+            },
+            None => self.resolve_global_polish_config(),
+        }
+    }
+
+    fn resolve_global_polish_config(&self) -> (Option<String>, CloudProviderConfig) {
+        let provider_type = &self.active_cloud_polish_provider;
+
+        if let Some(cfg) = self.cloud_polish_configs.get(provider_type) {
+            if !cfg.api_key.is_empty() && !cfg.model.is_empty() {
+                return (Some(provider_type.clone()), cfg.clone());
+            }
+        }
+
+        (None, CloudProviderConfig::default())
     }
 }
 
@@ -329,39 +375,210 @@ fn validate_model_name(json: &mut serde_json::Value) -> bool {
     true
 }
 
+pub fn migrate_to_profiles_map_for_test(json: &mut serde_json::Value) {
+    migrate_to_profiles_map(json);
+}
+
+fn migrate_to_profiles_map(json: &mut serde_json::Value) -> bool {
+    let legacy_recording_mode = json
+        .get("recording_mode")
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+
+    if let Some(obj) = json.as_object_mut() {
+        obj.remove("hotkey");
+        obj.remove("polish_enabled");
+        obj.remove("polish_selected_template");
+    }
+
+    // Check if shortcut_profiles is already a map
+    if let Some(profiles) = json.get_mut("shortcut_profiles") {
+        if profiles.is_object() {
+            return ensure_profile_trigger_modes(profiles, legacy_recording_mode.as_deref());
+        }
+
+        // If array, convert to map
+        if let Some(arr) = profiles.as_array() {
+            let mut map = serde_json::Map::new();
+
+            // First element → dictate
+            if let Some(first) = arr.first() {
+                let dictate = convert_array_item_to_profile(
+                    first,
+                    None,
+                    profile_trigger_mode("dictate", legacy_recording_mode.as_deref()),
+                );
+                map.insert("dictate".to_string(), dictate);
+            } else {
+                map.insert(
+                    "dictate".to_string(),
+                    serde_json::json!({
+                        "hotkey": "Shift+Space",
+                        "trigger_mode": "hold",
+                        "action": { "Record": { "polish_template_id": null } }
+                    }),
+                );
+            }
+
+            // Second element → chat
+            if let Some(second) = arr.get(1) {
+                let chat = convert_array_item_to_profile(
+                    second,
+                    Some("filler"),
+                    profile_trigger_mode("chat", legacy_recording_mode.as_deref()),
+                );
+                map.insert("chat".to_string(), chat);
+            } else {
+                map.insert(
+                    "chat".to_string(),
+                    serde_json::json!({
+                        "hotkey": "",
+                        "trigger_mode": "toggle",
+                        "action": { "Record": { "polish_template_id": "filler" } }
+                    }),
+                );
+            }
+
+            // Third element → custom (if exists)
+            if let Some(third) = arr.get(2) {
+                let custom = convert_array_item_to_profile(
+                    third,
+                    None,
+                    profile_trigger_mode("custom", legacy_recording_mode.as_deref()),
+                );
+                map.insert("custom".to_string(), custom);
+            }
+
+            json["shortcut_profiles"] = serde_json::Value::Object(map);
+            tracing::info!("shortcut_profiles_migrated-array_to_map");
+            return true;
+        }
+    }
+
+    // No shortcut_profiles, create from old hotkey
+    let old_hotkey = json
+        .get("hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Shift+Space")
+        .to_string();
+
+    json["shortcut_profiles"] = serde_json::json!({
+        "dictate": {
+            "hotkey": old_hotkey,
+            "trigger_mode": profile_trigger_mode("dictate", legacy_recording_mode.as_deref()),
+            "action": { "Record": { "polish_template_id": null } }
+        },
+        "chat": {
+            "hotkey": "",
+            "trigger_mode": profile_trigger_mode("chat", legacy_recording_mode.as_deref()),
+            "action": { "Record": { "polish_template_id": "filler" } }
+        }
+    });
+
+    tracing::info!(hotkey = %old_hotkey, "shortcut_profiles_migrated-from_hotkey");
+    true
+}
+
+fn convert_array_item_to_profile(
+    item: &serde_json::Value,
+    default_template: Option<&str>,
+    trigger_mode: &str,
+) -> serde_json::Value {
+    let hotkey = item
+        .get("hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let template_id = item
+        .get("action")
+        .and_then(|a| a.get("Record"))
+        .and_then(|r| r.get("polish_template_id"))
+        .and_then(|t| t.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| default_template.map(|s| s.to_string()));
+
+    serde_json::json!({
+        "hotkey": hotkey,
+        "trigger_mode": trigger_mode,
+        "action": { "Record": { "polish_template_id": template_id } }
+    })
+}
+
+fn ensure_profile_trigger_modes(
+    profiles: &mut serde_json::Value,
+    legacy_recording_mode: Option<&str>,
+) -> bool {
+    let Some(map) = profiles.as_object_mut() else {
+        return false;
+    };
+
+    let mut migrated = false;
+    for key in ["dictate", "chat", "custom"] {
+        let Some(profile) = map.get_mut(key) else {
+            continue;
+        };
+        let Some(profile_object) = profile.as_object_mut() else {
+            continue;
+        };
+        if profile_object.contains_key("trigger_mode") {
+            continue;
+        }
+
+        profile_object.insert(
+            "trigger_mode".to_string(),
+            serde_json::Value::String(profile_trigger_mode(key, legacy_recording_mode).to_string()),
+        );
+        migrated = true;
+    }
+
+    migrated
+}
+
+fn profile_trigger_mode(profile_key: &str, legacy_recording_mode: Option<&str>) -> &'static str {
+    if let Some(recording_mode) = legacy_recording_mode {
+        if recording_mode.eq_ignore_ascii_case("hold") {
+            return "hold";
+        }
+        if recording_mode.eq_ignore_ascii_case("toggle") {
+            return "toggle";
+        }
+    }
+
+    match profile_key {
+        "dictate" => "hold",
+        "chat" | "custom" => "toggle",
+        _ => "hold",
+    }
+}
+
 pub fn load_settings_from_disk() -> AppSettings {
     let path = get_settings_path();
     if path.exists() {
         if let Ok(json) = fs::read_to_string(&path) {
-            // Try to parse and migrate if needed
             let mut json_value: serde_json::Value = match serde_json::from_str(&json) {
                 Ok(v) => v,
-                Err(_) => {
-                    // Fall back to direct parsing if JSON is invalid
-                    match serde_json::from_str::<AppSettings>(&json) {
-                        Ok(settings) => {
-                            tracing::info!(path = %path.display(), "settings_loaded");
-                            return settings;
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "settings_parse_failed");
-                            return AppSettings::default();
-                        }
+                Err(_) => match serde_json::from_str::<AppSettings>(&json) {
+                    Ok(settings) => {
+                        tracing::info!(path = %path.display(), "settings_loaded");
+                        return settings;
                     }
-                }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "settings_parse_failed");
+                        return AppSettings::default();
+                    }
+                },
             };
 
-            // Run migration
             let migrated_cloud = migrate_cloud_settings(&mut json_value);
             let migrated_model = validate_model_name(&mut json_value);
-            let migrated = migrated_cloud || migrated_model;
+            let migrated_profiles = migrate_to_profiles_map(&mut json_value);
+            let migrated = migrated_cloud || migrated_model || migrated_profiles;
 
-            // Parse into AppSettings
             match serde_json::from_value::<AppSettings>(json_value.clone()) {
                 Ok(settings) => {
                     tracing::info!(path = %path.display(), migrated = migrated, "settings_loaded-migrated");
 
-                    // Save migrated settings back to disk
                     if migrated {
                         if let Ok(pretty_json) = serde_json::to_string_pretty(&settings) {
                             let _ = fs::write(&path, pretty_json);
@@ -406,8 +623,13 @@ pub fn update_settings(
         match key.as_str() {
             "hotkey" => {
                 if let Some(v) = value.as_str() {
-                    settings.hotkey = v.to_string();
+                    settings.set_dictate_hotkey(v);
                     hotkey_to_register = Some(v.to_string());
+                }
+            }
+            "shortcut_profiles" => {
+                if let Ok(profiles) = serde_json::from_value::<ShortcutProfilesMap>(value.clone()) {
+                    settings.shortcut_profiles = profiles;
                 }
             }
             "recording_mode" => {
@@ -486,11 +708,6 @@ pub fn update_settings(
             "audio_device" => {
                 if let Some(v) = value.as_str() {
                     settings.audio_device = v.to_string();
-                }
-            }
-            "polish_enabled" => {
-                if let Some(v) = value.as_bool() {
-                    settings.polish_enabled = v;
                 }
             }
             "polish_system_prompt" => {
@@ -658,15 +875,19 @@ pub fn update_settings(
 
     if let Some(hotkey) = hotkey_to_register {
         if let Some(manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
-            // First unregister the old hotkey before registering new one
-            // This ensures the old hotkey is properly removed from the system
             tracing::info!("unregistering_old_hotkey");
-            if let Err(e) = manager.unregister_primary() {
+            if let Err(e) = manager.unregister_profile("dictate") {
                 tracing::warn!(error = %e, "old_hotkey_unregister_failed");
             }
 
-            // Now register the new hotkey
-            match manager.register_primary(&hotkey) {
+            let profile = crate::shortcut::ShortcutProfile {
+                hotkey: hotkey.clone(),
+                trigger_mode: state.settings.lock().shortcut_profiles.dictate.trigger_mode,
+                action: crate::shortcut::ShortcutAction::Record {
+                    polish_template_id: None,
+                },
+            };
+            match manager.register_profile("dictate", &profile) {
                 Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
                 Err(e) => tracing::error!(error = %e, "shortcut_registration_failed"),
             }

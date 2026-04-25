@@ -1,4 +1,6 @@
-use crate::shortcut::ShortcutState;
+use crate::shortcut::{
+    ShortcutAction, ShortcutProfile, ShortcutProfilesMap, ShortcutState, ShortcutTriggerMode,
+};
 use crate::state::app_state::AppState;
 use std::sync::atomic::Ordering;
 
@@ -12,7 +14,7 @@ pub enum ShortcutRecordingMode {
 pub struct PrimaryShortcutContext {
     pub capture_active: bool,
     pub is_recording: bool,
-    pub recording_mode: ShortcutRecordingMode,
+    pub trigger_mode: ShortcutRecordingMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,14 +24,89 @@ pub enum PrimaryShortcutAction {
     StopRecording,
 }
 
-pub fn primary_shortcut_context(state: &AppState, capture_active: bool) -> PrimaryShortcutContext {
+pub fn resolve_profile_template(profiles: &ShortcutProfilesMap, key: &str) -> Option<String> {
+    let profile = match key {
+        "dictate" => &profiles.dictate,
+        "chat" => &profiles.chat,
+        "custom" => profiles.custom.as_ref()?,
+        _ => return None,
+    };
+
+    match &profile.action {
+        ShortcutAction::Record { polish_template_id } => polish_template_id.clone(),
+    }
+}
+
+pub fn get_profile_by_key<'a>(
+    profiles: &'a ShortcutProfilesMap,
+    key: &str,
+) -> Option<&'a ShortcutProfile> {
+    match key {
+        "dictate" => Some(&profiles.dictate),
+        "chat" => Some(&profiles.chat),
+        "custom" => profiles.custom.as_ref(),
+        _ => None,
+    }
+}
+
+pub fn validate_hotkey_uniqueness(
+    profiles: &ShortcutProfilesMap,
+    hotkey: &str,
+    exclude_key: Option<&str>,
+) -> Result<(), String> {
+    if hotkey.is_empty() {
+        return Ok(());
+    }
+
+    let all_profiles: Vec<(&str, &ShortcutProfile)> =
+        vec![("dictate", &profiles.dictate), ("chat", &profiles.chat)]
+            .into_iter()
+            .chain(profiles.custom.as_ref().map(|p| ("custom", p)))
+            .collect();
+
+    for (key, profile) in all_profiles {
+        if exclude_key.is_none_or(|k| key != k) && profile.hotkey == hotkey {
+            return Err(format!(
+                "Hotkey '{}' is already used by profile '{}'",
+                hotkey, key
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn find_profile_key_by_hotkey<'a>(
+    profiles: &'a ShortcutProfilesMap,
+    hotkey: &str,
+) -> Option<&'a str> {
+    if hotkey.is_empty() {
+        return None;
+    }
+
+    if profiles.dictate.hotkey == hotkey {
+        return Some("dictate");
+    }
+    if profiles.chat.hotkey == hotkey {
+        return Some("chat");
+    }
+    if profiles.custom.as_ref().is_some_and(|p| p.hotkey == hotkey) {
+        return Some("custom");
+    }
+    None
+}
+
+pub fn primary_shortcut_context(
+    state: &AppState,
+    capture_active: bool,
+    profile: Option<&ShortcutProfile>,
+) -> PrimaryShortcutContext {
     let is_recording = state.is_recording.load(Ordering::SeqCst);
-    let recording_mode = ShortcutRecordingMode::from_setting(&state.settings.lock().recording_mode);
+    let trigger_mode = ShortcutRecordingMode::from_profile(profile);
 
     PrimaryShortcutContext {
         capture_active,
         is_recording,
-        recording_mode,
+        trigger_mode,
     }
 }
 
@@ -41,7 +118,7 @@ pub fn primary_shortcut_action(
         return PrimaryShortcutAction::Ignore;
     }
 
-    match context.recording_mode {
+    match context.trigger_mode {
         ShortcutRecordingMode::Hold => match (shortcut_state, context.is_recording) {
             (ShortcutState::Pressed, false) => PrimaryShortcutAction::StartRecording,
             (ShortcutState::Released, true) => PrimaryShortcutAction::StopRecording,
@@ -93,11 +170,11 @@ pub fn cancel_hotkey_release_unregister_owner(
 }
 
 impl ShortcutRecordingMode {
-    fn from_setting(recording_mode: &str) -> Self {
-        if recording_mode.eq_ignore_ascii_case("hold") {
-            ShortcutRecordingMode::Hold
-        } else {
-            ShortcutRecordingMode::Toggle
+    fn from_profile(profile: Option<&ShortcutProfile>) -> Self {
+        match profile.map(|item| item.trigger_mode) {
+            Some(ShortcutTriggerMode::Hold) => ShortcutRecordingMode::Hold,
+            Some(ShortcutTriggerMode::Toggle) => ShortcutRecordingMode::Toggle,
+            None => ShortcutRecordingMode::Hold,
         }
     }
 }
@@ -106,17 +183,18 @@ impl ShortcutRecordingMode {
 mod tests {
     use super::{
         cancel_hotkey_release_unregister_owner, capture_cancel_hotkey_release_owner,
-        primary_shortcut_action, should_unregister_cancel_hotkeys, PrimaryShortcutAction,
-        PrimaryShortcutContext, ShortcutRecordingMode,
+        primary_shortcut_action, primary_shortcut_context, should_unregister_cancel_hotkeys,
+        PrimaryShortcutAction, PrimaryShortcutContext, ShortcutRecordingMode,
     };
-    use crate::shortcut::ShortcutState;
+    use crate::shortcut::{ShortcutProfile, ShortcutState};
+    use crate::state::app_state::AppState;
 
     #[test]
     fn primary_shortcut_ignores_trigger_during_capture() {
         let context = PrimaryShortcutContext {
             capture_active: true,
             is_recording: false,
-            recording_mode: ShortcutRecordingMode::Toggle,
+            trigger_mode: ShortcutRecordingMode::Toggle,
         };
 
         assert_eq!(
@@ -130,12 +208,12 @@ mod tests {
         let idle_context = PrimaryShortcutContext {
             capture_active: false,
             is_recording: false,
-            recording_mode: ShortcutRecordingMode::Hold,
+            trigger_mode: ShortcutRecordingMode::Hold,
         };
         let recording_context = PrimaryShortcutContext {
             capture_active: false,
             is_recording: true,
-            recording_mode: ShortcutRecordingMode::Hold,
+            trigger_mode: ShortcutRecordingMode::Hold,
         };
 
         assert_eq!(
@@ -157,12 +235,12 @@ mod tests {
         let idle_context = PrimaryShortcutContext {
             capture_active: false,
             is_recording: false,
-            recording_mode: ShortcutRecordingMode::Toggle,
+            trigger_mode: ShortcutRecordingMode::Toggle,
         };
         let recording_context = PrimaryShortcutContext {
             capture_active: false,
             is_recording: true,
-            recording_mode: ShortcutRecordingMode::Toggle,
+            trigger_mode: ShortcutRecordingMode::Toggle,
         };
 
         assert_eq!(
@@ -211,5 +289,19 @@ mod tests {
         assert!(!should_unregister_cancel_hotkeys(Some(2), Some(1)));
         assert!(should_unregister_cancel_hotkeys(Some(2), Some(2)));
         assert!(should_unregister_cancel_hotkeys(Some(2), None));
+    }
+
+    #[test]
+    fn primary_shortcut_context_uses_profile_trigger_mode() {
+        let state = AppState::new();
+        {
+            let mut settings = state.settings.lock();
+            settings.recording_mode = "hold".to_string();
+        }
+        let profile = ShortcutProfile::default_chat();
+
+        let context = primary_shortcut_context(&state, false, Some(&profile));
+
+        assert_eq!(context.trigger_mode, ShortcutRecordingMode::Toggle);
     }
 }

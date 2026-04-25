@@ -13,6 +13,21 @@ Global keyboard shortcuts trigger recording from anywhere in the system. This sp
 
 Frontend does NOT validate hotkeys. Backend emits `hotkey-captured` event only when validation passes.
 
+## Default Shortcuts
+
+Two profiles with default hotkeys:
+
+| Profile | Hotkey | Behavior |
+|---------|--------|----------|
+| Dictate | `Cmd+Slash` | Raw transcription, no polish |
+| Chat | `Opt+Slash` | Transcription with polish template |
+
+**Why Cmd+Slash and Opt+Slash:**
+- `/` is rarely used as a system shortcut key
+- Easy to press with one hand
+- Different modifiers (Cmd vs Opt) distinguish the two modes
+- Both use the same key (`/`) for muscle memory consistency
+
 ## Valid Hotkey Combinations
 
 | Pattern | Valid | Reason |
