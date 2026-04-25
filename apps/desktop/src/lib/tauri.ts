@@ -111,7 +111,7 @@ export interface ShortcutProfile {
 
 export interface ShortcutProfilesMap {
   dictate: ShortcutProfile;
-  chat: ShortcutProfile;
+  riff: ShortcutProfile;
   custom?: ShortcutProfile;
 }
 

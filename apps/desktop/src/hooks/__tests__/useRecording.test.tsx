@@ -86,7 +86,7 @@ describe("useRecording", () => {
           trigger_mode: "hold",
           action: { Record: { polish_template_id: null } },
         },
-        chat: {
+        riff: {
           hotkey: "Opt+Slash",
           trigger_mode: "toggle",
           action: { Record: { polish_template_id: "filler" } },

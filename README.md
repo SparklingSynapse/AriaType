@@ -16,11 +16,10 @@ English | [简体中文](README-cn.md) | [日本語](README-ja.md) | [한국어]
 </div>
 
 > [!TIP]
-> **What's New in v0.3**
-> - **Retry failed transcriptions** – history entries that failed can now be retried with saved audio
-> - **Cancel with ESC** – press ESC during recording to cancel without creating invalid entries
-> - **More stable long recordings** – fixed truncation issues for extended sessions
-> - **Fn key support** – custom hotkeys now support Fn key combinations
+> **What's New in v0.4**
+> - **Riff profile** – speak freely, AI refines your words into clear, polished text
+> - **Three hotkey modes** – Dictate (raw), Riff (polished), Custom (your rules)
+> - **Per-profile polish templates** – each shortcut can use its own polish style
 
 ---
 

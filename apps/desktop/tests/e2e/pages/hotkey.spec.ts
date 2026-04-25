@@ -18,7 +18,7 @@ test('Hotkey Settings page displays profiles', async ({ page }) => {
   });
 });
 
-test('Hotkey profiles show Dictate and Chat sections', async ({ page }) => {
+test('Hotkey profiles show Dictate and Riff sections', async ({ page }) => {
   await page.goto('/hotkey');
   await page.waitForLoadState('networkidle');
 
@@ -27,7 +27,7 @@ test('Hotkey profiles show Dictate and Chat sections', async ({ page }) => {
   await expect(page.locator('[data-testid="hotkey-page"]')).toBeVisible();
 
   await expect(page.locator('[data-testid="profile-dictate"]')).toBeVisible();
-  await expect(page.locator('[data-testid="profile-chat"]')).toBeVisible();
+  await expect(page.locator('[data-testid="profile-riff"]')).toBeVisible();
 });
 
 test('Dictate profile shows Cmd+Slash hotkey', async ({ page }) => {
@@ -43,7 +43,7 @@ test('Dictate profile shows Cmd+Slash hotkey', async ({ page }) => {
   await expect(dictateSection.locator('text=/').or(dictateSection.locator('text=Slash'))).toBeVisible();
 });
 
-test('Chat profile shows Opt+Slash hotkey', async ({ page }) => {
+test('Riff profile shows Opt+Slash hotkey', async ({ page }) => {
   await page.goto('/hotkey');
   await page.waitForLoadState('networkidle');
 
@@ -51,8 +51,8 @@ test('Chat profile shows Opt+Slash hotkey', async ({ page }) => {
 
   await expect(page.locator('[data-testid="hotkey-page"]')).toBeVisible();
 
-  const chatSection = page.locator('[data-testid="profile-chat"]');
-  await expect(chatSection.locator('text=⌥')).toBeVisible();
+  const riffSection = page.locator('[data-testid="profile-riff"]');
+  await expect(riffSection.locator('text=⌥')).toBeVisible();
 });
 
 test('Create custom profile button visible when no custom', async ({ page }) => {
@@ -75,14 +75,14 @@ test('Recording mode section visible', async ({ page }) => {
   await expect(page.getByRole('radio', { name: 'Toggle' })).toBeVisible();
 });
 
-test('Chat profile has polish template selector', async ({ page }) => {
+test('Riff profile has polish template selector', async ({ page }) => {
   await page.goto('/hotkey');
   await page.waitForLoadState('networkidle');
 
   await dismissOnboardingIfPresent(page);
 
-  const chatSection = page.locator('[data-testid="profile-chat"]');
-  await expect(chatSection.getByText(/Template/i)).toBeVisible();
+  const riffSection = page.locator('[data-testid="profile-riff"]');
+  await expect(riffSection.getByText(/Template/i)).toBeVisible();
 });
 
 test('Dictate profile has no polish template selector', async ({ page }) => {

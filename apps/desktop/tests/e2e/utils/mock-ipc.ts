@@ -9,7 +9,7 @@ const DEFAULT_MOCK_DATA = {
   settings: {
     shortcut_profiles: {
       dictate: { hotkey: 'Cmd+Slash', trigger_mode: 'hold', action: { Record: { polish_template_id: null } } },
-      chat: { hotkey: 'Opt+Slash', trigger_mode: 'toggle', action: { Record: { polish_template_id: 'filler' } } },
+      riff: { hotkey: 'Opt+Slash', trigger_mode: 'toggle', action: { Record: { polish_template_id: 'filler' } } },
       custom: null,
     },
     recording_mode: 'hold',
@@ -37,7 +37,7 @@ const DEFAULT_MOCK_DATA = {
   },
   shortcutProfiles: {
     dictate: { hotkey: 'Cmd+Slash', trigger_mode: 'hold', action: { Record: { polish_template_id: null } } },
-    chat: { hotkey: 'Opt+Slash', trigger_mode: 'toggle', action: { Record: { polish_template_id: 'filler' } } },
+    riff: { hotkey: 'Opt+Slash', trigger_mode: 'toggle', action: { Record: { polish_template_id: 'filler' } } },
     custom: null,
   },
 };

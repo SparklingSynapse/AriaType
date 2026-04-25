@@ -16,11 +16,10 @@ AriaType - Entrada por voz con IA y codigo abierto | Una potente alternativa a T
 </div>
 
 > [!TIP]
-> **Novedades de v0.3**
-> - **Reintentar transcripciones fallidas** – las entradas fallidas del historial pueden reintentarse con audio guardado
-> - **Cancelar con ESC** – pulsa ESC durante la grabación para cancelar sin crear entradas inválidas
-> - **Grabaciones largas más estables** – problemas de truncamiento en sesiones largas corregidos
-> - **Soporte Fn key** – los shortcuts personalizados ahora soportan combinaciones con Fn
+> **Novedades de v0.4**
+> - **Modo Riff** – habla libremente, AI refina tus palabras en texto claro
+> - **Tres modos de hotkey** – Dictate (texto raw), Riff (refinado), Custom (tu estilo)
+> - **Plantillas por perfil** – cada shortcut puede usar su propio estilo de refinamiento
 
 ---
 

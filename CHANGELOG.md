@@ -2,11 +2,11 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## Unreleased
+## v0.4.0 (2026-04-25)
 
 ### Features
 
-- Update pill UI (7142874)
+- Implement multi-shortcut profiles and update UI (6814403)
 - Add changelog viewer in about page (0c72a43)
 - Add audio command boundary (b4e7a53)
 - Add single-instance plugin and handle silent recordings (a37e33c)

@@ -27,7 +27,7 @@ pub enum PrimaryShortcutAction {
 pub fn resolve_profile_template(profiles: &ShortcutProfilesMap, key: &str) -> Option<String> {
     let profile = match key {
         "dictate" => &profiles.dictate,
-        "chat" => &profiles.chat,
+        "riff" => &profiles.riff,
         "custom" => profiles.custom.as_ref()?,
         _ => return None,
     };
@@ -43,7 +43,7 @@ pub fn get_profile_by_key<'a>(
 ) -> Option<&'a ShortcutProfile> {
     match key {
         "dictate" => Some(&profiles.dictate),
-        "chat" => Some(&profiles.chat),
+        "riff" => Some(&profiles.riff),
         "custom" => profiles.custom.as_ref(),
         _ => None,
     }
@@ -59,7 +59,7 @@ pub fn validate_hotkey_uniqueness(
     }
 
     let all_profiles: Vec<(&str, &ShortcutProfile)> =
-        vec![("dictate", &profiles.dictate), ("chat", &profiles.chat)]
+        vec![("dictate", &profiles.dictate), ("riff", &profiles.riff)]
             .into_iter()
             .chain(profiles.custom.as_ref().map(|p| ("custom", p)))
             .collect();
@@ -86,8 +86,8 @@ pub fn find_profile_key_by_hotkey<'a>(
     if profiles.dictate.hotkey == hotkey {
         return Some("dictate");
     }
-    if profiles.chat.hotkey == hotkey {
-        return Some("chat");
+    if profiles.riff.hotkey == hotkey {
+        return Some("riff");
     }
     if profiles.custom.as_ref().is_some_and(|p| p.hotkey == hotkey) {
         return Some("custom");
@@ -298,7 +298,7 @@ mod tests {
             let mut settings = state.settings.lock();
             settings.recording_mode = "hold".to_string();
         }
-        let profile = ShortcutProfile::default_chat();
+        let profile = ShortcutProfile::default_riff();
 
         let context = primary_shortcut_context(&state, false, Some(&profile));
 

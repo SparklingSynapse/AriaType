@@ -163,8 +163,8 @@ export function HotkeyInput({ value, onChange, profileKey, placeholder, classNam
               case "dictate":
                 showErrorToast(t("hotkey.conflictDictate"));
                 break;
-              case "chat":
-                showErrorToast(t("hotkey.conflictChat"));
+              case "riff":
+                showErrorToast(t("hotkey.conflictRiff"));
                 break;
               case "custom":
                 showErrorToast(t("hotkey.conflictCustom"));
@@ -192,8 +192,8 @@ export function HotkeyInput({ value, onChange, profileKey, placeholder, classNam
             case "dictate":
               message = t("hotkey.conflictDictate");
               break;
-            case "chat":
-              message = t("hotkey.conflictChat");
+            case "riff":
+              message = t("hotkey.conflictRiff");
               break;
             case "custom":
               message = t("hotkey.conflictCustom");
