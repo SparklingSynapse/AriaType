@@ -46,6 +46,7 @@ AriaType는 macOS용 로컬 우선 음성 입력 앱입니다.
 - 영어/국제 언어는 `Whisper` 사용 – 더 넓은 언어 지원.
 - 말에 군더더기 많음? 전사 후 `Remove Fillers` 또는 `Make Concise` 적용.
 - 전문 용어 있음? 도메인과 용어집 미리 설정.
+- 클라우드 STT 설정은 [클라우드 STT 설정 가이드](https://github.com/joe223/AriaType/discussions/3) 참조 – API Key로 더 강력한 인식 활성화.
 
 ## 지원 플랫폼
 

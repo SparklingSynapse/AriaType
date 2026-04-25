@@ -46,6 +46,7 @@ Se queda en segundo plano y aparece justo cuando la necesitas. Mantienes pulsada
 - Para inglés/internacionales, usa `Whisper` – cobertura más amplia.
 - ¿Hablas con muletillas? Transcribe primero y luego aplica `Remove Fillers` o `Make Concise`.
 - ¿Términos técnicos? Configura dominio y glosario antes.
+- Configuración STT cloud: ver [Guía de configuración STT Cloud](https://github.com/joe223/AriaType/discussions/3) – activa reconocimiento más potente con tu API Key.
 
 ## Plataformas
 

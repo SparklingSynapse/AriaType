@@ -46,6 +46,7 @@ It stays in the background. When you want to type, hold a global hotkey, speak n
 - For English/international languages, start with `Whisper` – wider language coverage.
 - For casual speech, transcribe first then apply `Remove Fillers` or `Make Concise`.
 - For domain-specific terms, set glossary and output language in advance.
+- For cloud STT setup, see [Cloud STT Configuration Guide](https://github.com/joe223/AriaType/discussions/3) – BYO API key for stronger recognition.
 
 ## Platforms
 
