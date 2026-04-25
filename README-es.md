@@ -16,7 +16,7 @@ AriaType - Entrada por voz con IA y codigo abierto | Una potente alternativa a T
 </div>
 
 > [!TIP]
-> **Novedades de v0.4**
+> **Novedades de v0.4 (2026-04-25)**
 > - **Modo Riff** – habla libremente, AI refina tus palabras en texto claro
 > - **Tres modos de hotkey** – Dictate (texto raw), Riff (refinado), Custom (tu estilo)
 > - **Plantillas por perfil** – cada shortcut puede usar su propio estilo de refinamiento
