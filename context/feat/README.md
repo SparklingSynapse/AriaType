@@ -22,6 +22,13 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 | Website Homepage Redesign | 0.1.0 | Active | [erd.md](./website-homepage/0.1.0/prd/erd.md) |
 | Cloud Service Tab UI | 1.0.0 | Active | [erd.md](./cloud-service/1.0.0/prd/erd.md) |
 
+## Draft Features
+
+| Feature | Version | Status | Spec |
+|---------|---------|--------|------|
+| Ghost-Action | 0.1.0 | Draft (deferred) | [erd.md](./ghost-action/0.1.0/prd/erd.md) |
+| Ghost-Language | 0.1.0 | Draft (deferred) | [erd.md](./ghost-language/0.1.0/prd/erd.md) |
+
 ## Completed Features
 
 (None yet)

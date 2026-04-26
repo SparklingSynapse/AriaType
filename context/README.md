@@ -95,11 +95,20 @@
 
 Versioned feature specs with verification status. Each lives under `feat/<name>/<version>/prd/erd.md`.
 
+### Active
+
 | Feature | Version | Status |
 |---------|---------|--------|
 | [Home Dashboard Redesign](./feat/home-dashboard/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Website Homepage Redesign](./feat/website-homepage/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Cloud Service Tab UI](./feat/cloud-service/1.0.0/prd/erd.md) | 1.0.0 | Active |
+
+### Draft (Deferred)
+
+| Feature | Version | Status | Description |
+|---------|---------|--------|-------------|
+| [Ghost-Action](./feat/ghost-action/0.1.0/prd/erd.md) | 0.1.0 | Draft | macOS computer-use via Ghost OS MCP server |
+| [Ghost-Language](./feat/ghost-language/0.1.0/prd/erd.md) | 0.1.0 | Draft | Language habit learning for STT/Polish personalization |
 
 ---
 
