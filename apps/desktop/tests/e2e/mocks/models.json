@@ -1,8 +1,8 @@
 [
   {
     "name": "sense-voice-small",
-    "display_name": "SenseVoice Small (234M)",
-    "size_mb": 234,
+    "display_name": "SenseVoice Small (229M)",
+    "size_mb": 229,
     "filename": "sense-voice-small",
     "downloaded": true,
     "speed_score": 8,
@@ -11,8 +11,8 @@
   },
   {
     "name": "whisper-base",
-    "display_name": "Whisper Base (74M)",
-    "size_mb": 74,
+    "display_name": "Whisper Base (279M)",
+    "size_mb": 279,
     "filename": "whisper-base",
     "downloaded": false,
     "speed_score": 9,
@@ -21,8 +21,8 @@
   },
   {
     "name": "whisper-small",
-    "display_name": "Whisper Small (244M)",
-    "size_mb": 244,
+    "display_name": "Whisper Small (925M)",
+    "size_mb": 925,
     "filename": "whisper-small",
     "downloaded": false,
     "speed_score": 7,

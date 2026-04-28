@@ -59,6 +59,15 @@ pub fn clear_transcription_history(state: State<'_, AppState>) -> Result<(), Str
     store.clear_all()
 }
 
+#[tauri::command]
+pub fn get_history_count(
+    state: State<'_, AppState>,
+    filter: HistoryFilter,
+) -> Result<i64, String> {
+    let store = state.history_store.lock();
+    store.get_count(&filter)
+}
+
 /// Insert a history entry. Called internally from the transcription pipeline — not exposed to frontend.
 pub fn save_history_entry(
     store: &HistoryStore,

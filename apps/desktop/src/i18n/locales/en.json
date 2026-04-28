@@ -289,6 +289,7 @@
   "polishTemplates.editTitle": "Edit Template",
   "polishTemplates.emptyHint": "No custom templates yet. Create one to get started.",
   "polishTemplates.manageTemplates": "Manage Templates",
+  "polish.unavailableHint": "Enable Cloud Polish or download a local model first",
   "about.platforms.description": "Available on major desktop platforms",
   "about.feature.privacy.title": "Privacy First",
   "about.feature.privacy.description": "Privacy first, local first",
@@ -352,6 +353,7 @@
   "onboarding.permissions.description": "Grant the necessary permissions to use AriaType",
   "onboarding.model.title": "Download Model",
   "onboarding.model.description": "Download a speech recognition model for offline transcription",
+  "onboarding.model.downloading": "STT model downloading, please wait...",
   "onboarding.language.title": "Select Language",
   "onboarding.language.description": "Choose your preferred language for speech recognition",
   "onboarding.language.current": "Output Language",
@@ -434,5 +436,8 @@
   "history.error.failed": "Transcription failed",
   "history.retry": "Retry",
   "history.retrying": "Retrying...",
+  "history.clear.button": "Clear history",
+  "history.clear.success": "History cleared",
+  "history.clear.error": "Failed to clear history",
   "dashboard.stats.activeDays": "Active days"
 }

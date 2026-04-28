@@ -386,6 +386,57 @@ impl HistoryStore {
         Ok(())
     }
 
+    pub fn get_count(&self, filter: &HistoryFilter) -> Result<i64, String> {
+        let mut sql = String::from("SELECT COUNT(*) FROM transcription_history WHERE 1=1");
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut param_idx = 1;
+
+        if let Some(ref search) = filter.search {
+            sql.push_str(&format!(" AND final_text LIKE ?{param_idx}"));
+            param_values.push(Box::new(format!("%{search}%")));
+            param_idx += 1;
+        }
+
+        if let Some(ref engine) = filter.engine {
+            if engine == "local" {
+                sql.push_str(" AND is_cloud = 0");
+            } else if engine == "cloud" {
+                sql.push_str(" AND is_cloud = 1");
+            } else {
+                sql.push_str(&format!(" AND stt_engine = ?{param_idx}"));
+                param_values.push(Box::new(engine.clone()));
+                param_idx += 1;
+            }
+        }
+
+        if let Some(ref status) = filter.status {
+            sql.push_str(&format!(" AND status = ?{param_idx}"));
+            param_values.push(Box::new(status.clone()));
+            param_idx += 1;
+        }
+
+        if let Some(date_from) = filter.date_from {
+            sql.push_str(&format!(" AND created_at >= ?{param_idx}"));
+            param_values.push(Box::new(date_from));
+            param_idx += 1;
+        }
+
+        if let Some(date_to) = filter.date_to {
+            sql.push_str(&format!(" AND created_at <= ?{param_idx}"));
+            param_values.push(Box::new(date_to));
+        }
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+
+        let conn = self.conn.lock();
+        let count: i64 = conn
+            .query_row(&sql, params_refs.as_slice(), |row| row.get(0))
+            .map_err(|e| format!("failed to count history: {e}"))?;
+
+        Ok(count)
+    }
+
     pub fn get_dashboard_stats(&self) -> Result<DashboardStats, String> {
         let entries = self.load_dashboard_entries(None)?;
         Ok(Self::build_dashboard_stats(&entries))

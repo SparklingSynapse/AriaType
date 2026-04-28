@@ -109,7 +109,10 @@ fn should_swallow_event(
 // the global shortcut matcher state between real user key presses.
 fn should_ignore_self_generated_event(event_type: u32, source_pid: i64) -> bool {
     source_pid == i64::from(std::process::id())
-        && matches!(event_type, EVENT_TYPE_KEY_DOWN | EVENT_TYPE_KEY_UP | EVENT_TYPE_FLAGS_CHANGED)
+        && matches!(
+            event_type,
+            EVENT_TYPE_KEY_DOWN | EVENT_TYPE_KEY_UP | EVENT_TYPE_FLAGS_CHANGED
+        )
 }
 
 #[cfg(target_os = "macos")]
@@ -757,7 +760,11 @@ mod tests {
 
         state.record_fn_flags_change(KEYCODE_FN, false, released_at);
 
-        assert!(state.should_block_event(NX_SYSDEFINED, 0, released_at + Duration::from_millis(50)));
+        assert!(state.should_block_event(
+            NX_SYSDEFINED,
+            0,
+            released_at + Duration::from_millis(50)
+        ));
         assert!(state.should_block_event(
             EVENT_TYPE_KEY_DOWN,
             KEYCODE_FN_HIDDEN_TRIGGER,
@@ -788,11 +795,7 @@ mod tests {
             released_at + Duration::from_millis(50),
         ));
 
-        state.record_fn_flags_change(
-            KEYCODE_FN,
-            true,
-            released_at + Duration::from_millis(60),
-        );
+        state.record_fn_flags_change(KEYCODE_FN, true, released_at + Duration::from_millis(60));
         assert!(!state.should_block_event(
             NX_SYSDEFINED,
             0,
@@ -923,9 +926,11 @@ mod tests {
         assert!(!matcher_state.modifiers.function);
         assert_eq!(
             outcome,
-            Some(vec![crate::shortcut::matcher::MatcherEvent::ProfileReleased {
-                profile_id: "dictate".to_string(),
-            }])
+            Some(vec![
+                crate::shortcut::matcher::MatcherEvent::ProfileReleased {
+                    profile_id: "dictate".to_string(),
+                }
+            ])
         );
     }
 
@@ -946,7 +951,10 @@ mod tests {
             EVENT_TYPE_FLAGS_CHANGED,
             current_pid,
         ));
-        assert!(!should_ignore_self_generated_event(NX_SYSDEFINED, current_pid));
+        assert!(!should_ignore_self_generated_event(
+            NX_SYSDEFINED,
+            current_pid
+        ));
         assert!(!should_ignore_self_generated_event(EVENT_TYPE_KEY_DOWN, 0));
     }
 }

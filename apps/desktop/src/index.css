@@ -117,26 +117,27 @@ body {
 /* Toast styles - minimal, elegant, with smooth transitions */
 /* Toast styles - inverted design for better visibility */
 [data-sonner-toaster] {
-  /* Fixed colors - inverted from theme for prominence */
   --toast-bg-light: #1a1a1a;
   --toast-bg-dark: #ffffff;
   --toast-text-light: #ffffff;
   --toast-text-dark: #171717;
   --toast-shadow-light: 0 4px 20px rgba(0, 0, 0, 0.15);
   --toast-shadow-dark: 0 4px 20px rgba(0, 0, 0, 0.25);
-  /* Status colors - same in both modes */
   --toast-success: #22c55e;
   --toast-error: #ef4444;
   --toast-warning: #f59e0b;
   --toast-info: #3b82f6;
 }
 
-/* Hide sonner's default icon - we use CSS ::before instead */
-[data-sonner-toast] [data-icon] {
-  display: none;
+[data-sonner-toaster][data-position="top-center"] {
+  left: calc(50% + 112px) !important;
+  transform: translateX(-50%) !important;
 }
 
-/* Toast base - light mode: black background */
+[data-sonner-toast] {
+  width: max-content;
+}
+
 .toast-base {
   display: flex;
   align-items: center;
@@ -149,7 +150,6 @@ body {
   font-weight: 500;
   color: var(--toast-text-light);
   box-shadow: var(--toast-shadow-light);
-  min-width: 200px;
 }
 
 /* Toast base - dark mode: white background */
@@ -174,45 +174,6 @@ body {
   font-size: 12px;
   opacity: 0.8;
   letter-spacing: -0.01em;
-}
-
-/* Icon container - rounded, status-colored background with SVG icon */
-.toast-base::before {
-  content: "";
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background-size: 12px;
-  background-repeat: no-repeat;
-  background-position: center;
-}
-
-/* Success - green check icon */
-.toast-success::before {
-  background-color: var(--toast-success);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
-}
-
-/* Error - red X icon */
-.toast-error::before {
-  background-color: var(--toast-error);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E");
-}
-
-/* Warning - amber alert triangle icon */
-.toast-warning::before {
-  background-color: var(--toast-warning);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 2.29 21h16.14a2 2 0 0 0 1.72-3Z'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E");
-}
-
-/* Info - blue info circle icon */
-.toast-info::before {
-  background-color: var(--toast-info);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E");
 }
 
 

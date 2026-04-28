@@ -22,10 +22,11 @@ interface SelectProps {
   options: { value: string; label: string }[];
   className?: string;
   placeholder?: string;
+  disabled?: boolean;
 }
 
 const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
-  ({ className, options, value, onChange, placeholder }, ref) => {
+  ({ className, options, value, onChange, placeholder, disabled }, ref) => {
     const [open, setOpen] = React.useState(false);
     const [search, setSearch] = React.useState("");
     const searchRef = React.useRef<HTMLInputElement>(null);
@@ -65,6 +66,22 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
     const selectedLabel = selectedOption
       ? selectedOption.label
       : placeholder || value;
+
+    if (disabled) {
+      return (
+        <button
+          type="button"
+          disabled
+          className={cn(
+            "flex h-10 w-full items-center justify-between rounded-2xl border border-border bg-background px-4 py-2 text-sm opacity-50 cursor-not-allowed",
+            className
+          )}
+        >
+          <span>{selectedLabel}</span>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </button>
+      );
+    }
 
     const filtered = search
       ? options.filter(

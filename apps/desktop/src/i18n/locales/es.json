@@ -277,6 +277,7 @@
   "polishTemplates.editTitle": "Edit Template",
   "polishTemplates.emptyHint": "No custom templates yet. Create one to get started.",
   "polishTemplates.manageTemplates": "Manage Templates",
+  "polish.unavailableHint": "Enable Cloud Polish or download a local model first",
   "about.platforms.description": "Disponible en las principales plataformas de escritorio",
   "about.feature.privacy.title": "Privacidad primero",
   "about.feature.privacy.description": "Privacidad primero, local primero",
@@ -340,6 +341,7 @@
   "onboarding.permissions.description": "Conceda los permisos necesarios para usar AriaType",
   "onboarding.model.title": "Descargar modelo",
   "onboarding.model.description": "Descargue un modelo de reconocimiento de voz para transcripción sin conexión",
+  "onboarding.model.downloading": "Descargando modelo STT, espere...",
   "onboarding.language.title": "Seleccionar idioma",
   "onboarding.language.description": "Elija su idioma preferido para el reconocimiento de voz",
   "onboarding.language.current": "Idioma de salida",
@@ -435,5 +437,8 @@
   "general.polish.templateDesc": "Choose how transcribed text is polished",
   "dashboard.chart.titleRecent": "Cómo has usado",
   "dashboard.chart.titleFull": "Tu historial completo",
-  "dashboard.stats.activeDays": "Días activos"
+  "dashboard.stats.activeDays": "Días activos",
+  "history.clear.button": "Borrar historial",
+  "history.clear.success": "Historial borrado",
+  "history.clear.error": "Error al borrar"
 }

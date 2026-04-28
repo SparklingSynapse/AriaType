@@ -1279,10 +1279,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn runtime_probe_action_keeps_mounted_runner_on_probe_failure() {
-        assert_eq!(
-            runtime_probe_action(true, false),
-            RuntimeProbeAction::Keep
-        );
+        assert_eq!(runtime_probe_action(true, false), RuntimeProbeAction::Keep);
     }
 
     #[test]

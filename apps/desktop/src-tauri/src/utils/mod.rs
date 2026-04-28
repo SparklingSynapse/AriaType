@@ -5,5 +5,5 @@ pub mod paths;
 pub use download_config::{
     DownloadSource, DownloadSources, HuggingFaceSource, ModelDownloadConfig,
 };
-pub use downloader::{download, DownloadOptions, ProgressCallback};
+pub use downloader::{download, DownloadOptions, DownloadResult, ProgressCallback};
 pub use paths::AppPaths;

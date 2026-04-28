@@ -372,6 +372,8 @@ export interface HistoryFilter {
 export const historyCommands = {
   getHistory: (filter: HistoryFilter) =>
     invokeWithLogging<TranscriptionEntry[]>("get_transcription_history", { filter }),
+  getHistoryCount: (filter: HistoryFilter) =>
+    invokeWithLogging<number>("get_history_count", { filter }),
   getEntry: (id: string) =>
     invokeWithLogging<TranscriptionEntry | null>("get_transcription_entry", { id }),
   getDashboardStats: () =>

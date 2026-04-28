@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { useEventListeners } from "@/hooks/useEventListeners";
 import { Button } from "@/components/ui/button";
 import {
   ChevronRight,
@@ -44,8 +45,56 @@ function isSenseVoicePreferred(lang: string | undefined): boolean {
   return SENSEVOICE_PREFERRED_ONBOARDING.some((l) => lang.startsWith(l.split("-")[0]));
 }
 
+function getRecommendedModelName(lang: string): string {
+  if (isSenseVoicePreferred(lang)) {
+    return "sense-voice-small";
+  }
+  return "whisper-base";
+}
+
+const SUPPORTED_LANGUAGES = [
+  "en-US", "zh-CN", "zh-TW", "yue-CN", "es-ES", "fr-FR", "de-DE",
+  "ja-JP", "ko-KR", "pt-BR", "ru-RU", "ar-SA", "hi-IN", "it-IT",
+  "nl-NL", "pl-PL", "tr-TR", "vi-VN", "th-TH", "id-ID",
+];
+
+function detectSystemLanguage(): string {
+  const browserLang = navigator.language || navigator.languages?.[0] || "";
+  if (!browserLang) return "auto";
+
+  const baseLang = browserLang.split("-")[0];
+
+  const mappings: Record<string, string> = {
+    zh: browserLang.includes("Hant") || browserLang.includes("TW") || browserLang.includes("HK") || browserLang.includes("MO") ? "zh-TW" : "zh-CN",
+    yue: "yue-CN",
+    ja: "ja-JP",
+    ko: "ko-KR",
+    en: "en-US",
+    es: "es-ES",
+    fr: "fr-FR",
+    de: "de-DE",
+    pt: "pt-BR",
+    ru: "ru-RU",
+    ar: "ar-SA",
+    hi: "hi-IN",
+    it: "it-IT",
+    nl: "nl-NL",
+    pl: "pl-PL",
+    tr: "tr-TR",
+    vi: "vi-VN",
+    th: "th-TH",
+    id: "id-ID",
+  };
+
+  const mapped = mappings[baseLang];
+  if (mapped && SUPPORTED_LANGUAGES.includes(mapped)) {
+    return mapped;
+  }
+
+  return "auto";
+}
+
 const COMMON_LANGUAGES = [
-  { code: "auto", label: "Auto" },
   { code: "en-US", label: "English" },
   { code: "zh-CN", label: "Chinese (Simplified)" },
   { code: "zh-TW", label: "Chinese (Traditional)" },
@@ -66,6 +115,7 @@ const COMMON_LANGUAGES = [
   { code: "vi-VN", label: "Vietnamese" },
   { code: "th-TH", label: "Thai" },
   { code: "id-ID", label: "Indonesian" },
+  { code: "auto", label: "Auto" },
 ];
 
 type StepId =
@@ -175,6 +225,7 @@ function PermissionStep() {
             variant={micStatus === "granted" ? "outline" : "default"}
             onClick={handleMicPermission}
             disabled={micLoading || micStatus === "granted"}
+            className="w-20"
           >
             {micLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -216,6 +267,7 @@ function PermissionStep() {
             variant={axStatus === true ? "outline" : "default"}
             onClick={handleAxPermission}
             disabled={axLoading || axStatus === true}
+            className="w-20"
           >
             {axLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -283,20 +335,13 @@ function ModelStep({
   onSelectModel: (modelName: string) => void;
   onModelReadyChange: (isReady: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const [models, setModels] = useState<RecommendedModel[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
-  const [autoDownloadStarted, setAutoDownloadStarted] = useState(false);
-
-  const getRecommendedModelName = (lang: string): string => {
-    if (isSenseVoicePreferred(lang)) {
-      return "sense-voice-small";
-    }
-    return "whisper-base";
-  };
 
   const recommendedModelName = getRecommendedModelName(language);
 
-  // Fetch recommendations when language changes
+  // Fetch recommendations when component mounts or language changes
   useEffect(() => {
     modelCommands
       .recommendModelsByLanguage(language || "auto")
@@ -304,62 +349,56 @@ function ModelStep({
       .catch((err: unknown) => logger.error("failed_to_recommend_models", { error: String(err) }));
   }, [language]);
 
-  // Listen for download progress and completion
+  // Check if recommended model is already downloaded and start download if not
   useEffect(() => {
-    let unlistenProgress: (() => void) | undefined;
-    let unlistenComplete: (() => void) | undefined;
+    let mounted = true;
+    const modelName = getRecommendedModelName(language || "auto");
 
-    const setup = async () => {
-      unlistenProgress = await events.onModelDownloadProgress((data) => {
-        setProgressMap((prev) => ({ ...prev, [data.model]: data.progress }));
-      });
-      unlistenComplete = await events.onModelDownloadComplete(
-        async (modelName) => {
-          setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
-          modelCommands
-            .recommendModelsByLanguage(language || "auto")
-            .then(setModels)
-            .catch((err: unknown) => logger.error("failed_to_refresh_models_after_download", { error: String(err) }));
-const displayName = modelName === "sense-voice-small" ? "SenseVoice Small"
-            : modelName === "whisper-base" ? "Whisper Base"
-            : modelName === "whisper-small" ? "Whisper Small"
-            : modelName;
-           showToast(`${displayName} download complete`);
-        },
-      );
-    };
-    setup();
-
-    return () => {
-      unlistenProgress?.();
-      unlistenComplete?.();
-    };
-  }, [language]);
-
-  useEffect(() => {
-    if (autoDownloadStarted) return;
-    setAutoDownloadStarted(true);
-
-    const startDownloads = async () => {
-      const modelName = getRecommendedModelName(language || "auto");
+    const checkAndDownload = async () => {
       try {
         const isDownloaded = await modelCommands.isModelDownloaded(modelName);
+        if (!mounted) return;
+
         if (isDownloaded) {
           setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
         } else {
           await modelCommands.downloadModel(modelName);
         }
-      } catch (err) {
-        logger.error("failed_to_start_model_download", { modelName, error: String(err) });
+      } catch (err: unknown) {
+        // Backend returns error if already downloading - that's expected
+        const errorMsg = String(err);
+        if (!errorMsg.includes("already downloading") && mounted) {
+          logger.error("failed_to_start_model_download", { modelName, error: errorMsg });
+        }
       }
-      modelCommands
-        .recommendModelsByLanguage(language || "auto")
-        .then(setModels)
-        .catch((err: unknown) => logger.error("failed_to_refresh_models", { error: String(err) }));
     };
 
-    startDownloads();
-  }, [autoDownloadStarted, language]);
+    checkAndDownload();
+
+    return () => {
+      mounted = false;
+    };
+  }, [language]);
+
+  useEventListeners(async () => {
+    return [
+      await events.onModelDownloadProgress((data) => {
+        setProgressMap((prev) => ({ ...prev, [data.model]: data.progress }));
+      }),
+      await events.onModelDownloadComplete(async (modelName) => {
+        setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
+        modelCommands
+          .recommendModelsByLanguage(language || "auto")
+          .then(setModels)
+          .catch((err: unknown) => logger.error("failed_to_refresh_models_after_download", { error: String(err) }));
+        const displayName = modelName === "sense-voice-small" ? "SenseVoice Small"
+          : modelName === "whisper-base" ? "Whisper Base"
+          : modelName === "whisper-small" ? "Whisper Small"
+          : modelName;
+        showToast(`${displayName} download complete`);
+      }),
+    ];
+  }, [language]);
 
   useEffect(() => {
     onSelectModel(recommendedModelName);
@@ -395,8 +434,10 @@ const displayName = modelName === "sense-voice-small" ? "SenseVoice Small"
               </p>
             </div>
           </div>
-          <div className="flex items-center">
-            {(progressMap[recommendedModelName] === 100) ? null : (
+          <div className="flex items-center justify-center w-[18px] h-[18px]">
+            {progressMap[recommendedModelName] === 100 ? (
+              <Check className="w-[18px] h-[18px] text-green-500" />
+            ) : (
               <CircularProgress
                 progress={progressMap[recommendedModelName] ?? 0}
                 size={18}
@@ -405,6 +446,11 @@ const displayName = modelName === "sense-voice-small" ? "SenseVoice Small"
             )}
           </div>
         </div>
+        {progressMap[recommendedModelName] !== undefined && progressMap[recommendedModelName] < 100 && (
+          <p className="text-xs text-muted-foreground text-center">
+            {t("onboarding.model.downloading")}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -714,6 +760,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [isModelReady, setIsModelReady] = useState(false);
+  const hasAutoDetectedLanguage = useRef(false);
   const allSteps: Step[] = [
     {
       id: "permissions",
@@ -750,6 +797,20 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   const steps = allSteps;
 
   const handleNext = async () => {
+    if (current.id === "language") {
+      const language = settings?.stt_engine_language || "auto";
+      const modelName = getRecommendedModelName(language);
+      modelCommands.isModelDownloaded(modelName).then((isDownloaded) => {
+        if (!isDownloaded) {
+          modelCommands.downloadModel(modelName).catch((err: unknown) => {
+            const errorMsg = String(err);
+            if (!errorMsg.includes("already downloading")) {
+              logger.error("failed_to_start_model_download", { modelName, error: errorMsg });
+            }
+          });
+        }
+      });
+    }
     if (current.id === "model" && selectedModel) {
       const engineType = selectedModel?.startsWith("sense-voice")
         ? "sensevoice"
@@ -787,6 +848,19 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
       analytics.track(AnalyticsEvents.ONBOARDING_STARTED);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && !hasAutoDetectedLanguage.current) {
+      hasAutoDetectedLanguage.current = true;
+      if (!settings?.stt_engine_language || settings.stt_engine_language === "auto") {
+        const detected = detectSystemLanguage();
+        if (detected !== "auto") {
+          updateSetting("stt_engine_language", detected)
+            .catch((err: unknown) => logger.error("failed_to_set_detected_language", { error: String(err) }));
+        }
+      }
+    }
+  }, [isOpen, settings?.stt_engine_language, updateSetting]);
 
   useEffect(() => {
     if (currentStep >= steps.length) {

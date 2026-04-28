@@ -289,6 +289,7 @@
   "polishTemplates.editTitle": "编辑模板",
   "polishTemplates.emptyHint": "还没有自定义模板，创建一个开始使用吧。",
   "polishTemplates.manageTemplates": "管理模板",
+  "polish.unavailableHint": "请先启用云端润色或下载本地模型",
   "about.platforms.description": "支持主流桌面平台",
   "about.feature.privacy.title": "隐私优先",
   "about.feature.privacy.description": "隐私优先，本地优先",
@@ -352,6 +353,7 @@
   "onboarding.permissions.description": "授权 AriaType 所需的系统权限",
   "onboarding.model.title": "下载模型",
   "onboarding.model.description": "下载语音识别模型以进行离线转写",
+  "onboarding.model.downloading": "STT模型下载中，请稍等...",
   "onboarding.language.title": "选择语言",
   "onboarding.language.description": "选择语音识别的输出语言",
   "onboarding.language.current": "输出语言",
@@ -435,5 +437,8 @@
   "history.error.failed": "转写失败",
   "history.retry": "重试",
   "history.retrying": "重试中...",
+  "history.clear.button": "清空历史",
+  "history.clear.success": "历史已清空",
+  "history.clear.error": "清空失败",
   "dashboard.stats.activeDays": "活跃天数"
 }

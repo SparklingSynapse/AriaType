@@ -6,6 +6,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
+- Optimize onboarding guide (83e79d8)
 - Optimize text inject performance (c92c4ce)
 
 ## v0.4.0 (2026-04-25)

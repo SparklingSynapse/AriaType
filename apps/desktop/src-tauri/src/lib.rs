@@ -262,6 +262,7 @@ pub fn run() {
             history::get_dashboard_stats,
             history::get_daily_usage,
             history::get_engine_usage,
+            history::get_history_count,
             history::delete_transcription_entry,
             history::clear_transcription_history,
             history::retry_transcription,

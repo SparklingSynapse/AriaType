@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useConfirm } from "@/components/ui/confirm";
 import { events, historyCommands, TranscriptionEntry, HistoryFilter } from "@/lib/tauri";
 import { showToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ import {
   Copy,
   AlertCircle,
   RotateCcw,
+  Trash2,
 } from "lucide-react";
 import { logger } from "@/lib/logger";
 
@@ -153,6 +155,7 @@ function EmptyState({ t }: EmptyStateProps) {
 
 export function HistoryPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [entries, setEntries] = useState<TranscriptionEntry[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
@@ -181,12 +184,13 @@ export function HistoryPage() {
         filter.engine = "cloud";
       }
 
-      const [result] = await Promise.all([
+      const [result, count] = await Promise.all([
         historyCommands.getHistory(filter),
+        historyCommands.getHistoryCount(filter),
       ]);
       
       setEntries(result);
-      setTotalCount(result.length === PAGE_SIZE ? (currentPage + 2) * PAGE_SIZE : currentPage * PAGE_SIZE + result.length);
+      setTotalCount(count);
     } catch (err) {
       logger.error("failed_to_fetch_history", { error: String(err) });
     } finally {
@@ -296,8 +300,31 @@ export function HistoryPage() {
   };
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-  const hasNextPage = entries.length === PAGE_SIZE;
+  const hasNextPage = currentPage < totalPages - 1;
   const hasPrevPage = currentPage > 0;
+
+  const handleClearHistory = useCallback(async () => {
+    const confirmed = await confirm({
+      title: t("history.clearAll"),
+      description: t("history.clearAllConfirm"),
+      confirmText: t("history.confirmDelete"),
+      cancelText: t("history.cancel"),
+      variant: "danger",
+    });
+    
+    if (!confirmed) return;
+    
+    try {
+      await historyCommands.clearAll();
+      setEntries([]);
+      setTotalCount(0);
+      setCurrentPage(0);
+      showToast(t("history.clear.success"));
+    } catch (err) {
+      logger.error("failed_to_clear_history", { error: String(err) });
+      showToast(t("history.clear.error"));
+    }
+  }, [t, confirm]);
 
   const engineFilters: { value: EngineFilter; label: string }[] = useMemo(() => [
     { value: "all", label: t("history.filter.all") },
@@ -408,6 +435,20 @@ export function HistoryPage() {
               <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           </div>
+        </div>
+      )}
+
+      {!isLoading && totalCount > 0 && (
+        <div className="flex justify-end mt-8 pt-4 border-t border-border/30">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearHistory}
+            className="text-muted-foreground hover:text-destructive text-xs gap-1"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t("history.clear.button")}
+          </Button>
         </div>
       )}
     </div>

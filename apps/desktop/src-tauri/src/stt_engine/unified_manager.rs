@@ -427,9 +427,9 @@ impl UnifiedEngineManager {
                 }))
                 .with_model_name(model_name);
 
-            let path = download(options).await?;
-            completed_bytes.fetch_add(file_size_bytes, std::sync::atomic::Ordering::Relaxed);
-            last_output_path = Some(path);
+            let result = download(options).await?;
+            completed_bytes.fetch_add(result.bytes, std::sync::atomic::Ordering::Relaxed);
+            last_output_path = Some(result.path);
         }
 
         let output_path = last_output_path.unwrap_or(model_subdir);
@@ -542,10 +542,10 @@ impl UnifiedEngineManager {
             .with_cancel_flag(cancel_flag)
             .with_model_name("silero-vad");
 
-        let path = download(options).await?;
+        let result = download(options).await?;
 
-        info!(path = ?path, "vad_model_downloaded");
-        Ok(path)
+        info!(path = ?result.path, bytes = result.bytes, "vad_model_downloaded");
+        Ok(result.path)
     }
 
     pub async fn ensure_vad_model(&self) -> Result<PathBuf, String> {

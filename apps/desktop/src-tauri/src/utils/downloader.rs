@@ -10,6 +10,11 @@ use tracing::{debug, error, info, warn};
 
 const PROGRESS_LOG_THRESHOLD_PERCENT: u32 = 10;
 
+pub struct DownloadResult {
+    pub path: PathBuf,
+    pub bytes: u64,
+}
+
 /// Progress callback type for download operations
 pub type ProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
 
@@ -73,7 +78,7 @@ impl DownloadOptions {
 }
 
 /// Download a file with automatic fallback support
-pub async fn download(options: DownloadOptions) -> Result<PathBuf, String> {
+pub async fn download(options: DownloadOptions) -> Result<DownloadResult, String> {
     if options.urls.is_empty() {
         return Err("No download URLs provided".to_string());
     }
@@ -124,14 +129,15 @@ pub async fn download(options: DownloadOptions) -> Result<PathBuf, String> {
         )
         .await
         {
-            Ok(path) => {
+            Ok(result) => {
                 info!(
                     model = model_name,
                     attempt = attempt_num,
-                    output_path = ?path,
+                    output_path = ?result.path,
+                    bytes = result.bytes,
                     "download_completed"
                 );
-                return Ok(path);
+                return Ok(result);
             }
             Err(e) => {
                 if e == "cancelled" {
@@ -169,7 +175,7 @@ async fn download_single(
     cancel_flag: Option<&Arc<AtomicBool>>,
     progress_callback: Option<&ProgressCallback>,
     _model_name: &str,
-) -> Result<PathBuf, String> {
+) -> Result<DownloadResult, String> {
     let start_time = Instant::now();
     let filename = output_path
         .file_name()
@@ -323,7 +329,10 @@ async fn download_single(
         "download_completed_successfully"
     );
 
-    Ok(output_path.to_path_buf())
+    Ok(DownloadResult {
+        path: output_path.to_path_buf(),
+        bytes: downloaded,
+    })
 }
 
 fn cleanup_partial_download(output_path: &Path) {
@@ -356,5 +365,5 @@ where
         .with_cancel_flag(cancel_flag)
         .with_progress_callback(Arc::new(progress_callback));
 
-    download(options).await
+    download(options).await.map(|r| r.path)
 }

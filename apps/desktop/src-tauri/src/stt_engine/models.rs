@@ -31,19 +31,19 @@ pub const SENSEVOICE_PREFERRED_CODES: &[&str] = &["zh", "yue", "ja", "ko", "en"]
 /// SenseVoice Small - optimized for CJK + English
 pub const SENSE_VOICE_SMALL: ModelDefinition = ModelDefinition {
     name: "sense-voice-small",
-    display_name: "SenseVoice Small (234M)",
-    size_mb: 234,
+    display_name: "SenseVoice Small (229M)",
+    size_mb: 229,
     speed_score: 8,
     accuracy_score: 9,
     engine_type: EngineType::SenseVoice,
     files: &[
         &ModelFile {
             filename: "model.int8.onnx",
-            size_mb: 234,
+            size_mb: 228,
         },
         &ModelFile {
             filename: "tokens.txt",
-            size_mb: 0,
+            size_mb: 1,
         },
     ],
     prefer_lang: &["zh", "yue", "ja", "ko", "en"],
@@ -53,23 +53,23 @@ pub const SENSE_VOICE_SMALL: ModelDefinition = ModelDefinition {
 /// Whisper Base - general purpose for all languages
 pub const WHISPER_BASE: ModelDefinition = ModelDefinition {
     name: "whisper-base",
-    display_name: "Whisper Base (74M)",
-    size_mb: 74,
+    display_name: "Whisper Base (279M)",
+    size_mb: 279,
     speed_score: 9,
     accuracy_score: 7,
     engine_type: EngineType::Whisper,
     files: &[
         &ModelFile {
             filename: "base-encoder.onnx",
-            size_mb: 37,
+            size_mb: 91,
         },
         &ModelFile {
             filename: "base-decoder.onnx",
-            size_mb: 37,
+            size_mb: 187,
         },
         &ModelFile {
             filename: "base-tokens.txt",
-            size_mb: 0,
+            size_mb: 1,
         },
     ],
     prefer_lang: &[], // Empty = all languages
@@ -79,23 +79,23 @@ pub const WHISPER_BASE: ModelDefinition = ModelDefinition {
 /// Whisper Small - better accuracy for all languages
 pub const WHISPER_SMALL: ModelDefinition = ModelDefinition {
     name: "whisper-small",
-    display_name: "Whisper Small (244M)",
-    size_mb: 244,
+    display_name: "Whisper Small (925M)",
+    size_mb: 925,
     speed_score: 7,
     accuracy_score: 8,
     engine_type: EngineType::Whisper,
     files: &[
         &ModelFile {
             filename: "small-encoder.onnx",
-            size_mb: 122,
+            size_mb: 391,
         },
         &ModelFile {
             filename: "small-decoder.onnx",
-            size_mb: 122,
+            size_mb: 533,
         },
         &ModelFile {
             filename: "small-tokens.txt",
-            size_mb: 0,
+            size_mb: 1,
         },
     ],
     prefer_lang: &[], // Empty = all languages

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { useEventListeners } from "@/hooks/useEventListeners";
 import {
   settingsCommands,
   modelCommands,
@@ -59,18 +60,9 @@ export function ModelSettings() {
     });
   }, [settings === null, loadModels, loadPolishModels]);
 
-  useEffect(() => {
-    let unlistenComplete: (() => void) | undefined;
-    let unlistenCancelled: (() => void) | undefined;
-    let unlistenProgress: (() => void) | undefined;
-    let unlistenDeleted: (() => void) | undefined;
-    let unlistenPolishProgress: (() => void) | undefined;
-    let unlistenPolishComplete: (() => void) | undefined;
-    let unlistenPolishCancelled: (() => void) | undefined;
-    let unlistenPolishDeleted: (() => void) | undefined;
-
-    const setup = async () => {
-      unlistenComplete = await events.onModelDownloadComplete((model) => {
+  useEventListeners(async () => {
+    return [
+      await events.onModelDownloadComplete((model) => {
         setDownloading((prev) => {
           const next = new Set(prev);
           next.delete(model);
@@ -82,9 +74,8 @@ export function ModelSettings() {
           return next;
         });
         loadModels();
-      });
-
-      unlistenCancelled = await events.onModelDownloadCancelled((model) => {
+      }),
+      await events.onModelDownloadCancelled((model) => {
         setDownloading((prev) => {
           const next = new Set(prev);
           next.delete(model);
@@ -95,71 +86,43 @@ export function ModelSettings() {
           delete next[model];
           return next;
         });
-      });
-
-      unlistenProgress = await events.onModelDownloadProgress((data) => {
+      }),
+      await events.onModelDownloadProgress((data) => {
         setDownloadProgress((prev) => ({
           ...prev,
           [data.model]: data.progress,
         }));
-      });
-
-      unlistenDeleted = await events.onModelDeleted(() => {
-        loadModels();
-      });
-
-      unlistenPolishProgress = await events.onPolishModelDownloadProgress(
-        (data) => {
-          if (data.model_id === polishDownloadingId) {
-            setPolishProgress(data.progress);
-          }
-        },
-      );
-
-      unlistenPolishComplete = await events.onPolishModelDownloadComplete(
-        (modelId) => {
-          if (modelId === polishDownloadingId) {
-            setPolishDownloadingId(null);
-            setPolishProgress(null);
-            loadPolishModels();
-            setSelectedPolishModel((prev) => {
-              if (!prev) {
-                settingsCommands
-                  .updateSettings("polish_model", modelId)
-                  .catch((err: unknown) => logger.error("failed_to_update_polish_model", { error: String(err) }));
-                return modelId;
-              }
-              return prev;
-            });
-          }
-        },
-      );
-
-      unlistenPolishCancelled = await events.onPolishModelDownloadCancelled(
-        (modelId) => {
-          if (modelId === polishDownloadingId) {
-            setPolishDownloadingId(null);
-            setPolishProgress(null);
-          }
-        },
-      );
-
-      unlistenPolishDeleted = await events.onPolishModelDeleted(() => {
-        loadPolishModels();
-      });
-    };
-    setup();
-
-    return () => {
-      unlistenComplete?.();
-      unlistenCancelled?.();
-      unlistenProgress?.();
-      unlistenDeleted?.();
-      unlistenPolishProgress?.();
-      unlistenPolishComplete?.();
-      unlistenPolishCancelled?.();
-      unlistenPolishDeleted?.();
-    };
+      }),
+      await events.onModelDeleted(() => loadModels()),
+      await events.onPolishModelDownloadProgress((data) => {
+        if (data.model_id === polishDownloadingId) {
+          setPolishProgress(data.progress);
+        }
+      }),
+      await events.onPolishModelDownloadComplete((modelId) => {
+        if (modelId === polishDownloadingId) {
+          setPolishDownloadingId(null);
+          setPolishProgress(null);
+          loadPolishModels();
+          setSelectedPolishModel((prev) => {
+            if (!prev) {
+              settingsCommands
+                .updateSettings("polish_model", modelId)
+                .catch((err: unknown) => logger.error("failed_to_update_polish_model", { error: String(err) }));
+              return modelId;
+            }
+            return prev;
+          });
+        }
+      }),
+      await events.onPolishModelDownloadCancelled((modelId) => {
+        if (modelId === polishDownloadingId) {
+          setPolishDownloadingId(null);
+          setPolishProgress(null);
+        }
+      }),
+      await events.onPolishModelDeleted(() => loadPolishModels()),
+    ];
   }, [loadModels, loadPolishModels, polishDownloadingId]);
 
   const handleDownload = async (modelName: string) => {

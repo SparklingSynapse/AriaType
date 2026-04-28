@@ -111,7 +111,14 @@ pub(super) async fn maybe_polish_transcription_text(
             (accumulated_text, 0)
         }
         Some(template_id) => {
-            let (system_prompt, language, provider_type, cloud_config, polish_model_id, cloud_polish_enabled) = {
+            let (
+                system_prompt,
+                language,
+                provider_type,
+                cloud_config,
+                polish_model_id,
+                cloud_polish_enabled,
+            ) = {
                 let settings = state.settings.lock();
 
                 let system_prompt: String = get_template_by_id(&template_id)
@@ -149,46 +156,46 @@ pub(super) async fn maybe_polish_transcription_text(
             if cloud_polish_enabled {
                 if let Some(cfg) = cloud_config {
                     if !cfg.api_key.is_empty() && !cfg.model.is_empty() {
-                    info!(task_id, provider = %provider_type, model = %cfg.model, "polish_started-cloud");
+                        info!(task_id, provider = %provider_type, model = %cfg.model, "polish_started-cloud");
 
-                    let request = crate::polish_engine::PolishRequest::new(
-                        accumulated_text.clone(),
-                        system_prompt,
-                        language,
-                    );
+                        let request = crate::polish_engine::PolishRequest::new(
+                            accumulated_text.clone(),
+                            system_prompt,
+                            language,
+                        );
 
-                    event_target.emit_polishing(task_id);
+                        event_target.emit_polishing(task_id);
 
-                    return match state
-                        .polish_manager
-                        .polish_cloud(
-                            request,
-                            &provider_type,
-                            &cfg.api_key,
-                            &cfg.base_url,
-                            &cfg.model,
-                            cfg.enable_thinking,
-                        )
-                        .await
-                    {
-                        Ok(result) if !result.text.is_empty() => {
-                            info!(
-                                task_id,
-                                chars = result.text.len(),
-                                polish_ms = result.total_ms,
-                                "polish_completed-cloud"
-                            );
-                            (result.text, result.total_ms)
-                        }
-                        Ok(_) => {
-                            warn!(task_id, provider = %provider_type, "polish_empty_result-cloud_using_raw");
-                            (accumulated_text, 0)
-                        }
-                        Err(e) => {
-                            warn!(task_id, provider = %provider_type, error = %e, "polish_failed-cloud_using_raw");
-                            (accumulated_text, 0)
-                        }
-                    };
+                        return match state
+                            .polish_manager
+                            .polish_cloud(
+                                request,
+                                &provider_type,
+                                &cfg.api_key,
+                                &cfg.base_url,
+                                &cfg.model,
+                                cfg.enable_thinking,
+                            )
+                            .await
+                        {
+                            Ok(result) if !result.text.is_empty() => {
+                                info!(
+                                    task_id,
+                                    chars = result.text.len(),
+                                    polish_ms = result.total_ms,
+                                    "polish_completed-cloud"
+                                );
+                                (result.text, result.total_ms)
+                            }
+                            Ok(_) => {
+                                warn!(task_id, provider = %provider_type, "polish_empty_result-cloud_using_raw");
+                                (accumulated_text, 0)
+                            }
+                            Err(e) => {
+                                warn!(task_id, provider = %provider_type, error = %e, "polish_failed-cloud_using_raw");
+                                (accumulated_text, 0)
+                            }
+                        };
                     }
                 }
             }

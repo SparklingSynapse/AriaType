@@ -1,18 +1,34 @@
 {
   "shortcut_profiles": {
     "dictate": {
-      "hotkey": "Cmd+Slash",
+      "hotkey": "Fn",
       "trigger_mode": "hold",
-      "action": { "Record": { "polish_template_id": null } }
+      "action": {
+        "Record": {
+          "polish_template_id": null
+        }
+      }
     },
-    "chat": {
-      "hotkey": "Opt+Slash",
+    "riff": {
+      "hotkey": "CmdRight+Slash",
       "trigger_mode": "toggle",
-      "action": { "Record": { "polish_template_id": "filler" } }
+      "action": {
+        "Record": {
+          "polish_template_id": "concise"
+        }
+      }
     },
-    "custom": null
+    "custom": {
+      "hotkey": "OptRight+Slash",
+      "trigger_mode": "hold",
+      "action": {
+        "Record": {
+          "polish_template_id": "filler"
+        }
+      }
+    }
   },
-  "recording_mode": "toggle",
+  "recording_mode": "hold",
   "model": "sense-voice-small",
   "stt_engine": "sensevoice",
   "pill_position": "bottom-center",
@@ -20,11 +36,11 @@
   "auto_start": false,
   "gpu_acceleration": true,
   "language": "auto",
-  "stt_engine_language": "zh-CN",
+  "stt_engine_language": "en-US",
   "beep_on_record": true,
   "audio_device": "default",
-  "polish_system_prompt": "Polish text minimally. Keep the SAME language as input.",
-  "polish_model": "lfm2.5-1.2b",
+  "polish_system_prompt": "Polish text minimally. Keep the SAME language as input.\n\nRULES:\n1. SAME LANGUAGE: Chinese → Chinese, English → English\n2. Remove filler words: um, uh, 嗯, 那个\n3. Fix context-inconsistent homophones and phonetic errors caused by Speech-to-Text (STT) misrecognition. Deduce the correct word based on the semantic context.\n4. Fix obvious typos and grammar\n5. Keep original meaning\n6. If already correct, output unchanged\n\nExamples:\n- \"Um, I think this is good\" → \"I think this is good\"\n- \"嗯，我觉得这个挺好的\" → \"我觉得这个挺好的\"\n- \"这个分析错误可能是由于标点符号引起的\" → \"这个分词错误可能是由于标点符号引起的\"\n- \"The function works\" → \"The function works\" (no change)\n\nOutput ONLY the polished text.",
+  "polish_model": "",
   "theme_mode": "light",
   "stt_engine_initial_prompt": "",
   "model_resident": true,
@@ -34,14 +50,14 @@
   "stt_engine_work_domain_prompt": "",
   "stt_engine_work_subdomain": "",
   "stt_engine_user_glossary": "",
-  "analytics_opt_in": true,
+  "analytics_opt_in": false,
   "cloud_stt_enabled": true,
-  "active_cloud_stt_provider": "aliyun-stream",
+  "active_cloud_stt_provider": "volcengine-streaming",
   "cloud_stt_configs": {
     "aliyun-stream": {
       "enabled": false,
       "provider_type": "aliyun-stream",
-      "api_key": "sk-test-key",
+      "api_key": "sk-7ca23c53a35e460a8e7e5446d2acea9b",
       "app_id": "",
       "base_url": "",
       "model": "qwen3-asr-flash-realtime",
@@ -50,26 +66,26 @@
     "volcengine-streaming": {
       "enabled": false,
       "provider_type": "volcengine-streaming",
-      "api_key": "test-key",
+      "api_key": "GpAuiGfPO81261kQejx0m-BRy2wmM3_-",
       "app_id": "6424023473",
       "base_url": "",
       "model": "",
       "language": ""
     }
   },
-  "cloud_polish_enabled": false,
+  "cloud_polish_enabled": true,
   "active_cloud_polish_provider": "anthropic",
   "cloud_polish_configs": {
     "anthropic": {
       "enabled": false,
       "provider_type": "anthropic",
-      "api_key": "",
-      "base_url": "",
-      "model": "",
+      "api_key": "sk-2f3a1c488470491fb75aa43f3b9c3e6e",
+      "base_url": "https://api.deepseek.com/anthropic",
+      "model": "deepseek-v4-flash",
       "enable_thinking": false
     }
   },
-  "vad_enabled": true,
+  "vad_enabled": false,
   "stay_in_tray": false,
   "polish_custom_templates": []
 }

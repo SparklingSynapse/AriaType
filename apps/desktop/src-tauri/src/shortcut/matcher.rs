@@ -352,7 +352,10 @@ mod tests {
         profiles.insert("dictate".to_string(), parse_hotkey_pattern("Fn").unwrap());
         let snapshot = MatcherSnapshot {
             profiles,
-            cancel: vec![parse_hotkey_pattern("Escape").unwrap(), parse_hotkey_pattern("Fn+Escape").unwrap()],
+            cancel: vec![
+                parse_hotkey_pattern("Escape").unwrap(),
+                parse_hotkey_pattern("Fn+Escape").unwrap(),
+            ],
             capture_active: false,
         };
         let mut state = MatcherState::default();

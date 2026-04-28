@@ -1,13 +1,29 @@
 {
   "dictate": {
-    "hotkey": "Cmd+Slash",
+    "hotkey": "Fn",
     "trigger_mode": "hold",
-    "action": { "Record": { "polish_template_id": null } }
+    "action": {
+      "Record": {
+        "polish_template_id": null
+      }
+    }
   },
-  "chat": {
-    "hotkey": "Opt+Slash",
+  "riff": {
+    "hotkey": "CmdRight+Slash",
     "trigger_mode": "toggle",
-    "action": { "Record": { "polish_template_id": "filler" } }
+    "action": {
+      "Record": {
+        "polish_template_id": "concise"
+      }
+    }
   },
-  "custom": null
+  "custom": {
+    "hotkey": "OptRight+Slash",
+    "trigger_mode": "hold",
+    "action": {
+      "Record": {
+        "polish_template_id": "filler"
+      }
+    }
+  }
 }

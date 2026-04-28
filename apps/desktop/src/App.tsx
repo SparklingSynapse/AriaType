@@ -23,18 +23,67 @@ function App() {
         expand={false}
         richColors={false}
         closeButton={false}
-        duration={2000}
         offset={16}
+        icons={{
+          success: (
+            <span
+              className="flex items-center justify-center w-[22px] h-[22px] rounded-full bg-green-500 shrink-0"
+              style={{
+                backgroundSize: "12px",
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "center",
+                backgroundImage:
+                  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E\")",
+              }}
+            />
+          ),
+          error: (
+            <span
+              className="flex items-center justify-center w-[22px] h-[22px] rounded-full bg-red-500 shrink-0"
+              style={{
+                backgroundSize: "12px",
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "center",
+                backgroundImage:
+                  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E\")",
+              }}
+            />
+          ),
+          warning: (
+            <span
+              className="flex items-center justify-center w-[22px] h-[22px] rounded-full bg-amber-500 shrink-0"
+              style={{
+                backgroundSize: "12px",
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "center",
+                backgroundImage:
+                  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 2.29 21h16.14a2 2 0 0 0 1.72-3Z'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E\")",
+              }}
+            />
+          ),
+          info: (
+            <span
+              className="flex items-center justify-center w-[22px] h-[22px] rounded-full bg-blue-500 shrink-0"
+              style={{
+                backgroundSize: "12px",
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "center",
+                backgroundImage:
+                  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E\")",
+              }}
+            />
+          ),
+        }}
         toastOptions={{
           unstyled: true,
+          style: {
+            left: "50%",
+            transform: "translateX(-50%)",
+          },
           classNames: {
             toast: "toast-base",
             title: "toast-title",
             description: "toast-description",
-            success: "toast-success",
-            error: "toast-error",
-            warning: "toast-warning",
-            info: "toast-info",
           },
         }}
       />

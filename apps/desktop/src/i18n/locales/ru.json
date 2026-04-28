@@ -265,6 +265,7 @@
   "polishTemplates.editTitle": "Edit Template",
   "polishTemplates.emptyHint": "No custom templates yet. Create one to get started.",
   "polishTemplates.manageTemplates": "Manage Templates",
+  "polish.unavailableHint": "Enable Cloud Polish or download a local model first",
   "about.platforms.description": "Доступно на основных платформах",
   "about.feature.privacy.title": "Конфиденциальность прежде всего",
   "about.feature.privacy.description": "Конфиденциальность и локальность прежде всего",
@@ -318,6 +319,7 @@
   "onboarding.permissions.description": "Предоставьте необходимые разрешения для использования AriaType",
   "onboarding.model.title": "Загрузить модель",
   "onboarding.model.description": "Загрузите модель распознавания речи для офлайн-транскрипции",
+  "onboarding.model.downloading": "Загрузка модели STT, подождите...",
   "onboarding.language.title": "Выбрать язык",
   "onboarding.language.description": "Выберите предпочитаемый язык для распознавания речи",
   "onboarding.language.current": "Язык вывода",
@@ -435,5 +437,8 @@
   "general.polish.templateDesc": "Выберите способ обработки транскрибированного текста",
   "dashboard.chart.titleRecent": "Как вы использовали",
   "dashboard.chart.titleFull": "Ваша полная история",
-  "dashboard.stats.activeDays": "Активные дни"
+  "dashboard.stats.activeDays": "Активные дни",
+  "history.clear.button": "Очистить историю",
+  "history.clear.success": "История очищена",
+  "history.clear.error": "Ошибка очистки истории"
 }

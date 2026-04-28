@@ -11,7 +11,7 @@ import { HotkeyInput } from "@/components/ui/hotkey-input";
 import { MultiSwitch } from "@/components/ui/multi-switch";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 import { hotkeyCommands, modelCommands, type ShortcutProfile, type PolishTemplate, type CustomPolishTemplate } from "@/lib/tauri";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, AlertCircle } from "lucide-react";
 import { showErrorToast } from "@/lib/toast";
 
 const RECORDING_MODES = [
@@ -25,6 +25,7 @@ interface ProfileSectionProps {
   templates: (PolishTemplate | CustomPolishTemplate)[];
   canChangeTemplate: boolean;
   allowNullTemplate: boolean;
+  polishAvailable: boolean;
   onUpdate: (hotkey: string, templateId: string | null, triggerMode: "hold" | "toggle") => void;
   testId?: string;
 }
@@ -35,6 +36,7 @@ function ProfileSection({
   templates,
   canChangeTemplate,
   allowNullTemplate,
+  polishAvailable,
   onUpdate,
   testId,
 }: ProfileSectionProps) {
@@ -90,7 +92,14 @@ function ProfileSection({
             }
             options={templateOptions}
             placeholder={t("hotkey.selectTemplate", "Select template")}
+            disabled={!polishAvailable}
           />
+          {!polishAvailable && (
+            <p className="text-xs text-amber-500 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" />
+              {t("polish.unavailableHint")}
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -99,7 +108,7 @@ function ProfileSection({
 
 export function HotkeySettings() {
   const { t } = useTranslation();
-  const { settings } = useSettingsContext();
+  const { settings, polishAvailable } = useSettingsContext();
   const [templates, setTemplates] = useState<(PolishTemplate | CustomPolishTemplate)[]>([]);
 
   useEffect(() => {
@@ -198,6 +207,7 @@ export function HotkeySettings() {
             templates={templates}
             canChangeTemplate={false}
             allowNullTemplate={false}
+            polishAvailable={polishAvailable}
             onUpdate={handleUpdateDictate}
             testId="profile-dictate"
           />
@@ -216,6 +226,7 @@ export function HotkeySettings() {
             templates={templates}
             canChangeTemplate={true}
             allowNullTemplate={false}
+            polishAvailable={polishAvailable}
             onUpdate={handleUpdateRiff}
             testId="profile-riff"
           />
@@ -240,6 +251,7 @@ export function HotkeySettings() {
               templates={templates}
               canChangeTemplate={true}
               allowNullTemplate={true}
+              polishAvailable={polishAvailable}
               onUpdate={handleUpdateCustom}
               testId="profile-custom"
             />
@@ -252,10 +264,21 @@ export function HotkeySettings() {
             <CardDescription>{t("hotkey.profiles.customDesc", "Your custom profile")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button variant="outline" onClick={handleCreateCustom} data-testid="create-custom-profile">
+            <Button
+              variant="outline"
+              onClick={handleCreateCustom}
+              disabled={!polishAvailable}
+              data-testid="create-custom-profile"
+            >
               <Plus className="h-4 w-4 mr-2" />
               {t("hotkey.profiles.createCustom", "Create Custom Profile")}
             </Button>
+            {!polishAvailable && (
+              <p className="text-xs text-amber-500 flex items-center gap-1 mt-2">
+                <AlertCircle className="h-3 w-3" />
+                {t("polish.unavailableHint")}
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

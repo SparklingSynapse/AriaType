@@ -265,6 +265,7 @@
   "polishTemplates.editTitle": "Edit Template",
   "polishTemplates.emptyHint": "No custom templates yet. Create one to get started.",
   "polishTemplates.manageTemplates": "Manage Templates",
+  "polish.unavailableHint": "Enable Cloud Polish or download a local model first",
   "about.platforms.description": "主要なデスクトッププラットフォームで利用可能",
   "about.feature.privacy.title": "プライバシー優先",
   "about.feature.privacy.description": "プライバシー優先、ローカル優先",
@@ -318,6 +319,7 @@
   "onboarding.permissions.description": "AriaTypeに必要な権限を付与してください",
   "onboarding.model.title": "モデルのダウンロード",
   "onboarding.model.description": "オフライン転写用の音声認識モデルをダウンロードしてください",
+  "onboarding.model.downloading": "STTモデルダウンロード中、お待ちください...",
   "onboarding.language.title": "言語の選択",
   "onboarding.language.description": "音声認識の出力言語を選択してください",
   "onboarding.language.current": "出力言語",
@@ -435,5 +437,8 @@
   "general.polish.templateDesc": "文字起こしテキストの推敲方法を選択",
   "dashboard.chart.titleRecent": "最近の使い方",
   "dashboard.chart.titleFull": "全履歴",
-  "dashboard.stats.activeDays": "活動日数"
+  "dashboard.stats.activeDays": "活動日数",
+  "history.clear.button": "履歴を消去",
+  "history.clear.success": "履歴を消去しました",
+  "history.clear.error": "履歴の消去に失敗しました"
 }

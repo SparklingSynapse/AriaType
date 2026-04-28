@@ -22,6 +22,7 @@ import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
 import { useEffect, useState, useCallback } from "react";
 import { useOnboarding } from "@/hooks/useOnboarding";
+import { useEventListeners } from "@/hooks/useEventListeners";
 import { OnboardingGuide } from "./OnboardingGuide";
 import { useNavBadges } from "@/hooks/useNavBadges";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
@@ -76,21 +77,11 @@ export function HomeLayout() {
     }
   }, []);
 
-  useEffect(() => {
-    checkModel();
-
-    let unlistenComplete: (() => void) | undefined;
-    let unlistenDeleted: (() => void) | undefined;
-    const setup = async () => {
-      unlistenComplete = await events.onModelDownloadComplete(() => checkModel());
-      unlistenDeleted = await events.onModelDeleted(() => checkModel());
-    };
-    setup();
-
-    return () => {
-      unlistenComplete?.();
-      unlistenDeleted?.();
-    };
+  useEventListeners(async () => {
+    return [
+      await events.onModelDownloadComplete(() => checkModel()),
+      await events.onModelDeleted(() => checkModel()),
+    ];
   }, [checkModel]);
 
   return (
@@ -110,27 +101,30 @@ export function HomeLayout() {
           </div>
           <nav className="p-4 flex flex-col h-[calc(100%-4.5rem)]">
             <div className="space-y-1 flex-1">
-              {navItems.filter(i => i.type !== "external").map((item) => (
-                <NavLink
-                  key={(item as { to: string }).to}
-                  to={(item as { to: string }).to}
-                  end={(item as { to: string }).to === "/"}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 rounded-full px-4 py-2.5 text-sm transition-all duration-200",
-                      isActive
-                        ? "bg-primary text-primary-foreground font-medium"
-                        : "text-muted-foreground hover:bg-secondary/80 hover:text-secondary-foreground",
-                    )
-                  }
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                  {"badge" in item && item.badge && (
-                    <ArrowUpCircle className="h-4 w-4 text-green-500 ml-auto" />
-                  )}
-                </NavLink>
-              ))}
+              {navItems.filter(i => i.type !== "external").map((item) => {
+                const to = (item as { to: string }).to;
+                return (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={to === "/"}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-3 rounded-full px-4 py-2.5 text-sm transition-all duration-200",
+                        isActive
+                          ? "bg-primary text-primary-foreground font-medium"
+                          : "text-muted-foreground hover:bg-secondary/80 hover:text-secondary-foreground",
+                      )
+                    }
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                    {"badge" in item && item.badge && (
+                      <ArrowUpCircle className="h-4 w-4 text-green-500 ml-auto" />
+                    )}
+                  </NavLink>
+                );
+              })}
             </div>
             <div className="border-t border-border py-3 space-y-1">
               {navItems.filter(i => i.type === "external").map((item) => (

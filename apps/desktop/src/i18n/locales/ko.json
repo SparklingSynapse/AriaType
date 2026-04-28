@@ -265,6 +265,7 @@
   "polishTemplates.editTitle": "Edit Template",
   "polishTemplates.emptyHint": "No custom templates yet. Create one to get started.",
   "polishTemplates.manageTemplates": "Manage Templates",
+  "polish.unavailableHint": "Enable Cloud Polish or download a local model first",
   "about.platforms.description": "주요 데스크톱 플랫폼에서 사용 가능",
   "about.feature.privacy.title": "프라이버시 우선",
   "about.feature.privacy.description": "프라이버시 우선, 로컬 우선",
@@ -318,6 +319,7 @@
   "onboarding.permissions.description": "AriaType에 필요한 권한을 부여하세요",
   "onboarding.model.title": "모델 다운로드",
   "onboarding.model.description": "오프라인 전사용 음성 인식 모델을 다운로드하세요",
+  "onboarding.model.downloading": "STT 모델 다운로드 중, 잠시만 기다려주세요...",
   "onboarding.language.title": "언어 선택",
   "onboarding.language.description": "음성 인식을 위한 선호 언어를 선택하세요",
   "onboarding.language.current": "출력 언어",
@@ -435,5 +437,8 @@
   "general.polish.templateDesc": "변환된 텍스트의 다듬기 방식 선택",
   "dashboard.chart.titleRecent": "사용 근황",
   "dashboard.chart.titleFull": "전체 기록",
-  "dashboard.stats.activeDays": "활동 일수"
+  "dashboard.stats.activeDays": "활동 일수",
+  "history.clear.button": "기록 삭제",
+  "history.clear.success": "기록이 삭제되었습니다",
+  "history.clear.error": "기록 삭제 실패"
 }

@@ -234,71 +234,6 @@ function EngineUsageList({
   );
 }
 
-function generateDemoData(): {
-  stats: DashboardStats;
-  dailyUsage: DailyUsage[];
-  engineUsage: EngineUsage[];
-} {
-  const dailyUsage: DailyUsage[] = Array.from({ length: 30 }, (_, index) => {
-    const offset = 29 - index;
-    const date = new Date(Date.now() - offset * 86_400_000);
-    const count = Math.max(
-      0,
-      Math.round(2 + Math.sin(index / 4) * 1.2 + (index > 20 ? 1 : 0)),
-    );
-    const averageAudio = 11_000 + (index % 4) * 1_300;
-    const averageOutput = 24 + (index % 5) * 4;
-
-    return {
-      date: `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`,
-      count,
-      audio_ms: count * averageAudio,
-      output_units: count * averageOutput,
-    };
-  });
-
-  const totalCount = dailyUsage.reduce((sum, item) => sum + item.count, 0);
-  const totalAudio = dailyUsage.reduce((sum, item) => sum + item.audio_ms, 0);
-  const totalOutputUnits = dailyUsage.reduce(
-    (sum, item) => sum + item.output_units,
-    0,
-  );
-
-  return {
-    stats: {
-      total_count: totalCount,
-      today_count: dailyUsage[dailyUsage.length - 1]?.count ?? 0,
-      total_chars: 62_400,
-      total_output_units: totalOutputUnits,
-      total_audio_ms: totalAudio,
-      avg_stt_ms: 720,
-      avg_audio_ms: Math.round(totalAudio / totalCount),
-      avg_output_units: totalOutputUnits / totalCount,
-      local_count: 82,
-      cloud_count: 29,
-      polish_count: 61,
-      active_days: 21,
-      current_streak_days: 6,
-      longest_streak_days: 9,
-      last_7_days_count: dailyUsage
-        .slice(-7)
-        .reduce((sum, item) => sum + item.count, 0),
-      last_7_days_audio_ms: dailyUsage
-        .slice(-7)
-        .reduce((sum, item) => sum + item.audio_ms, 0),
-      last_7_days_output_units: dailyUsage
-        .slice(-7)
-        .reduce((sum, item) => sum + item.output_units, 0),
-    },
-    dailyUsage,
-    engineUsage: [
-      { engine: "Whisper", count: 54, avg_stt_ms: 910 },
-      { engine: "Volcengine", count: 32, avg_stt_ms: 420 },
-      { engine: "SenseVoice", count: 25, avg_stt_ms: 680 },
-    ],
-  };
-}
-
 export function Dashboard() {
   const { t } = useTranslation();
   const palette = useDashboardPalette();
@@ -329,13 +264,39 @@ export function Dashboard() {
     fetchData();
   }, []);
 
-  const demoData = useMemo(() => generateDemoData(), []);
-  const hasData = Boolean(stats && stats.total_count > 0);
-  const displayStats = hasData ? stats! : demoData.stats;
-  const displayDailyUsage =
-    hasData && dailyUsage.length > 0 ? dailyUsage : demoData.dailyUsage;
-  const displayEngineUsage =
-    hasData && engineUsage.length > 0 ? engineUsage : demoData.engineUsage;
+  const displayStats = stats ?? {
+    total_count: 0,
+    today_count: 0,
+    total_chars: 0,
+    total_output_units: 0,
+    total_audio_ms: 0,
+    avg_stt_ms: null,
+    avg_audio_ms: null,
+    avg_output_units: null,
+    local_count: 0,
+    cloud_count: 0,
+    polish_count: 0,
+    active_days: 0,
+    current_streak_days: 0,
+    longest_streak_days: 0,
+    last_7_days_count: 0,
+    last_7_days_audio_ms: 0,
+    last_7_days_output_units: 0,
+  };
+  
+  const displayDailyUsage = dailyUsage.length > 0 ? dailyUsage : Array.from({ length: 30 }, (_, index) => {
+    const offset = 29 - index;
+    const date = new Date(Date.now() - offset * 86_400_000);
+    return {
+      date: `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`,
+      count: 0,
+      audio_ms: 0,
+      output_units: 0,
+    };
+  });
+  
+  const displayEngineUsage = engineUsage.length > 0 ? engineUsage : [];
+
   const totalCount = Math.max(displayStats.total_count, 1);
   const polishRate = (displayStats.polish_count / totalCount) * 100;
   const trendData = useMemo<TrendPoint[]>(
@@ -560,12 +521,6 @@ export function Dashboard() {
             </div>
           </div>
         </section>
-
-        {!hasData && (
-          <p className="pt-1 text-center text-xs text-muted-foreground">
-            {t("dashboard.demo.notice")}
-          </p>
-        )}
       </div>
     </div>
   );
