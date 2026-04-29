@@ -20,7 +20,7 @@ import type { PillIndicatorMode, PresetPosition } from "@/types";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 import langCodes from "@/lib/lang-codes.json";
-import { cn } from "@/lib/utils";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 function getLanguageLabel(code: string): string {
   return (langCodes as Record<string, string>)[code] || code;
@@ -158,30 +158,15 @@ export function GeneralSettings() {
       description={t("general.description")}
       testId="settings-page"
     >
-      <div className="inline-flex h-10 items-center justify-center rounded-full bg-secondary p-1 text-muted-foreground">
-        <button
-          onClick={() => setActiveTab("general")}
-          className={cn(
-            "inline-flex items-center justify-center whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-            activeTab === "general"
-              ? "bg-background text-foreground shadow-sm"
-              : "hover:text-foreground"
-          )}
-        >
-          {t("general.tabs.general")}
-        </button>
-        <button
-          onClick={() => setActiveTab("transcription")}
-          className={cn(
-            "inline-flex items-center justify-center whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-            activeTab === "transcription"
-              ? "bg-background text-foreground shadow-sm"
-              : "hover:text-foreground"
-          )}
-        >
-          {t("general.tabs.transcription")}
-        </button>
-      </div>
+      <SegmentedControl
+        items={[
+          { value: "general", label: t("general.tabs.general") },
+          { value: "transcription", label: t("general.tabs.transcription") },
+        ]}
+        value={activeTab}
+        onChange={(v) => setActiveTab(v as "general" | "transcription")}
+        size="sm"
+      />
 
       {activeTab === "general" && (
         <>

@@ -6,6 +6,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
+- Optimize UI for better experience (d0fec5c)
 - Optimize onboarding guide (db9e682)
 - Optimize text inject performance (c92c4ce)
 

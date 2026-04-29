@@ -335,7 +335,6 @@ export function Dashboard() {
             className="rounded-3xl border border-border bg-card px-5 py-5 md:px-6 md:py-6"
             style={{
               borderColor: palette.border,
-              backgroundImage: `linear-gradient(180deg, ${palette.panel}, transparent 36%)`,
             }}
           >
             <div>
@@ -478,7 +477,6 @@ export function Dashboard() {
             className="rounded-3xl border border-border bg-card px-5 py-5 md:px-6 md:py-6"
             style={{
               borderColor: palette.border,
-              backgroundImage: `linear-gradient(180deg, ${palette.panelStrong}, transparent 36%)`,
             }}
           >
             <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
