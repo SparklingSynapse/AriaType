@@ -80,16 +80,23 @@ export function TemplateSelector({
     click,
     dismiss,
     role,
-  ]);
+]);
 
-  const getTemplateName = (id: string) => {
-    const builtIn = builtInTemplates.find((t) => t.id === id);
-    if (builtIn) return t(`model.polish.template${builtIn.id.charAt(0).toUpperCase() + builtIn.id.slice(1)}`);
+const BUILT_IN_TEMPLATE_KEY_MAP: Record<string, string> = {
+  filler: "model.polish.templateFiller",
+  formal: "model.polish.templateFormal",
+  concise: "model.polish.templateConcise",
+  agent: "model.polish.templateAgent",
+};
 
-    const custom = customTemplates.find((t) => t.id === id);
-    if (custom) return custom.name;
+const getTemplateName = (id: string) => {
+  const i18nKey = BUILT_IN_TEMPLATE_KEY_MAP[id];
+  if (i18nKey) return t(i18nKey);
 
-    return id;
+  const custom = customTemplates.find((t) => t.id === id);
+  if (custom) return custom.name;
+
+  return id;
   };
 
   const handleDelete = async (template: CustomPolishTemplate, e: React.MouseEvent) => {
@@ -169,7 +176,7 @@ export function TemplateSelector({
                           template.id === selectedTemplate && "bg-background font-medium"
                         )}
                       >
-                        {t(`model.polish.template${template.id.charAt(0).toUpperCase() + template.id.slice(1)}`)}
+                        {getTemplateName(template.id)}
                       </button>
                     ))}
                   </div>

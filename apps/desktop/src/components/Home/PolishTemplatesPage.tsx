@@ -13,6 +13,13 @@ import { useConfirm } from "@/components/ui/confirm";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 import type { CustomPolishTemplate, PolishTemplate } from "@/lib/tauri";
 
+const BUILT_IN_TEMPLATE_KEY_MAP: Record<string, { name: string; description: string }> = {
+  filler: { name: "model.polish.templateFiller", description: "model.polish.templateFillerDesc" },
+  formal: { name: "model.polish.templateFormal", description: "model.polish.templateFormalDesc" },
+  concise: { name: "model.polish.templateConcise", description: "model.polish.templateConciseDesc" },
+  agent: { name: "model.polish.templateAgent", description: "model.polish.templateAgentDesc" },
+};
+
 export function PolishTemplatesPage() {
   const { t } = useTranslation();
   const [builtInTemplates, setBuiltInTemplates] = useState<PolishTemplate[]>([]);
@@ -88,10 +95,10 @@ export function PolishTemplatesPage() {
               >
                 <div className="text-left">
                   <div className="font-medium">
-                    {t(`model.polish.template${template.id.charAt(0).toUpperCase() + template.id.slice(1)}`)}
+                    {t(BUILT_IN_TEMPLATE_KEY_MAP[template.id]?.name ?? template.id)}
                   </div>
                   <div className="text-sm text-muted-foreground mt-1">
-                    {t(`model.polish.template${template.id.charAt(0).toUpperCase() + template.id.slice(1)}Desc`)}
+                    {t(BUILT_IN_TEMPLATE_KEY_MAP[template.id]?.description ?? template.id)}
                   </div>
                 </div>
               </div>

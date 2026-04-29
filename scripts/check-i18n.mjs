@@ -158,6 +158,38 @@ for (const project of PROJECTS) {
     allPassed = false;
   }
   
+  // Redundant in locale (not used in code)
+  const redundantInLocale = [...enKeys].filter(k => !usedKeys.has(k));
+  
+  // Known dynamic key patterns (constructed at runtime)
+  const dynamicKeyPatterns = [
+    /^model\.polish\.template[A-Z]/, // templateFiller, templateFormal, templateConcise, templateAgent, templateCustom
+    /^model\.domain\.subdomain_/,    // subdomain_general, subdomain_security, etc.
+    /^model\.domain\.domain_/,       // domain_general, domain_it, etc.
+    /^model\.hint\./,                // model.hint.* (used in VoiceInputSection)
+    /^general\.pill\./,              // pill position options
+    /^dashboard\.time\./,            // time format keys
+    /^history\.(minutesAgo|hoursAgo|daysAgo)$/, // relative time keys
+  ];
+  
+  const trulyRedundant = redundantInLocale.filter(k => 
+    !dynamicKeyPatterns.some(p => p.test(k))
+  );
+  
+  const dynamicUsed = redundantInLocale.filter(k => 
+    dynamicKeyPatterns.some(p => p.test(k))
+  );
+  
+  if (dynamicUsed.length > 0) {
+    console.log(`  ℹ️  ${dynamicUsed.length} keys likely used DYNAMICALLY (excluded from redundant check):`);
+    dynamicUsed.sort().forEach(k => console.log(`     - ${k}`));
+  }
+  
+  if (trulyRedundant.length > 0) {
+    console.log(`  ⚠️  ${trulyRedundant.length} keys IN LOCALE but NOT USED in code:`);
+    trulyRedundant.sort().forEach(k => console.log(`     - ${k}`));
+  }
+  
   // Check each language
   for (const lang of project.languages) {
     if (lang === 'en') continue;

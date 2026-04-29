@@ -150,6 +150,23 @@ return <h1>{t("dashboard.title")}</h1>;
 
 **Adding keys:** Add to `en.json` first, then all 10 locale files.
 
+**Forbidden patterns:**
+
+```typescript
+// ❌ WRONG - String concatenation cannot be scanned
+t(`model.polish.template${template.id}`)
+t("model.domain." + domain)
+
+// ✅ RIGHT - Static mapping table
+const TEMPLATE_KEY_MAP: Record<string, string> = {
+  filler: "model.polish.templateFiller",
+  formal: "model.polish.templateFormal",
+};
+t(TEMPLATE_KEY_MAP[template.id] ?? template.id);
+```
+
+**Reason:** Static analysis (`pnpm check:i18n`) scans for literal `t("key")` patterns. Concatenated keys appear unused, causing false positives and potential deletion.
+
 ---
 
 ## Tailwind CSS
