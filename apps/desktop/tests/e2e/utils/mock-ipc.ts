@@ -13,15 +13,37 @@ const DEFAULT_MOCK_DATA = {
       custom: null,
     },
     recording_mode: 'hold',
-    stt_engine: 'whisper',
-    stt_engine_language: 'auto',
     model: 'whisper-base',
+    stt_engine: 'whisper',
+    pill_position: 'bottom-center',
+    pill_indicator_mode: 'always',
+    auto_start: false,
+    gpu_acceleration: true,
+    language: 'auto',
+    stt_engine_language: 'auto',
+    beep_on_record: true,
+    audio_device: 'default',
+    polish_system_prompt: 'Polish text minimally. Keep the SAME language as input.',
     stt_engine_work_domain: 'general',
+    stt_engine_work_domain_prompt: '',
+    stt_engine_work_subdomain: '',
+    stt_engine_user_glossary: '',
     polish_model: '',
-    polish_custom_templates: [],
+    stt_engine_initial_prompt: '',
+    model_resident: true,
+    idle_unload_minutes: 5,
+    denoise_mode: 'off',
+    analytics_opt_in: false,
     cloud_stt_enabled: false,
+    active_cloud_stt_provider: 'volcengine-streaming',
+    cloud_stt_configs: {},
     cloud_polish_enabled: false,
+    active_cloud_polish_provider: 'anthropic',
+    cloud_polish_configs: {},
     theme_mode: 'system',
+    vad_enabled: false,
+    stay_in_tray: false,
+    polish_custom_templates: [],
   },
   models: [
     { model_name: 'whisper-base', downloaded: true, size_mb: 74 },
@@ -35,24 +57,21 @@ const DEFAULT_MOCK_DATA = {
     avg_accuracy: 0.89,
     active_days: 27,
   },
-  shortcutProfiles: {
-    dictate: { hotkey: 'Cmd+Slash', trigger_mode: 'hold', action: { Record: { polish_template_id: null } } },
-    riff: { hotkey: 'Opt+Slash', trigger_mode: 'toggle', action: { Record: { polish_template_id: 'filler' } } },
-    custom: null,
-  },
 };
 
 function loadMockData() {
   try {
-    if (!existsSync(MOCK_DIR)) {
-      console.warn('[Mock IPC] Mock directory not found at', MOCK_DIR, ', using default data');
-      return DEFAULT_MOCK_DATA;
-    }
-
     const settings = existsSync(join(MOCK_DIR, 'settings.json'))
       ? JSON.parse(readFileSync(join(MOCK_DIR, 'settings.json'), 'utf-8'))
       : DEFAULT_MOCK_DATA.settings;
-    
+
+    const shortcutProfiles = settings.shortcut_profiles || DEFAULT_MOCK_DATA.settings.shortcut_profiles;
+
+    if (!existsSync(MOCK_DIR)) {
+      console.warn('[Mock IPC] Mock directory not found at', MOCK_DIR, ', using default data');
+      return { ...DEFAULT_MOCK_DATA, settings, shortcutProfiles };
+    }
+
     const models = existsSync(join(MOCK_DIR, 'models.json'))
       ? JSON.parse(readFileSync(join(MOCK_DIR, 'models.json'), 'utf-8'))
       : DEFAULT_MOCK_DATA.models;
@@ -64,15 +83,11 @@ function loadMockData() {
     const dashboardStats = existsSync(join(MOCK_DIR, 'dashboard-stats.json'))
       ? JSON.parse(readFileSync(join(MOCK_DIR, 'dashboard-stats.json'), 'utf-8'))
       : DEFAULT_MOCK_DATA.dashboardStats;
-    
-    const shortcutProfiles = existsSync(join(MOCK_DIR, 'shortcut-profiles.json'))
-      ? JSON.parse(readFileSync(join(MOCK_DIR, 'shortcut-profiles.json'), 'utf-8'))
-      : DEFAULT_MOCK_DATA.shortcutProfiles;
 
     console.log('[Mock IPC] Loaded mock data from', MOCK_DIR);
     return { settings, models, history, dashboardStats, shortcutProfiles };
   } catch (e) {
-    console.warn('[Mock IPC] Failed to load mock files, using default data:', e);
+    console.warn('[Mock IPC] Failed to load files, using default data:', e);
     return DEFAULT_MOCK_DATA;
   }
 }
@@ -100,7 +115,7 @@ export function generateMockIPCScript(): string {
             case 'get_dashboard_stats':
               return ${JSON.stringify(data.dashboardStats)};
             case 'get_shortcut_profiles':
-              return ${JSON.stringify(data.shortcutProfiles)};
+              return ${JSON.stringify(data.settings.shortcut_profiles)};
             case 'get_daily_usage':
               return [];
             case 'get_engine_usage':

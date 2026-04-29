@@ -70,9 +70,15 @@ test('Recording mode section visible', async ({ page }) => {
 
   await dismissOnboardingIfPresent(page);
 
-  await expect(page.getByRole('radiogroup')).toBeVisible();
-  await expect(page.getByRole('radio', { name: 'Hold' })).toBeVisible();
-  await expect(page.getByRole('radio', { name: 'Toggle' })).toBeVisible();
+  const dictateSection = page.locator('[data-testid="profile-dictate"]');
+  const riffSection = page.locator('[data-testid="profile-riff"]');
+
+  await expect(dictateSection.getByRole('radiogroup')).toBeVisible();
+  await expect(riffSection.getByRole('radiogroup')).toBeVisible();
+  await expect(dictateSection.getByRole('radio', { name: 'Hold' })).toBeVisible();
+  await expect(dictateSection.getByRole('radio', { name: 'Toggle' })).toBeVisible();
+  await expect(riffSection.getByRole('radio', { name: 'Hold' })).toBeVisible();
+  await expect(riffSection.getByRole('radio', { name: 'Toggle' })).toBeVisible();
 });
 
 test('Riff profile has polish template selector', async ({ page }) => {

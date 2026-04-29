@@ -24,12 +24,6 @@ fn main() {
 
     let state = AppState::new();
 
-    let settings = state.settings.lock().clone();
-    let settings_json =
-        serde_json::to_string_pretty(&settings).expect("Failed to serialize settings");
-    fs::write(mock_dir.join("settings.json"), &settings_json).expect("Failed to write settings");
-    println!("Exported: settings.json");
-
     let models = state.engine_manager.get_all_models();
     let models_json = serde_json::to_string_pretty(&models).expect("Failed to serialize models");
     fs::write(mock_dir.join("models.json"), &models_json).expect("Failed to write models");
@@ -68,13 +62,6 @@ fn main() {
     let stats_json = serde_json::to_string_pretty(&stats).expect("Failed to serialize stats");
     fs::write(mock_dir.join("dashboard-stats.json"), &stats_json).expect("Failed to write stats");
     println!("Exported: dashboard-stats.json");
-
-    let shortcut_profiles = settings.shortcut_profiles.clone();
-    let profiles_json =
-        serde_json::to_string_pretty(&shortcut_profiles).expect("Failed to serialize profiles");
-    fs::write(mock_dir.join("shortcut-profiles.json"), &profiles_json)
-        .expect("Failed to write profiles");
-    println!("Exported: shortcut-profiles.json");
 
     println!("\nMock data exported to: {}", output_dir);
 }

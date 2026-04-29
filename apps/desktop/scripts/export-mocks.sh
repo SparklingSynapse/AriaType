@@ -3,10 +3,11 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MOCK_DIR="$SCRIPT_DIR/../tests/e2e/mocks"
-SNAPSHOT_DIR="$SCRIPT_DIR/../tests/e2e/snapshots"
 
-echo "=== Exporting Mock Data from Real Tauri Backend ==="
+echo "=== Exporting Dynamic E2E Mock Data from Real Tauri Backend ==="
 echo "Mock directory: $MOCK_DIR"
+echo "Static settings fixture: $MOCK_DIR/settings.json"
+echo "Note: settings.json is maintained as a checked-in E2E fixture and is not exported."
 
 mkdir -p "$MOCK_DIR"
 
@@ -24,9 +25,9 @@ echo "Checking exported files..."
 ls -la "$MOCK_DIR/" 2>&1
 
 if [ -f "$MOCK_DIR/settings.json" ]; then
-  echo "✓ settings.json ($(wc -c < "$MOCK_DIR/settings.json") bytes)"
+  echo "• settings.json preserved as static fixture ($(wc -c < "$MOCK_DIR/settings.json") bytes)"
 else
-  echo "✗ settings.json (missing)"
+  echo "• settings.json fixture missing (expected checked-in fixture)"
 fi
 
 if [ -f "$MOCK_DIR/models.json" ]; then
@@ -47,11 +48,5 @@ else
   echo "✗ dashboard-stats.json (missing)"
 fi
 
-if [ -f "$MOCK_DIR/shortcut-profiles.json" ]; then
-  echo "✓ shortcut-profiles.json ($(wc -c < "$MOCK_DIR/shortcut-profiles.json") bytes)"
-else
-  echo "✗ shortcut-profiles.json (missing)"
-fi
-
 echo ""
-echo "=== Export complete ==="
+echo "=== Dynamic mock export complete ==="
