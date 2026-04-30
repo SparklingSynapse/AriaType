@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useEventListeners } from "@/hooks/useEventListeners";
 import { Button } from "@/components/ui/button";
@@ -35,8 +35,13 @@ import modelSvg from "@/assets/illustrations/onboarding/model.png";
 import hotkeySvg from "@/assets/illustrations/onboarding/hotkey.png";
 import practiceSvg from "@/assets/illustrations/onboarding/practice.png";
 import doneSvg from "@/assets/illustrations/onboarding/done.png";
+import {
+  resolveOnboardingModelProgress,
+  resolveOnboardingModelReady,
+} from "./onboarding-model";
 
 const DEFAULT_HOTKEY = "Shift+Space";
+const ONBOARDING_RESET_EVENT = "ariatype:onboarding-reset";
 
 const SENSEVOICE_PREFERRED_ONBOARDING = ["zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR", "en-US"];
 
@@ -195,7 +200,11 @@ function PermissionStep() {
         className="w-full max-w-[160px] max-h-[120px] object-contain"
       />
       <div className="space-y-4 w-full">
-        <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
+        <div
+          className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card"
+          data-testid="onboarding-permission-microphone"
+          data-status={micStatus ?? "pending"}
+        >
           <div className="flex items-center gap-3">
             <div
               className={cn(
@@ -237,7 +246,11 @@ function PermissionStep() {
           </Button>
         </div>
 
-        <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
+        <div
+          className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card"
+          data-testid="onboarding-permission-accessibility"
+          data-status={axStatus === null ? "pending" : axStatus ? "granted" : "denied"}
+        >
           <div className="flex items-center gap-3">
             <div
               className={cn(
@@ -338,8 +351,16 @@ function ModelStep({
   const { t } = useTranslation();
   const [models, setModels] = useState<RecommendedModel[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
+  const [downloadedMap, setDownloadedMap] = useState<Record<string, boolean>>({});
 
   const recommendedModelName = getRecommendedModelName(language);
+  const recommendedModelProgress = resolveOnboardingModelProgress({
+    selectedModel: recommendedModelName,
+    models,
+    progressMap,
+    downloadedMap,
+  });
+  const recommendedModelReady = recommendedModelProgress >= 100;
 
   // Fetch recommendations when component mounts or language changes
   useEffect(() => {
@@ -360,8 +381,11 @@ function ModelStep({
         if (!mounted) return;
 
         if (isDownloaded) {
+          setDownloadedMap((prev) => ({ ...prev, [modelName]: true }));
           setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
         } else {
+          setDownloadedMap((prev) => ({ ...prev, [modelName]: false }));
+          setProgressMap((prev) => ({ ...prev, [modelName]: 0 }));
           await modelCommands.downloadModel(modelName);
         }
       } catch (err: unknown) {
@@ -386,6 +410,7 @@ function ModelStep({
         setProgressMap((prev) => ({ ...prev, [data.model]: data.progress }));
       }),
       await events.onModelDownloadComplete(async (modelName) => {
+        setDownloadedMap((prev) => ({ ...prev, [modelName]: true }));
         setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
         modelCommands
           .recommendModelsByLanguage(language || "auto")
@@ -406,14 +431,15 @@ function ModelStep({
 
   // Only allow next step when the currently selected model is downloaded
   useEffect(() => {
-    if (selectedModel) {
-      const model = models.find((m) => m.model_name === selectedModel);
-      const progress = progressMap[selectedModel] || 0;
-      onModelReadyChange(!!model?.downloaded || progress === 100);
-    } else {
-      onModelReadyChange(false);
-    }
-  }, [selectedModel, models, progressMap, onModelReadyChange]);
+    onModelReadyChange(
+      resolveOnboardingModelReady({
+        selectedModel,
+        models,
+        progressMap,
+        downloadedMap,
+      }),
+    );
+  }, [selectedModel, models, progressMap, downloadedMap, onModelReadyChange]);
 
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
@@ -435,18 +461,18 @@ function ModelStep({
             </div>
           </div>
           <div className="flex items-center justify-center w-[18px] h-[18px]">
-            {progressMap[recommendedModelName] === 100 ? (
+            {recommendedModelReady ? (
               <Check className="w-[18px] h-[18px] text-green-500" />
             ) : (
               <CircularProgress
-                progress={progressMap[recommendedModelName] ?? 0}
+                progress={recommendedModelProgress}
                 size={18}
                 strokeWidth={2}
               />
             )}
           </div>
         </div>
-        {progressMap[recommendedModelName] !== undefined && progressMap[recommendedModelName] < 100 && (
+        {recommendedModelProgress > 0 && recommendedModelProgress < 100 && (
           <p className="text-xs text-muted-foreground text-center">
             {t("onboarding.model.downloading")}
           </p>
@@ -760,7 +786,6 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [isModelReady, setIsModelReady] = useState(false);
-  const hasAutoDetectedLanguage = useRef(false);
   const allSteps: Step[] = [
     {
       id: "permissions",
@@ -850,14 +875,22 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && !hasAutoDetectedLanguage.current) {
-      hasAutoDetectedLanguage.current = true;
-      if (!settings?.stt_engine_language || settings.stt_engine_language === "auto") {
-        const detected = detectSystemLanguage();
-        if (detected !== "auto") {
-          updateSetting("stt_engine_language", detected)
-            .catch((err: unknown) => logger.error("failed_to_set_detected_language", { error: String(err) }));
-        }
+    const handleReset = () => {
+      setCurrentStep(0);
+      setSelectedModel(null);
+      setIsModelReady(false);
+    };
+
+    window.addEventListener(ONBOARDING_RESET_EVENT, handleReset);
+    return () => window.removeEventListener(ONBOARDING_RESET_EVENT, handleReset);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && (!settings?.stt_engine_language || settings.stt_engine_language === "auto")) {
+      const detected = detectSystemLanguage();
+      if (detected !== "auto") {
+        updateSetting("stt_engine_language", detected)
+          .catch((err: unknown) => logger.error("failed_to_set_detected_language", { error: String(err) }));
       }
     }
   }, [isOpen, settings?.stt_engine_language, updateSetting]);
@@ -919,7 +952,11 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
         onClick={handleSkip}
       />
 
-      <div className="relative z-10 w-[560px] h-[520px] mx-4 bg-background rounded-3xl border border-border shadow-2xl flex flex-col">
+      <div
+        className="relative z-10 w-[560px] h-[520px] mx-4 bg-background rounded-3xl border border-border shadow-2xl flex flex-col"
+        data-testid="onboarding-modal"
+        data-step-id={current.id}
+      >
         <div className="flex flex-col items-center gap-3 pt-6 shrink-0">
           <div className="flex justify-center gap-2">
             {steps.map((_, index) => (
@@ -982,6 +1019,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
             onClick={handleNext}
             disabled={!canProceed()}
             className="gap-2"
+            data-testid="onboarding-primary-action"
           >
             {isLastStep ? t("onboarding.finish") : t("onboarding.next")}
             {!isLastStep && <ChevronRight className="w-4 h-4" />}

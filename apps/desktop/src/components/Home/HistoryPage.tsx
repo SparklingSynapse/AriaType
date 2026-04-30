@@ -336,7 +336,11 @@ export function HistoryPage() {
   ], [t]);
 
   return (
-    <SettingsPageLayout testId="history-page">
+    <SettingsPageLayout
+      title={t("history.title")}
+      description={t("history.description")}
+      testId="history-page"
+    >
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <SegmentedControl
           items={engineFilters}

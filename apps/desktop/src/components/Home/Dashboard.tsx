@@ -429,6 +429,7 @@ export function Dashboard() {
                       dataKey="count"
                       fill="url(#capturesFade)"
                       stroke="none"
+                      isAnimationActive={false}
                     />
                     <Line
                       type="monotone"
@@ -436,6 +437,7 @@ export function Dashboard() {
                       stroke={palette.primary}
                       strokeWidth={2.7}
                       dot={false}
+                      isAnimationActive={false}
                       activeDot={{
                         r: 4,
                         strokeWidth: 0,
@@ -449,6 +451,7 @@ export function Dashboard() {
                       strokeWidth={2}
                       dot={false}
                       strokeDasharray="8 7"
+                      isAnimationActive={false}
                       activeDot={{
                         r: 4,
                         strokeWidth: 0,
@@ -461,6 +464,7 @@ export function Dashboard() {
                       stroke={palette.tertiary}
                       strokeWidth={2.1}
                       dot={false}
+                      isAnimationActive={false}
                       activeDot={{
                         r: 4,
                         strokeWidth: 0,
@@ -567,5 +571,3 @@ function formatDayCount(
     count: value ?? 0,
   });
 }
-
-

@@ -1,17 +1,17 @@
 import { test, expect } from '../fixtures';
+import { clearTranscriptionHistory, openRoute, remountRoute } from '../utils/helpers';
 
-test('Dashboard renders with backend data', async ({ page }) => {
-  await page.goto('/');
-  await page.waitForLoadState('domcontentloaded');
-  
-  await page.waitForTimeout(2000);
+test('Dashboard renders with backend data', async ({ tauriPage }) => {
+  await openRoute(tauriPage, '/');
+  await clearTranscriptionHistory(tauriPage);
+  await remountRoute(tauriPage, '/');
 
-  await expect(page.locator('[data-testid="dashboard-page"]')).toBeVisible({ timeout: 15000 });
+  const dashboardPage = tauriPage.locator('[data-testid="dashboard-page"]');
 
-  await page.waitForTimeout(1000);
-
-  await expect(page).toHaveScreenshot('dashboard.png', {
-    threshold: 0.2,
-    fullPage: true,
-  });
+  await expect(dashboardPage).toBeVisible({ timeout: 15000 });
+  await expect(dashboardPage.getByText('Usage pattern')).toBeVisible();
+  await expect(dashboardPage.getByText('Summary')).toBeVisible();
+  await expect(dashboardPage.getByText('Active days')).toBeVisible();
+  await expect(dashboardPage.getByText('Engines')).toBeVisible();
+  await expect(dashboardPage.locator('[data-testid="dashboard-content"]')).toBeVisible();
 });

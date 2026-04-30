@@ -1,0 +1,30 @@
+{
+  "name": "@ariatype/e2e-harness",
+  "version": "1.0.0",
+  "license": "AGPL-3.0-only",
+  "description": "Reusable E2E harness utilities for real Tauri app verification",
+  "type": "module",
+  "scripts": {
+    "test": "pnpm exec vitest run --config vitest.config.ts"
+  },
+  "bin": {
+    "tauri-e2e-runner": "./src/runner-cli.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./helpers": "./src/helpers.ts",
+    "./playwright": "./src/playwright.ts",
+    "./playwright-hooks": "./src/playwright-hooks.ts",
+    "./runner": "./src/ordered-tauri-runner.mjs",
+    "./snapshot": "./src/snapshot.ts"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.59.1",
+    "@srsholmes/tauri-playwright": "^0.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}

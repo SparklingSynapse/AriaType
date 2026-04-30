@@ -200,6 +200,16 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
 
+    #[cfg(feature = "e2e-testing")]
+    let playwright_socket = std::env::var("TAURI_PLAYWRIGHT_SOCKET")
+        .unwrap_or_else(|_| "/tmp/ariatype-tauri-playwright.sock".to_string());
+
+    #[cfg(feature = "e2e-testing")]
+    let builder = builder.plugin(tauri_plugin_playwright::init_with_config(
+        tauri_plugin_playwright::PluginConfig::new()
+            .socket_path(playwright_socket),
+    ));
+
     builder
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![

@@ -19,8 +19,9 @@
     "test:rust:coverage": "cd src-tauri && cargo llvm-cov --html",
     "test:rust:coverage:ci": "cd src-tauri && cargo llvm-cov --lcov --output-path lcov.info --fail-under-lines 90",
     "test:all": "pnpm test && pnpm test:rust",
-    "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
-    "test:e2e:update": "bash scripts/export-mocks.sh && rm -rf tests/e2e/snapshots && playwright test --config=tests/e2e/playwright.config.ts --update-snapshots",
+    "test:e2e": "node ../../packages/e2e-harness/src/runner-cli.mjs tests/e2e/e2e.config.mjs",
+    "test:e2e:update": "node ../../packages/e2e-harness/src/runner-cli.mjs tests/e2e/e2e.config.mjs --update-snapshots",
+    "test:e2e:debug": "playwright test --config=tests/e2e/playwright.config.ts --debug",
     "tauri": "tauri",
     "copy-installer": "node ../../scripts/copy-installers.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
@@ -38,6 +39,7 @@
   },
   "dependencies": {
     "@aptabase/tauri": "^0.4.1",
+    "@ariatype/e2e-harness": "workspace:*",
     "@ariatype/shared": "workspace:*",
     "@floating-ui/react": "^0.27.19",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -68,6 +70,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@srsholmes/tauri-playwright": "^0.2.2",
     "@tauri-apps/cli": "^2.10.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",

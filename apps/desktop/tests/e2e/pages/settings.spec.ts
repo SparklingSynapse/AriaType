@@ -1,20 +1,18 @@
 import { test, expect } from '../fixtures';
-import { navigateViaSidebar } from '../utils/helpers';
+import { navigateViaSidebar, openRoute } from '../utils/helpers';
 
-test('General Settings page renders', async ({ page }) => {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
+test('General Settings page renders', async ({ tauriPage }) => {
+  await openRoute(tauriPage, '/');
+  await navigateViaSidebar(tauriPage, 'General');
 
-  await navigateViaSidebar(page, 'General');
+  const settingsPage = tauriPage.locator('[data-testid="settings-page"]');
+  const generalLink = tauriPage.locator('a').filter({ hasText: 'General' });
 
-  await page.waitForTimeout(2000);
-
-  await expect(page.locator('nav a:has-text("General")')).toHaveClass(/bg-primary/);
-
-  await page.waitForTimeout(500);
-
-  await expect(page).toHaveScreenshot('settings.png', {
-    threshold: 0.2,
-    fullPage: true,
-  });
+  await expect(settingsPage).toBeVisible({ timeout: 10000 });
+  await expect(generalLink).toHaveClass(/bg-primary/);
+  await expect(settingsPage.getByText('General')).toBeVisible();
+  await expect(settingsPage.getByText('App Language')).toBeVisible();
+  await expect(settingsPage.getByText('Auto-start on login')).toBeVisible();
+  await expect(settingsPage.getByText('Theme')).toBeVisible();
+  await expect(settingsPage.getByText('Transcription')).toBeVisible();
 });

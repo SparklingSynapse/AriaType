@@ -1,23 +1,16 @@
 import { test, expect } from '../fixtures';
-import { navigateViaSidebar } from '../utils/helpers';
+import { clearTranscriptionHistory, navigateViaSidebar, openRoute } from '../utils/helpers';
 
-test('History page renders with entries or empty state', async ({ page }) => {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
+test('History page renders with entries or empty state', async ({ tauriPage }) => {
+  await openRoute(tauriPage, '/');
+  await clearTranscriptionHistory(tauriPage);
+  await navigateViaSidebar(tauriPage, 'History');
 
-  await navigateViaSidebar(page, 'History');
+  const historyPage = tauriPage.locator('[data-testid="history-page"]');
+  await expect(historyPage).toBeVisible({ timeout: 15000 });
 
-  await page.waitForSelector('[data-testid="history-page"]', { timeout: 15000 });
-
-  const hasEntries = await page.locator('[data-testid="history-entries"]').isVisible().catch(() => false);
-  const hasEmptyState = await page.locator('text=/No history yet|No recordings yet/').isVisible().catch(() => false);
-
-  expect(hasEntries || hasEmptyState).toBeTruthy();
-
-  await page.waitForTimeout(1000);
-
-  await expect(page).toHaveScreenshot('history.png', {
-    threshold: 0.1,
-    fullPage: true,
-  });
+  const hasEntries = await tauriPage.locator('[data-testid="history-entries"]').isVisible();
+  const historyText = await historyPage.innerText();
+  expect(hasEntries || /No history yet|No recordings yet/.test(historyText)).toBeTruthy();
+  await expect(tauriPage.locator('input[type="text"]')).toBeVisible();
 });

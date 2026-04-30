@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false
+  },
+  "include": [
+    "./**/*.mjs",
+    "./**/*.d.ts",
+    "./**/*.ts",
+    "./**/*.mts",
+    "./**/*.cts",
+    "../../../packages/e2e-harness/src/**/*.ts"
+  ]
+}
