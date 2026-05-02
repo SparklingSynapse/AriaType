@@ -55,6 +55,9 @@ async-trait = "0.1.89"
 tokio-tungstenite = { version = "0.29.0", features = ["native-tls"] }
 base64 = "0.22"
 rusqlite = { version = "0.34", features = ["bundled"] }
+uni-ocr = "0.1.5"
+xcap = "0.9.4"
+image = "0.25"
 
 [dev-dependencies]
 wiremock = "0.6"

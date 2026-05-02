@@ -105,6 +105,9 @@ pub struct AppSettings {
     pub vad_enabled: bool,
     pub stay_in_tray: bool,
     pub polish_custom_templates: Vec<CustomPolishTemplate>,
+    /// Enable window context capture via screenshot + OCR at recording start.
+    /// When enabled, the focused window content is injected into polish prompts.
+    pub window_context_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -143,6 +146,7 @@ impl Default for AppSettings {
             vad_enabled: false,
             stay_in_tray: false,
             polish_custom_templates: Vec::new(),
+            window_context_enabled: false,
         }
     }
 }
@@ -840,6 +844,11 @@ pub fn update_settings(
                     Err(e) => {
                         tracing::error!(error = %e, value = ?value, "cloud_polish_configs_parse_failed");
                     }
+                }
+            }
+            "window_context_enabled" => {
+                if let Some(v) = value.as_bool() {
+                    settings.window_context_enabled = v;
                 }
             }
             _ => return Err(format!("Unknown setting key: {}", key)),

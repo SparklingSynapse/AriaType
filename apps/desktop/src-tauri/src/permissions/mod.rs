@@ -10,16 +10,18 @@ pub enum PermissionKind {
     Accessibility,
     InputMonitoring,
     Microphone,
+    ScreenRecording,
 }
 
 impl PermissionKind {
-    pub const ALL: [Self; 3] = [Self::Accessibility, Self::InputMonitoring, Self::Microphone];
+    pub const ALL: [Self; 4] = [Self::Accessibility, Self::InputMonitoring, Self::Microphone, Self::ScreenRecording];
 
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "accessibility" => Some(Self::Accessibility),
             "input_monitoring" => Some(Self::InputMonitoring),
             "microphone" => Some(Self::Microphone),
+            "screen_recording" => Some(Self::ScreenRecording),
             _ => None,
         }
     }
@@ -29,6 +31,7 @@ impl PermissionKind {
             Self::Accessibility => "accessibility",
             Self::InputMonitoring => "input_monitoring",
             Self::Microphone => "microphone",
+            Self::ScreenRecording => "screen_recording",
         }
     }
 }
@@ -55,6 +58,7 @@ pub struct PermissionSnapshot {
     pub accessibility: PermissionStatus,
     pub input_monitoring: PermissionStatus,
     pub microphone: PermissionStatus,
+    pub screen_recording: PermissionStatus,
 }
 
 impl PermissionSnapshot {
@@ -63,6 +67,7 @@ impl PermissionSnapshot {
             PermissionKind::Accessibility => self.accessibility,
             PermissionKind::InputMonitoring => self.input_monitoring,
             PermissionKind::Microphone => self.microphone,
+            PermissionKind::ScreenRecording => self.screen_recording,
         }
     }
 }
@@ -74,7 +79,7 @@ pub struct PermissionDefinition {
     pub core_flow: bool,
 }
 
-const PERMISSION_DEFINITIONS: [PermissionDefinition; 3] = [
+const PERMISSION_DEFINITIONS: [PermissionDefinition; 4] = [
     PermissionDefinition {
         kind: PermissionKind::Accessibility,
         capability: "global_hotkey",
@@ -93,16 +98,24 @@ const PERMISSION_DEFINITIONS: [PermissionDefinition; 3] = [
         check_method: "av_capture_device_authorization",
         core_flow: true,
     },
+    PermissionDefinition {
+        kind: PermissionKind::ScreenRecording,
+        capability: "window_context_capture",
+        check_method: "screen_capture_authorization",
+        core_flow: false,
+    },
 ];
 
 pub trait PermissionProvider: Send + Sync {
     fn check_accessibility(&self) -> PermissionStatus;
     fn check_input_monitoring(&self) -> PermissionStatus;
     fn check_microphone(&self) -> PermissionStatus;
+    fn check_screen_recording(&self) -> PermissionStatus;
 
     fn apply_accessibility(&self) -> Result<(), String>;
     fn apply_input_monitoring(&self) -> Result<(), String>;
     fn apply_microphone(&self) -> Result<(), String>;
+    fn apply_screen_recording(&self) -> Result<(), String>;
 }
 
 struct PermissionReporter {
@@ -132,6 +145,7 @@ pub fn read_permission_snapshot() -> PermissionSnapshot {
         accessibility: provider.check_accessibility(),
         input_monitoring: provider.check_input_monitoring(),
         microphone: provider.check_microphone(),
+        screen_recording: provider.check_screen_recording(),
     }
 }
 
@@ -145,6 +159,7 @@ pub fn apply_permission(kind: PermissionKind) -> Result<(), String> {
         PermissionKind::Accessibility => provider.apply_accessibility(),
         PermissionKind::InputMonitoring => provider.apply_input_monitoring(),
         PermissionKind::Microphone => provider.apply_microphone(),
+        PermissionKind::ScreenRecording => provider.apply_screen_recording(),
     }
 }
 
@@ -193,6 +208,7 @@ fn log_permission_snapshot(
         accessibility = snapshot.accessibility.as_str(),
         input_monitoring = snapshot.input_monitoring.as_str(),
         microphone = snapshot.microphone.as_str(),
+        screen_recording = snapshot.screen_recording.as_str(),
         permission_count = PERMISSION_DEFINITIONS.len(),
         "app_permission_snapshot"
     );
@@ -242,6 +258,7 @@ mod tests {
             accessibility: PermissionStatus::Granted,
             input_monitoring: PermissionStatus::Denied,
             microphone: PermissionStatus::NotDetermined,
+            screen_recording: PermissionStatus::NotDetermined,
         };
 
         assert_eq!(
@@ -254,6 +271,10 @@ mod tests {
         );
         assert_eq!(
             snapshot.status_for(PermissionKind::Microphone),
+            PermissionStatus::NotDetermined
+        );
+        assert_eq!(
+            snapshot.status_for(PermissionKind::ScreenRecording),
             PermissionStatus::NotDetermined
         );
     }

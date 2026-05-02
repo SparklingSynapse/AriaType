@@ -5,12 +5,17 @@
 Within each domain, code depends "forward" through layers. Cross-cutting concerns enter through a single explicit interface.
 
 ```
-Types → Config → Repo/State → Services → Runtime/Adapters → UI
+                sensors/  ←  基础设施层，只依赖 types + 外部 crate
+                  ↓
+Types → Config → State → Services → Engines → Commands → Events
 ```
 
 ## Backend Layers (Rust)
 
 ```
+sensors/        # Platform capabilities: screen capture, OCR, clipboard, etc.
+    ↓           # NO internal dependencies — only types/ and external crates
+    ↓
 types/          # Data structures, no logic (request/response types, enums)
     ↓
 config/         # Settings, defaults, configuration helpers
@@ -21,7 +26,7 @@ services/       # Pure use cases / orchestration, no Tauri side effects
     ↓
 engines/        # stt_engine/*, polish_engine/* — implement traits
     ↓
-commands/       # Tauri IPC handlers / adapters — thin layer, delegates to services
+commands/       # Tauri IPC handlers — thin layer, delegates to services and sensors
     ↓
 events/         # backend → frontend event emission
 ```
@@ -30,12 +35,13 @@ events/         # backend → frontend event emission
 
 | Layer | Responsibility |
 |-------|----------------|
+| `sensors/` | Platform capabilities — environment observation (screen capture, OCR, clipboard, etc.). Pure functions, no business logic, no state. Each file is one sensor. |
 | `types/` | Pure data structures, serialization/deserialization |
 | `config/` | Settings validation, default values, config file handling |
 | `state/` | Runtime state container (StreamingSttState, settings) |
 | `services/` | Use-case decisions and orchestration over state/history/engines; returns data or explicit actions, never calls Tauri commands directly |
 | `engines/` | Business logic, trait implementations for STT/Polish |
-| `commands/` | IPC handlers and explicit adapters for Tauri emit, text injection, window operations |
+| `commands/` | IPC handlers — composes services, sensors, events, and Tauri APIs |
 | `events/` | Event payload types and backend → frontend emission helpers |
 
 ## Frontend Layers (TypeScript/React)
@@ -71,7 +77,9 @@ components/     # UI components
 | `audio/` → `stt_engine/` — recorder must be agnostic to engine type; engine-specific logic stays in engine implementations | Code review |
 | `services/` → `commands/` is forbidden — use return values or explicit adapter inputs instead of reverse imports | Code review |
 | `services/` may depend on `state/`, `history/`, and engine traits/managers, but not on Tauri handles, window control, clipboard, or frontend events | Code review |
-| `commands/` may compose `services/`, `events/`, `text_injector/`, and Tauri APIs to adapt backend results to UI/OS side effects | Code review |
+| `commands/` may compose `services/`, `sensors/`, `events/`, `text_injector/`, and Tauri APIs to adapt backend results to UI/OS side effects | Code review |
+| `sensors/` depends only on `types/` and external crates — never on `state/`, `services/`, `engines/`, `commands/`, or `events/` | Code review |
+| `sensors/` provides pure capabilities, not business logic — no state, no settings, no orchestration | Code review |
 | Frontend never calls raw `invoke()` | Lint rule in `tsconfig.json` |
 | Backend never imports frontend code | Rust module system |
 | `packages/shared/` has zero runtime dependencies | No imports from apps/ or packages/ |
@@ -82,6 +90,7 @@ components/     # UI components
 2. **No `services -> commands` reverse dependency** — services return plain results; commands/adapters own Tauri emission and OS integration
 3. **No cross-domain dependencies** — Audio cannot depend on UI, STT engine cannot depend on text_injector
 4. **Boundaries are enforced by the module system** — Rust crate boundaries, TypeScript module boundaries
+5. **`sensors/` is a leaf module** — it has zero internal dependencies. Both `commands/` and `services/` may consume sensor output, but sensors never consume their output.
 
 ## Enforcement Mechanisms
 
@@ -98,6 +107,7 @@ components/     # UI components
 
 | File | Layer | Purpose |
 |------|-------|---------|
+| `sensors/window_context.rs` | sensor | Screen capture + OCR — provides focused window text |
 | `stt_engine/traits.rs` | engine | Defines unified SttEngine trait (send_chunk + finish) |
 | `stt_engine/unified_manager.rs` | engine | Engine lifecycle, selection logic |
 | `polish_engine/unified_manager.rs` | engine | Polish engine lifecycle |

@@ -55,6 +55,24 @@ impl PermissionProvider for MacosPermissions {
         }
     }
 
+    fn check_screen_recording(&self) -> PermissionStatus {
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGWindowListCopyWindowInfo(option: u32, relative_to_window: u32) -> *const std::ffi::c_void;
+            fn CFRelease(cf: *const std::ffi::c_void);
+        }
+
+        unsafe {
+            let window_list = CGWindowListCopyWindowInfo(1, 0);
+            if window_list.is_null() {
+                PermissionStatus::Denied
+            } else {
+                CFRelease(window_list);
+                PermissionStatus::Granted
+            }
+        }
+    }
+
     fn apply_accessibility(&self) -> Result<(), String> {
         #[link(name = "ApplicationServices", kind = "framework")]
         extern "C" {
@@ -140,6 +158,14 @@ impl PermissionProvider for MacosPermissions {
                 .spawn()
                 .map_err(|error| error.to_string())?;
         }
+        Ok(())
+    }
+
+    fn apply_screen_recording(&self) -> Result<(), String> {
+        Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+            .spawn()
+            .map_err(|error| error.to_string())?;
         Ok(())
     }
 }

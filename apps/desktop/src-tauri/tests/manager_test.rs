@@ -13,7 +13,10 @@ fn test_manager_new() {
     let manager = UnifiedEngineManager::new(models_dir.clone());
 
     let models = manager.get_models(EngineType::Whisper);
-    assert!(!models.is_empty(), "Should have default models");
+    assert!(!models.is_empty(), "Should have Whisper models");
+    
+    let sensevoice_models = manager.get_models(EngineType::SenseVoice);
+    assert!(!sensevoice_models.is_empty(), "Should have SenseVoice models");
 }
 
 #[test]
@@ -23,13 +26,13 @@ fn test_manager_model_info() {
 
     let models = manager.get_models(EngineType::Whisper);
 
-    let tiny = models.iter().find(|m| m.name == "tiny");
-    assert!(tiny.is_some(), "Should have tiny model");
+    let base = models.iter().find(|m| m.name == "whisper-base");
+    assert!(base.is_some(), "Should have whisper-base model");
 
-    let tiny = tiny.unwrap();
-    assert!(tiny.size_mb > 0);
-    assert!(!tiny.filename.is_empty());
-    assert!(tiny.display_name.contains("Tiny"));
+    let base = base.unwrap();
+    assert!(base.size_mb > 0);
+    assert!(!base.filename.is_empty());
+    assert!(base.display_name.contains("Base"));
 }
 
 #[test]
@@ -37,8 +40,8 @@ fn test_manager_get_model_path() {
     let models_dir = temp_models_dir();
     let manager = UnifiedEngineManager::new(models_dir);
 
-    let path = manager.get_model_path(EngineType::Whisper, "tiny");
-    assert!(path.to_string_lossy().contains("ggml-tiny.bin"));
+    let path = manager.get_model_path(EngineType::Whisper, "whisper-base");
+    assert!(path.to_string_lossy().contains("whisper-base"));
 }
 
 #[test]
@@ -47,15 +50,19 @@ fn test_manager_is_model_downloaded() {
     let manager = UnifiedEngineManager::new(models_dir.clone());
 
     assert!(
-        !manager.is_model_downloaded(EngineType::Whisper, "tiny"),
+        !manager.is_model_downloaded(EngineType::Whisper, "whisper-base"),
         "Model should not be downloaded initially"
     );
 
-    std::fs::write(models_dir.join("ggml-tiny.bin"), "fake model data").ok();
+    let model_subdir = models_dir.join("whisper-base");
+    std::fs::create_dir_all(&model_subdir).ok();
+    std::fs::write(model_subdir.join("base-encoder.onnx"), "fake encoder").ok();
+    std::fs::write(model_subdir.join("base-decoder.onnx"), "fake decoder").ok();
+    std::fs::write(model_subdir.join("base-tokens.txt"), "fake tokens").ok();
 
     let manager2 = UnifiedEngineManager::new(models_dir);
     assert!(
-        manager2.is_model_downloaded(EngineType::Whisper, "tiny"),
+        manager2.is_model_downloaded(EngineType::Whisper, "whisper-base"),
         "Model should be detected as downloaded"
     );
 }
@@ -83,8 +90,8 @@ fn test_manager_all_model_names() {
     let models = manager.get_models(EngineType::Whisper);
     let names: Vec<&str> = models.iter().map(|m| m.name.as_str()).collect();
 
-    assert!(names.contains(&"tiny"));
-    assert!(names.contains(&"base"));
+    assert!(names.contains(&"whisper-base"));
+    assert!(names.contains(&"whisper-small"));
 }
 
 #[test]
@@ -101,7 +108,7 @@ fn test_load_model_not_downloaded() {
     let models_dir = temp_models_dir();
     let manager = UnifiedEngineManager::new(models_dir);
 
-    let result = manager.load_model(EngineType::Whisper, "tiny");
+    let result = manager.load_model(EngineType::Whisper, "whisper-base");
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("not downloaded"));
 }
@@ -111,7 +118,7 @@ fn test_delete_model_not_exists() {
     let models_dir = temp_models_dir();
     let manager = UnifiedEngineManager::new(models_dir);
 
-    let result = manager.delete_model(EngineType::Whisper, "tiny");
+    let result = manager.delete_model(EngineType::Whisper, "whisper-base");
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("not found"));
 }
@@ -121,17 +128,16 @@ fn test_delete_model_success() {
     let models_dir = temp_models_dir();
     let manager = UnifiedEngineManager::new(models_dir.clone());
 
-    // Create a fake model file
-    let model_path = models_dir.join("ggml-tiny.bin");
-    std::fs::write(&model_path, "fake model data").unwrap();
+    let model_subdir = models_dir.join("whisper-base");
+    std::fs::create_dir_all(&model_subdir).ok();
+    std::fs::write(model_subdir.join("base-encoder.onnx"), "fake encoder").unwrap();
+    std::fs::write(model_subdir.join("base-decoder.onnx"), "fake decoder").unwrap();
+    std::fs::write(model_subdir.join("base-tokens.txt"), "fake tokens").unwrap();
 
-    // Verify file exists
-    assert!(model_path.exists());
+    assert!(model_subdir.exists());
 
-    // Delete model
-    let result = manager.delete_model(EngineType::Whisper, "tiny");
+    let result = manager.delete_model(EngineType::Whisper, "whisper-base");
     assert!(result.is_ok());
 
-    // Verify file is deleted
-    assert!(!model_path.exists());
+    assert!(!model_subdir.exists());
 }

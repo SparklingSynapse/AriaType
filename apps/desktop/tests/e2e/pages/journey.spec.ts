@@ -49,7 +49,7 @@ async function assertJourneyStep(
       await expect(tauriPage.locator('[tabindex="0"]')).toBeVisible();
       return;
     case 'done':
-      await expect(tauriPage.locator('[data-testid="onboarding-modal"] h3')).toBeVisible();
+      await expect(tauriPage.locator('[data-testid="onboarding-modal"] h2')).toBeVisible();
       await expect(tauriPage.locator('[data-testid="onboarding-primary-action"]')).toContainText('Get Started');
       await expect(tauriPage.locator('[data-testid="onboarding-primary-action"]')).not.toBeDisabled();
       return;

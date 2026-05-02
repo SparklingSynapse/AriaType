@@ -7,13 +7,14 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/hooks/usePermissions";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 
 export function PermissionSettings() {
   const { t } = useTranslation();
-  const { accessibilityGranted, microphoneStatus, isLoading, handleApplyPermission } =
+  const { accessibilityGranted, microphoneStatus, screenRecordingStatus, isLoading, handleApplyPermission } =
     usePermissions();
 
   return (
@@ -58,6 +59,7 @@ export function PermissionSettings() {
                 size="sm"
                 onClick={() => handleApplyPermission("microphone")}
                 disabled={isLoading}
+                className="min-w-[120px] shrink-0"
               >
                 {isLoading
                   ? "..."
@@ -90,12 +92,53 @@ export function PermissionSettings() {
               size="sm"
               onClick={() => handleApplyPermission("accessibility")}
               disabled={isLoading}
+              className="min-w-[120px] shrink-0"
             >
               {isLoading
                 ? "..."
                 : accessibilityGranted === false
                   ? t("general.permissions.grantPermission")
                   : t("general.permissions.openSettings")}
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between space-x-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Label>{t("general.permissions.screenRecording")}</Label>
+                <Monitor className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t("general.permissions.screenRecordingDesc")}
+                {screenRecordingStatus === "granted" && (
+                  <span className="text-green-500 ml-1">
+                    · {t("general.permissions.granted")}
+                  </span>
+                )}
+                {screenRecordingStatus === "denied" && (
+                  <span className="text-destructive ml-1">
+                    · {t("general.permissions.notGranted")}
+                  </span>
+                )}
+                {screenRecordingStatus === "not_determined" && (
+                  <span className="text-amber-500 ml-1">
+                    · {t("general.permissions.notGranted")}
+                  </span>
+                )}
+              </p>
+            </div>
+            <Button
+              variant={isLoading ? "outline" : screenRecordingStatus === "granted" ? "outline" : "default"}
+              size="sm"
+              onClick={() => handleApplyPermission("screen_recording")}
+              disabled={isLoading}
+              className="min-w-[120px] shrink-0"
+            >
+              {isLoading
+                ? "..."
+                : screenRecordingStatus === "granted"
+                  ? t("general.permissions.openSettings")
+                  : t("general.permissions.grantPermission")}
             </Button>
           </div>
 </CardContent>

@@ -55,12 +55,11 @@ async fn test_anthropic_polish_request_format() {
 
     let engine = CloudPolishEngine::new(config);
 
-    let request = PolishRequest {
-        text: "User text here".to_string(),
-        system_prompt: "System instruction here".to_string(),
-        language: "en".to_string(),
-        model_name: None,
-    };
+    let request = PolishRequest::new(
+        "User text here".to_string(),
+        "System instruction here".to_string(),
+        "en".to_string(),
+    );
 
     let result = engine
         .polish(request)
@@ -124,12 +123,11 @@ async fn test_openai_polish_request_format() {
 
     let engine = CloudPolishEngine::new(config);
 
-    let request = PolishRequest {
-        text: "User text here".to_string(),
-        system_prompt: "System instruction here".to_string(),
-        language: "en".to_string(),
-        model_name: None,
-    };
+    let request = PolishRequest::new(
+        "User text here".to_string(),
+        "System instruction here".to_string(),
+        "en".to_string(),
+    );
 
     let result = engine
         .polish(request)
@@ -166,12 +164,11 @@ async fn test_cloud_polish_times_out_after_five_seconds() {
     };
 
     let engine = CloudPolishEngine::new(config);
-    let request = PolishRequest {
-        text: "User text here".to_string(),
-        system_prompt: "System instruction here".to_string(),
-        language: "en".to_string(),
-        model_name: None,
-    };
+    let request = PolishRequest::new(
+        "User text here".to_string(),
+        "System instruction here".to_string(),
+        "en".to_string(),
+    );
 
     let err = engine
         .polish(request)

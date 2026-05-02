@@ -16,6 +16,8 @@ pub struct SessionState {
     pub chunk_count: usize,
     pub cancel_hotkey: Option<String>,
     pub cancel_trigger_mode: Option<ShortcutTriggerMode>,
+    /// OCR text captured from the focused window at recording start.
+    pub window_context: Option<String>,
 }
 
 /// Recording consumer state for all STT engines.
@@ -276,6 +278,7 @@ impl AppState {
             chunk_count: 0,
             cancel_hotkey: profile.map(|item| item.hotkey.clone()),
             cancel_trigger_mode: profile.map(|item| item.trigger_mode),
+            window_context: None,
         });
     }
 

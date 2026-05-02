@@ -9,5 +9,6 @@ test('Permission Settings page renders', async ({ tauriPage }) => {
   await expect(permissionPage).toBeVisible({ timeout: 10000 });
   await expect(permissionPage.getByText('Microphone')).toBeVisible();
   await expect(permissionPage.getByText('Accessibility')).toBeVisible();
-  await expect(permissionPage.locator('button')).toHaveCount(2);
+  await expect(permissionPage.getByText('Screen Recording')).toBeVisible();
+  await expect(permissionPage.locator('button')).toHaveCount(3);
 });

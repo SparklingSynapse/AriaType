@@ -8,6 +8,7 @@ import {
   X,
   Mic,
   Accessibility,
+  Monitor,
   Check,
   Loader2,
   Shield,
@@ -147,8 +148,12 @@ function PermissionStep() {
     "granted" | "denied" | "not_determined" | null
   >(null);
   const [axStatus, setAxStatus] = useState<boolean | null>(null);
+  const [screenStatus, setScreenStatus] = useState<
+    "granted" | "denied" | "not_determined" | null
+  >(null);
   const [micLoading, setMicLoading] = useState(false);
   const [axLoading, setAxLoading] = useState(false);
+  const [screenLoading, setScreenLoading] = useState(false);
 
   const checkPermissions = useCallback(() => {
     systemCommands
@@ -159,6 +164,10 @@ function PermissionStep() {
       .checkPermission("accessibility")
       .then((s) => setAxStatus(s === "granted"))
       .catch((err: unknown) => logger.error("check_accessibility_permission_failed", { error: String(err) }));
+    systemCommands
+      .checkPermission("screen_recording")
+      .then((s) => setScreenStatus(s as typeof screenStatus))
+      .catch((err: unknown) => logger.error("check_screen_recording_permission_failed", { error: String(err) }));
   }, []);
 
   useEffect(() => {
@@ -192,12 +201,24 @@ function PermissionStep() {
     }
   };
 
+  const handleScreenPermission = async () => {
+    setScreenLoading(true);
+    try {
+      await systemCommands.applyPermission("screen_recording");
+      setTimeout(checkPermissions, 500);
+    } catch (err) {
+      logger.error("failed_to_request_screen_recording_permission", { error: String(err) });
+    } finally {
+      setScreenLoading(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
       <img
         src={permissionsSvg}
         alt="Permissions"
-        className="w-full max-w-[160px] max-h-[120px] object-contain"
+        className="w-full max-w-[180px] max-h-[140px] object-contain"
       />
       <div className="space-y-4 w-full">
         <div
@@ -285,6 +306,52 @@ function PermissionStep() {
             {axLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : axStatus === true ? (
+              t("onboarding.permissions.granted")
+            ) : (
+              t("onboarding.permissions.grant")
+            )}
+          </Button>
+        </div>
+
+        <div
+          className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card"
+          data-testid="onboarding-permission-screen-recording"
+          data-status={screenStatus === null ? "pending" : screenStatus}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center border",
+                screenStatus === "granted"
+                  ? "bg-green-500/10 border-green-500/20 text-green-600"
+                  : "bg-transparent border-border text-muted-foreground",
+              )}
+            >
+              {screenStatus === "granted" ? (
+                <Check className="w-4 h-4 text-green-500" />
+              ) : (
+                <Monitor className="w-4 h-4 text-muted-foreground" />
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-medium">
+                {t("onboarding.permissions.screenRecording")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("onboarding.permissions.screenRecordingDesc")}
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={screenStatus === "granted" ? "outline" : "default"}
+            onClick={handleScreenPermission}
+            disabled={screenLoading || screenStatus === "granted"}
+            className="w-20"
+          >
+            {screenLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : screenStatus === "granted" ? (
               t("onboarding.permissions.granted")
             ) : (
               t("onboarding.permissions.grant")
@@ -442,8 +509,8 @@ function ModelStep({
   }, [selectedModel, models, progressMap, downloadedMap, onModelReadyChange]);
 
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
-      <img src={modelSvg} alt="Model" className="w-full max-w-[200px] max-h-[100px] object-contain" />
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
+      <img src={modelSvg} alt="Model" className="w-full max-w-[220px] max-h-[120px] object-contain" />
       <div className="space-y-3 w-full">
         <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
           <div className="flex items-center gap-3">
@@ -497,11 +564,11 @@ function LanguageStep() {
   };
 
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
       <img
         src={languageSvg}
         alt="Language"
-        className="w-full max-w-[160px] max-h-[120px] object-contain"
+        className="w-full max-w-[180px] max-h-[140px] object-contain"
       />
       <div className="space-y-4 w-full">
         <div className="space-y-2">
@@ -544,11 +611,11 @@ function HotkeyStep() {
   };
 
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
       <img
         src={hotkeySvg}
         alt="Hotkey"
-        className="w-full max-w-[160px] max-h-[120px] object-contain"
+        className="w-full max-w-[180px] max-h-[140px] object-contain"
       />
       <div className="space-y-4 w-full">
         <div className="flex justify-center">
@@ -678,7 +745,7 @@ function PracticeStep({ hotkey }: { hotkey: string }) {
 
   return (
     <div
-      className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full"
+      className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
@@ -744,16 +811,8 @@ function DoneStep() {
   ];
 
   return (
-    <div className="flex flex-col items-center gap-2 text-center w-full max-w-lg mx-auto h-full justify-center">
-      <img src={doneSvg} alt="Done" className="w-full max-w-[140px] max-h-[100px] object-contain mb-2" />
-      <div className="mb-2">
-        <h3 className="text-xl font-medium mb-1">
-          {t("onboarding.done.congrats")}
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          {t("onboarding.done.ready")}
-        </p>
-      </div>
+    <div className="flex flex-col items-center gap-4 text-center w-full max-w-lg mx-auto">
+      <img src={doneSvg} alt="Done" className="w-full max-w-[160px] max-h-[120px] object-contain" />
 
       <div className="w-full grid grid-cols-3 gap-3">
         {features.map((feature, index) => (
@@ -814,8 +873,8 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
     },
     {
       id: "done",
-      title: t("onboarding.done.title"),
-      description: t("onboarding.done.description"),
+      title: t("onboarding.done.congrats"),
+      description: t("onboarding.done.ready"),
     },
   ];
 
@@ -953,7 +1012,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
       />
 
       <div
-        className="relative z-10 w-[560px] h-[520px] mx-4 bg-background rounded-3xl border border-border shadow-2xl flex flex-col"
+        className="relative z-10 w-[640px] h-[620px] mx-4 bg-background rounded-3xl border border-border shadow-2xl flex flex-col"
         data-testid="onboarding-modal"
         data-step-id={current.id}
       >
@@ -976,19 +1035,17 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
           </div>
         </div>
 
-        <div className="flex-1 px-14 py-6 flex flex-col">
-          {current.id !== "done" && (
-            <>
-              <h2 className="text-lg font-semibold text-center mb-2">
-                {current.title}
-              </h2>
-              <p className="text-sm text-muted-foreground text-center mb-4">
-                {current.description}
-              </p>
-            </>
-          )}
+        <div className="flex-1 flex flex-col">
+          <div className="pt-6 px-14 shrink-0">
+            <h2 className="text-lg font-semibold text-center mb-2">
+              {current.title}
+            </h2>
+            <p className="text-sm text-muted-foreground text-center">
+              {current.description}
+            </p>
+          </div>
 
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center px-14 pb-10">
             {renderStepContent()}
           </div>
         </div>

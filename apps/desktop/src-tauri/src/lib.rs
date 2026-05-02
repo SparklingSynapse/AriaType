@@ -16,6 +16,7 @@ use tracing_subscriber::{
     EnvFilter,
 };
 
+pub mod sensors;
 pub mod audio;
 pub mod commands;
 pub mod events;
@@ -206,8 +207,7 @@ pub fn run() {
 
     #[cfg(feature = "e2e-testing")]
     let builder = builder.plugin(tauri_plugin_playwright::init_with_config(
-        tauri_plugin_playwright::PluginConfig::new()
-            .socket_path(playwright_socket),
+        tauri_plugin_playwright::PluginConfig::new().socket_path(playwright_socket),
     ));
 
     builder
