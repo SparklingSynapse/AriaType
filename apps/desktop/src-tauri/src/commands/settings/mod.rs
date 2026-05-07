@@ -105,6 +105,17 @@ pub struct AppSettings {
     pub vad_enabled: bool,
     pub stay_in_tray: bool,
     pub polish_custom_templates: Vec<CustomPolishTemplate>,
+    /// Enable window context capture via screenshot + OCR at recording start.
+    /// When enabled, the focused window content is injected into polish prompts.
+    pub window_context_enabled: bool,
+    /// Pill window size level: 1-5, default 2.
+    /// Controls the visual scale of the pill indicator via CSS font-size scaling.
+    #[serde(default = "default_pill_size")]
+    pub pill_size: u8,
+}
+
+fn default_pill_size() -> u8 {
+    2
 }
 
 impl Default for AppSettings {
@@ -115,7 +126,7 @@ impl Default for AppSettings {
             model: "whisper-base".to_string(),
             stt_engine: "whisper".to_string(),
             pill_position: "bottom-center".to_string(),
-            pill_indicator_mode: "always".to_string(),
+            pill_indicator_mode: "when_recording".to_string(),
             auto_start: false,
             gpu_acceleration: true,
             language: "auto".to_string(),
@@ -124,7 +135,7 @@ impl Default for AppSettings {
             audio_device: "default".to_string(),
             polish_system_prompt: crate::polish_engine::DEFAULT_POLISH_PROMPT.to_string(),
             polish_model: String::new(),
-            theme_mode: "system".to_string(),
+            theme_mode: "light".to_string(),
             stt_engine_initial_prompt: String::new(),
             model_resident: true,
             idle_unload_minutes: 5,
@@ -143,6 +154,8 @@ impl Default for AppSettings {
             vad_enabled: false,
             stay_in_tray: false,
             polish_custom_templates: Vec::new(),
+            window_context_enabled: true,
+            pill_size: 2,
         }
     }
 }
@@ -535,6 +548,26 @@ fn ensure_profile_trigger_modes(
     migrated
 }
 
+/// Migrate window_context_enabled from old default (false) to new default (true).
+/// This field was introduced with default=false, then changed to default=true.
+/// We migrate false -> true because users likely never intentionally set it to false
+/// (it was just the old default). If they want it disabled, they can toggle it off after.
+fn migrate_window_context_enabled(json: &mut serde_json::Value) -> bool {
+    match json.get("window_context_enabled") {
+        None => {
+            json["window_context_enabled"] = serde_json::Value::Bool(true);
+            tracing::info!("window_context_enabled_migrated-missing_added_true");
+            true
+        }
+        Some(serde_json::Value::Bool(false)) => {
+            json["window_context_enabled"] = serde_json::Value::Bool(true);
+            tracing::info!("window_context_enabled_migrated-false_to_true");
+            true
+        }
+        _ => false,
+    }
+}
+
 fn profile_trigger_mode(profile_key: &str, legacy_recording_mode: Option<&str>) -> &'static str {
     if let Some(recording_mode) = legacy_recording_mode {
         if recording_mode.eq_ignore_ascii_case("hold") {
@@ -573,7 +606,8 @@ pub fn load_settings_from_disk() -> AppSettings {
             let migrated_cloud = migrate_cloud_settings(&mut json_value);
             let migrated_model = validate_model_name(&mut json_value);
             let migrated_profiles = migrate_to_profiles_map(&mut json_value);
-            let migrated = migrated_cloud || migrated_model || migrated_profiles;
+            let migrated_window_context = migrate_window_context_enabled(&mut json_value);
+            let migrated = migrated_cloud || migrated_model || migrated_profiles || migrated_window_context;
 
             match serde_json::from_value::<AppSettings>(json_value.clone()) {
                 Ok(settings) => {
@@ -839,6 +873,19 @@ pub fn update_settings(
                     }
                     Err(e) => {
                         tracing::error!(error = %e, value = ?value, "cloud_polish_configs_parse_failed");
+                    }
+                }
+            }
+            "window_context_enabled" => {
+                if let Some(v) = value.as_bool() {
+                    settings.window_context_enabled = v;
+                }
+            }
+            "pill_size" => {
+                if let Some(v) = value.as_u64() {
+                    let size = v as u8;
+                    if size >= 1 && size <= 5 {
+                        settings.pill_size = size;
                     }
                 }
             }

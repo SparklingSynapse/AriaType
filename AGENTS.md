@@ -180,3 +180,10 @@ pnpm --filter @ariatype/website build && pnpm --filter @ariatype/website lint
 - `src-tauri/capabilities/` — never modify without asking
 - `lib.rs` — all commands registered here
 - `src/lib/tauri.ts` — all new IPC calls go here (typed wrappers only, never raw `invoke()`)
+
+
+## Three Principles of Testing
+
+- E2E test cases are black-box and should not concern themselves with internal system logic and implementation details.
+- Avoid putting the cart before the horse. Functional code must never be modified for the convenience of test cases, nor should it be adjusted to fit test case requirements.
+- When test cases fail, analysis and judgment shall be made in accordance with the above two principles.

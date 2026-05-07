@@ -1,41 +1,57 @@
 import { test, expect } from '../fixtures';
-import { dismissOnboardingIfPresent } from '../utils/helpers';
+import { openRoute, remountRoute } from '../utils/helpers';
 
-test('Cloud Service page renders with STT and Polish sections', async ({ page }) => {
-  await page.goto('/cloud');
-  await page.waitForLoadState('networkidle');
+test('Cloud Service page renders with STT and Polish sections', async ({ tauriPage }) => {
+  await openRoute(tauriPage, '/cloud');
 
-  await dismissOnboardingIfPresent(page);
-
-  await expect(page.locator('[data-testid="cloud-page"]')).toBeVisible({ timeout: 10000 });
-
-  await expect(page.locator('text=Cloud STT')).toBeVisible();
-  await expect(page.locator('text=Cloud Polish')).toBeVisible();
-
-  await page.waitForTimeout(500);
-
-  await expect(page).toHaveScreenshot('cloud-with-mock.png', {
-    threshold: 0.1,
-    fullPage: true,
-  });
+  await expect(tauriPage.locator('[data-testid="cloud-page"]')).toBeVisible({ timeout: 10000 });
+  await expect(tauriPage.getByText('Cloud STT')).toBeVisible();
+  await expect(tauriPage.getByText('Cloud Polish')).toBeVisible();
+  await expect(tauriPage.locator('#cloud-stt')).toBeVisible();
 });
 
-test('Cloud STT enable toggle present', async ({ page }) => {
-  await page.goto('/cloud');
-  await page.waitForLoadState('networkidle');
+test('Cloud STT enable toggle present', async ({ tauriPage }) => {
+  await remountRoute(tauriPage, '/cloud');
 
-  await dismissOnboardingIfPresent(page);
-
-  const sttSwitch = page.locator('#cloud-stt');
-  await expect(sttSwitch).toBeVisible();
+  await expect(tauriPage.locator('#cloud-stt')).toBeVisible();
 });
 
-test('Cloud Polish enable toggle present', async ({ page }) => {
-  await page.goto('/cloud');
-  await page.waitForLoadState('networkidle');
+test('Cloud Polish enable toggle present', async ({ tauriPage }) => {
+  await remountRoute(tauriPage, '/cloud');
+  await tauriPage.getByText('Cloud Polish').click();
 
-  await dismissOnboardingIfPresent(page);
+  await expect(tauriPage.locator('#cloud-polish')).toBeVisible();
+});
 
-  const polishSwitch = page.locator('#cloud-polish');
-  await expect(polishSwitch).toBeVisible();
+test('Cloud STT toggle is on with seeded settings', async ({ tauriPage }) => {
+  await remountRoute(tauriPage, '/cloud');
+
+  const sttToggle = tauriPage.locator('#cloud-stt');
+  await expect(sttToggle).toBeVisible({ timeout: 10000 });
+  await expect(sttToggle).toHaveAttribute('aria-checked', 'true');
+});
+
+test('Cloud Polish toggle is on with seeded settings', async ({ tauriPage }) => {
+  await remountRoute(tauriPage, '/cloud');
+
+  await tauriPage.getByText('Cloud Polish').click();
+  const polishToggle = tauriPage.locator('#cloud-polish');
+  await expect(polishToggle).toBeVisible({ timeout: 10000 });
+  await expect(polishToggle).toHaveAttribute('aria-checked', 'true');
+});
+
+test('Cloud STT shows provider and fields when enabled', async ({ tauriPage }) => {
+  await remountRoute(tauriPage, '/cloud');
+
+  await expect(tauriPage.locator('#cloud-stt')).toHaveAttribute('aria-checked', 'true');
+  await expect(tauriPage.getByText('Provider')).toBeVisible();
+  await expect(tauriPage.getByText('How to get API credentials')).toBeVisible();
+});
+
+test('Cloud Polish shows provider and fields when enabled', async ({ tauriPage }) => {
+  await remountRoute(tauriPage, '/cloud');
+
+  await tauriPage.getByText('Cloud Polish').click();
+  await expect(tauriPage.locator('#cloud-polish')).toHaveAttribute('aria-checked', 'true');
+  await expect(tauriPage.getByText('API Format')).toBeVisible();
 });

@@ -27,10 +27,12 @@
     "release:local": "pnpm tauri:build:mac && pnpm build:website",
     "release:local:universal": "pnpm tauri:build:mac-universal && pnpm build:website",
     "dev:website": "pnpm --filter @ariatype/website dev",
-    "build:website": "pnpm --filter @ariatype/website build && node scripts/sync-website-export.mjs"
+    "build:website": "pnpm --filter @ariatype/website build && node scripts/sync-website-export.mjs",
+    "e2e": "pnpm --filter @ariatype/desktop run test:e2e",
+    "test:e2e": "pnpm --filter @ariatype/desktop run test:e2e"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm check:md-links",
+    "pre-commit": "./scripts/pre-commit-hook.sh",
     "post-commit": "./scripts/post-commit-hook.sh"
   },
   "devDependencies": {
@@ -41,5 +43,23 @@
     "node": ">=18",
     "pnpm": ">=8"
   },
-  "packageManager": "pnpm@8.15.0"
+  "packageManager": "pnpm@8.15.0",
+  "pnpm": {
+    "overrides": {
+      "cross-spawn": "7.0.6",
+      "flatted": "3.4.2",
+      "glob": "10.5.0",
+      "minimatch": "10.2.4",
+      "picomatch": "4.0.4",
+      "picomatch@2": "2.3.2",
+      "semver-regex": "4.0.5",
+      "trim-newlines": "5.0.0",
+      "http-cache-semantics": "4.2.0",
+      "fast-xml-parser": "5.7.3",
+      "got": "11.8.5",
+      "file-type": "22.0.1",
+      "postcss": "8.5.14",
+      "vite": "8.0.10"
+    }
+  }
 }

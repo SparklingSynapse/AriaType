@@ -92,8 +92,10 @@ function HotkeyTag({ keyLabel }: { keyLabel: string }) {
   return (
     <span
       className="inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 
-                 rounded-md bg-secondary/40 border border-border/50 
-                 text-xs font-medium shadow-sm
+                 rounded-md text-xs font-medium
+                 bg-gradient-to-b from-secondary/60 to-secondary/90 
+                 border border-border/70 
+                 shadow-[0_2px_0_0_hsl(var(--border)/0.4),0_1px_3px_0_rgba(0,0,0,0.1)]
                  text-foreground/80"
     >
       {keyLabel}

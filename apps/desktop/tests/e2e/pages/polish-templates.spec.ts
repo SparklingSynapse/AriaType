@@ -1,18 +1,12 @@
 import { test, expect } from '../fixtures';
-import { dismissOnboardingIfPresent } from '../utils/helpers';
+import { openRoute } from '../utils/helpers';
 
-test('Polish Templates page renders', async ({ page }) => {
-  await page.goto('/polish-templates');
-  await page.waitForLoadState('networkidle');
+test('Polish Templates page renders', async ({ tauriPage }) => {
+  await openRoute(tauriPage, '/polish-templates');
 
-  await dismissOnboardingIfPresent(page);
+  const templatesPage = tauriPage.locator('[data-testid="polish-templates-page"]');
 
-  await expect(page.locator('[data-testid="polish-templates-page"]')).toBeVisible({ timeout: 10000 });
-
-  await page.waitForTimeout(500);
-
-  await expect(page).toHaveScreenshot('polish-templates.png', {
-    threshold: 0.1,
-    fullPage: true,
-  });
+  await expect(templatesPage).toBeVisible({ timeout: 10000 });
+  await expect(templatesPage.getByText('Create')).toBeVisible();
+  await expect(templatesPage.locator('h3')).toHaveCount(2);
 });

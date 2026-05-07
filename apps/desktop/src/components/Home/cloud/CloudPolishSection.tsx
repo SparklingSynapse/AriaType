@@ -9,7 +9,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, ExternalLink } from "lucide-react";
+import { WarningCircle, ArrowSquareOut } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 import { settingsCommands, CloudProviderConfig, CloudProviderSchemas } from "@/lib/tauri";
@@ -86,7 +86,7 @@ export function CloudPolishSection() {
         if (field.required) {
           const value = configRecord[field.key] ?? "";
           if (!value.trim()) {
-            errors[field.key] = t("cloud.validation.fieldRequired", `${field.name} is required`);
+            errors[field.key] = t("cloud.validation.fieldRequired", { fieldName: field.name });
           }
         }
       }
@@ -142,7 +142,7 @@ export function CloudPolishSection() {
               className="text-xs text-primary hover:underline flex items-center gap-1"
             >
               {t("cloud.polish.modelGuide", "Mainstream model information")}
-              <ExternalLink className="w-3 h-3" />
+              <ArrowSquareOut className="w-3 h-3" />
             </a>
 
             <div className="space-y-2">
@@ -175,7 +175,7 @@ export function CloudPolishSection() {
                 />
                 {polishErrors[field.key] && (
                   <p className="text-[13px] text-destructive flex items-center mt-1">
-                    <AlertCircle className="w-3.5 h-3.5 mr-1" />
+                    <WarningCircle className="w-3.5 h-3.5 mr-1" />
                     {polishErrors[field.key]}
                   </p>
                 )}

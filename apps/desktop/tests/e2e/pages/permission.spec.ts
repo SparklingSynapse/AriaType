@@ -1,15 +1,14 @@
 import { test, expect } from '../fixtures';
+import { openRoute } from '../utils/helpers';
 
-test('Permission Settings page renders', async ({ page }) => {
-  await page.goto('/permission');
-  await page.waitForLoadState('networkidle');
+test('Permission Settings page renders', async ({ tauriPage }) => {
+  await openRoute(tauriPage, '/permission');
 
-  await expect(page.locator('[data-testid="permission-page"]')).toBeVisible({ timeout: 10000 });
+  const permissionPage = tauriPage.locator('[data-testid="permission-page"]');
 
-  await page.waitForTimeout(500);
-
-  await expect(page).toHaveScreenshot('permission.png', {
-    threshold: 0.1,
-    fullPage: true,
-  });
+  await expect(permissionPage).toBeVisible({ timeout: 10000 });
+  await expect(permissionPage.getByText('Microphone')).toBeVisible();
+  await expect(permissionPage.getByText('Accessibility')).toBeVisible();
+  await expect(permissionPage.getByText('Screen Recording')).toBeVisible();
+  await expect(permissionPage.locator('button')).toHaveCount(3);
 });

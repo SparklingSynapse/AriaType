@@ -6,18 +6,21 @@ import { useConfirm } from "@/components/ui/confirm";
 import { events, historyCommands, TranscriptionEntry, HistoryFilter } from "@/lib/tauri";
 import { showToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
-  Search,
+  MagnifyingGlass,
   Clock,
-  ChevronLeft,
-  ChevronRight,
+  CaretLeft,
+  CaretRight,
   X,
-  Copy,
-  AlertCircle,
-  RotateCcw,
-  Trash2,
-} from "lucide-react";
+  CopySimple,
+  WarningCircle,
+  ArrowCounterClockwise,
+  Trash,
+} from "@phosphor-icons/react";
 import { logger } from "@/lib/logger";
+import { SettingsPageLayout } from "./SettingsPageLayout";
 
 const PAGE_SIZE = 20;
 
@@ -71,7 +74,7 @@ function HistoryEntryCard({ entry, t, onRetry, retryingIds }: HistoryEntryCardPr
       <div className="flex-1 min-w-0">
         {isError ? (
           <div className="flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <WarningCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
             <div className="flex flex-col gap-1">
               <p className="text-[14px] text-muted-foreground leading-relaxed">
                 {t("history.error.failed")}
@@ -102,7 +105,7 @@ function HistoryEntryCard({ entry, t, onRetry, retryingIds }: HistoryEntryCardPr
               onClick={handleCopy}
               title={t("history.copy")}
             >
-              <Copy className={cn("h-3.5 w-3.5 pointer-events-none", copied && "text-primary")} />
+              <CopySimple className={cn("h-3.5 w-3.5 pointer-events-none", copied && "text-primary")} />
             </Button>
           )}
           {isError && (
@@ -117,7 +120,7 @@ function HistoryEntryCard({ entry, t, onRetry, retryingIds }: HistoryEntryCardPr
               disabled={isRetrying}
               title={t("history.retry")}
             >
-              <RotateCcw className={cn("h-3.5 w-3.5 pointer-events-none", isRetrying && "animate-spin")} />
+              <ArrowCounterClockwise className={cn("h-3.5 w-3.5 pointer-events-none", isRetrying && "animate-spin")} />
               <span className="pointer-events-none">
                 {isRetrying ? t("history.retrying") : t("history.retry")}
               </span>
@@ -333,33 +336,20 @@ export function HistoryPage() {
   ], [t]);
 
   return (
-    <div className="mx-auto max-w-6xl p-10" data-testid="history-page">
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-[1.7rem] font-semibold tracking-[-0.05em] text-foreground">{t("history.title")}</h1>
-          <p className="text-muted-foreground mt-2">{t("history.description")}</p>
-        </div>
-      </div>
-
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-        <div className="inline-flex h-10 items-center justify-center rounded-full bg-secondary p-1 text-muted-foreground">
-          {engineFilters.map((filter) => (
-            <button
-              key={filter.value}
-              onClick={() => handleEngineFilterChange(filter.value)}
-              className={cn(
-                "inline-flex items-center justify-center rounded-full px-4 py-1.5 text-sm font-medium transition-all",
-                engineFilter === filter.value
-                  ? "bg-background text-foreground shadow-sm"
-                  : "hover:text-foreground"
-              )}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
+    <SettingsPageLayout
+      title={t("history.title")}
+      description={t("history.description")}
+      testId="history-page"
+    >
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <SegmentedControl
+          items={engineFilters}
+          value={engineFilter}
+          onChange={(v) => handleEngineFilterChange(v as EngineFilter)}
+          size="sm"
+        />
         <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             type="text"
             placeholder={t("history.search.placeholder")}
@@ -380,77 +370,79 @@ export function HistoryPage() {
         </div>
       </div>
 
-      <div className="relative min-h-[400px]">
-        {isLoading && entries.length === 0 ? (
-          <div className="space-y-1">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center gap-3 py-4 px-3 border-b border-border/40">
-                <div className="h-4 w-12 rounded bg-secondary/50 animate-pulse" />
-                <div className="h-4 w-2/3 rounded bg-secondary/50 animate-pulse" />
-              </div>
-            ))}
-          </div>
-        ) : entries.length > 0 ? (
-          <div className="flex flex-col" data-testid="history-entries">
-            {entries.map((entry) => (
-              <HistoryEntryCard 
-                key={entry.id} 
-                entry={entry} 
-                t={t} 
-                onRetry={handleRetry}
-                retryingIds={retryingIds}
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyState t={t} />
-        )}
-      </div>
-
-      {!isLoading && entries.length > 0 && (
-        <div className="flex items-center justify-between mt-6">
-          <div className="text-sm text-muted-foreground">
-            {t("history.pagination.page", {
-              current: currentPage + 1,
-              total: Math.max(1, totalPages),
-            })}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-              disabled={!hasPrevPage}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              {t("history.pagination.prev")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => p + 1)}
-              disabled={!hasNextPage}
-            >
-              {t("history.pagination.next")}
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          </div>
+      <Card className="relative min-h-[400px] flex flex-col">
+        <div className="flex-1">
+          {isLoading && entries.length === 0 ? (
+            <div className="space-y-1 p-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 py-4 px-3 border-b border-border/40">
+                  <div className="h-4 w-12 rounded bg-secondary/50 animate-pulse" />
+                  <div className="h-4 w-2/3 rounded bg-secondary/50 animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : entries.length > 0 ? (
+            <div className="flex flex-col p-3" data-testid="history-entries">
+              {entries.map((entry) => (
+                <HistoryEntryCard
+                  key={entry.id}
+                  entry={entry}
+                  t={t}
+                  onRetry={handleRetry}
+                  retryingIds={retryingIds}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState t={t} />
+          )}
         </div>
-      )}
+
+        {!isLoading && entries.length > 0 && (
+          <div className="flex items-center justify-between p-4 border-t border-border/40">
+            <div className="text-sm text-muted-foreground">
+              {t("history.pagination.page", {
+                current: currentPage + 1,
+                total: Math.max(1, totalPages),
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                disabled={!hasPrevPage}
+              >
+                <CaretLeft className="h-4 w-4 mr-1" />
+                {t("history.pagination.prev")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => p + 1)}
+                disabled={!hasNextPage}
+              >
+                {t("history.pagination.next")}
+                <CaretRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
 
       {!isLoading && totalCount > 0 && (
-        <div className="flex justify-end mt-8 pt-4 border-t border-border/30">
+        <div className="flex justify-end pt-4">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleClearHistory}
             className="text-muted-foreground hover:text-destructive text-xs gap-1"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash className="h-3.5 w-3.5" />
             {t("history.clear.button")}
           </Button>
         </div>
       )}
-    </div>
+    </SettingsPageLayout>
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "@ariatype/desktop",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "license": "AGPL-3.0-only",
   "description": "AriaType Desktop Application",
   "type": "module",
@@ -19,8 +19,9 @@
     "test:rust:coverage": "cd src-tauri && cargo llvm-cov --html",
     "test:rust:coverage:ci": "cd src-tauri && cargo llvm-cov --lcov --output-path lcov.info --fail-under-lines 90",
     "test:all": "pnpm test && pnpm test:rust",
-    "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
-    "test:e2e:update": "bash scripts/export-mocks.sh && rm -rf tests/e2e/snapshots && playwright test --config=tests/e2e/playwright.config.ts --update-snapshots",
+    "test:e2e": "node ../../packages/e2e-harness/src/runner-cli.mjs tests/e2e/e2e.config.mjs",
+    "test:e2e:update": "node ../../packages/e2e-harness/src/runner-cli.mjs tests/e2e/e2e.config.mjs --update-snapshots",
+    "test:e2e:debug": "playwright test --config=tests/e2e/playwright.config.ts --debug",
     "tauri": "tauri",
     "copy-installer": "node ../../scripts/copy-installers.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
@@ -38,8 +39,10 @@
   },
   "dependencies": {
     "@aptabase/tauri": "^0.4.1",
+    "@ariatype/e2e-harness": "workspace:*",
     "@ariatype/shared": "workspace:*",
     "@floating-ui/react": "^0.27.19",
+    "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-dialog": "^1.1.15",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.2.0",
@@ -54,7 +57,6 @@
     "framer-motion": "^11.18.0",
     "i18next": "^25.8.12",
     "i18next-browser-languagedetector": "^8.2.1",
-    "lucide-react": "^0.474.0",
     "overlayscrollbars": "^2.14.0",
     "overlayscrollbars-react": "^0.5.6",
     "react": "^19.0.0",
@@ -68,6 +70,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@srsholmes/tauri-playwright": "^0.2.2",
     "@tauri-apps/cli": "^2.10.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
@@ -80,12 +83,12 @@
     "imagemin-cli": "^8.0.0",
     "imagemin-pngquant": "^10.0.0",
     "jsdom": "^26.0.0",
-    "postcss": "^8.5.1",
+    "postcss": "^8.5.14",
     "rimraf": "^6.1.3",
     "tailwindcss": "^3.4.17",
     "tauri-version": "^1.0.0",
     "typescript": "^5.7.3",
-    "vite": "^6.0.7",
+    "vite": "^8.0.10",
     "vitest": "^3.0.5"
   }
 }

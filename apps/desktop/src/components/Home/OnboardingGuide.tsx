@@ -1,19 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useEventListeners } from "@/hooks/useEventListeners";
 import { Button } from "@/components/ui/button";
 import {
-  ChevronRight,
-  ChevronLeft,
+  CaretRight,
+  CaretLeft,
   X,
-  Mic,
-  Accessibility,
+  Microphone,
+  Wheelchair,
+  Desktop,
   Check,
-  Loader2,
+  CircleNotch,
   Shield,
-  Zap,
+  Lightning,
   Eye,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
@@ -35,8 +36,13 @@ import modelSvg from "@/assets/illustrations/onboarding/model.png";
 import hotkeySvg from "@/assets/illustrations/onboarding/hotkey.png";
 import practiceSvg from "@/assets/illustrations/onboarding/practice.png";
 import doneSvg from "@/assets/illustrations/onboarding/done.png";
+import {
+  resolveOnboardingModelProgress,
+  resolveOnboardingModelReady,
+} from "./onboarding-model";
 
 const DEFAULT_HOTKEY = "Shift+Space";
+const ONBOARDING_RESET_EVENT = "ariatype:onboarding-reset";
 
 const SENSEVOICE_PREFERRED_ONBOARDING = ["zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR", "en-US"];
 
@@ -95,6 +101,7 @@ function detectSystemLanguage(): string {
 }
 
 const COMMON_LANGUAGES = [
+  { code: "auto", label: "Auto" },
   { code: "en-US", label: "English" },
   { code: "zh-CN", label: "Chinese (Simplified)" },
   { code: "zh-TW", label: "Chinese (Traditional)" },
@@ -142,8 +149,12 @@ function PermissionStep() {
     "granted" | "denied" | "not_determined" | null
   >(null);
   const [axStatus, setAxStatus] = useState<boolean | null>(null);
+  const [screenStatus, setScreenStatus] = useState<
+    "granted" | "denied" | "not_determined" | null
+  >(null);
   const [micLoading, setMicLoading] = useState(false);
   const [axLoading, setAxLoading] = useState(false);
+  const [screenLoading, setScreenLoading] = useState(false);
 
   const checkPermissions = useCallback(() => {
     systemCommands
@@ -154,6 +165,10 @@ function PermissionStep() {
       .checkPermission("accessibility")
       .then((s) => setAxStatus(s === "granted"))
       .catch((err: unknown) => logger.error("check_accessibility_permission_failed", { error: String(err) }));
+    systemCommands
+      .checkPermission("screen_recording")
+      .then((s) => setScreenStatus(s as typeof screenStatus))
+      .catch((err: unknown) => logger.error("check_screen_recording_permission_failed", { error: String(err) }));
   }, []);
 
   useEffect(() => {
@@ -187,15 +202,31 @@ function PermissionStep() {
     }
   };
 
+  const handleScreenPermission = async () => {
+    setScreenLoading(true);
+    try {
+      await systemCommands.applyPermission("screen_recording");
+      setTimeout(checkPermissions, 500);
+    } catch (err) {
+      logger.error("failed_to_request_screen_recording_permission", { error: String(err) });
+    } finally {
+      setScreenLoading(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
       <img
         src={permissionsSvg}
         alt="Permissions"
-        className="w-full max-w-[160px] max-h-[120px] object-contain"
+        className="w-full max-w-[180px] max-h-[140px] object-contain"
       />
       <div className="space-y-4 w-full">
-        <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
+        <div
+          className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card"
+          data-testid="onboarding-permission-microphone"
+          data-status={micStatus ?? "pending"}
+        >
           <div className="flex items-center gap-3">
             <div
               className={cn(
@@ -208,7 +239,7 @@ function PermissionStep() {
               {micStatus === "granted" ? (
                 <Check className="w-4 h-4 text-green-500" />
               ) : (
-                <Mic className="w-4 h-4 text-muted-foreground" />
+                <Microphone className="w-4 h-4 text-muted-foreground" />
               )}
             </div>
             <div>
@@ -228,7 +259,7 @@ function PermissionStep() {
             className="w-20"
           >
             {micLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <CircleNotch className="w-4 h-4 animate-spin" />
             ) : micStatus === "granted" ? (
               t("onboarding.permissions.granted")
             ) : (
@@ -237,7 +268,11 @@ function PermissionStep() {
           </Button>
         </div>
 
-        <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
+        <div
+          className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card"
+          data-testid="onboarding-permission-accessibility"
+          data-status={axStatus === null ? "pending" : axStatus ? "granted" : "denied"}
+        >
           <div className="flex items-center gap-3">
             <div
               className={cn(
@@ -250,7 +285,7 @@ function PermissionStep() {
               {axStatus === true ? (
                 <Check className="w-4 h-4 text-green-500" />
               ) : (
-                <Accessibility className="w-4 h-4 text-muted-foreground" />
+                <Wheelchair className="w-4 h-4 text-muted-foreground" />
               )}
             </div>
             <div>
@@ -270,8 +305,54 @@ function PermissionStep() {
             className="w-20"
           >
             {axLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <CircleNotch className="w-4 h-4 animate-spin" />
             ) : axStatus === true ? (
+              t("onboarding.permissions.granted")
+            ) : (
+              t("onboarding.permissions.grant")
+            )}
+          </Button>
+        </div>
+
+        <div
+          className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card"
+          data-testid="onboarding-permission-screen-recording"
+          data-status={screenStatus === null ? "pending" : screenStatus}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center border",
+                screenStatus === "granted"
+                  ? "bg-green-500/10 border-green-500/20 text-green-600"
+                  : "bg-transparent border-border text-muted-foreground",
+              )}
+            >
+              {screenStatus === "granted" ? (
+                <Check className="w-4 h-4 text-green-500" />
+              ) : (
+                <Desktop className="w-4 h-4 text-muted-foreground" />
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-medium">
+                {t("onboarding.permissions.screenRecording")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("onboarding.permissions.screenRecordingDesc")}
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={screenStatus === "granted" ? "outline" : "default"}
+            onClick={handleScreenPermission}
+            disabled={screenLoading || screenStatus === "granted"}
+            className="w-20"
+          >
+            {screenLoading ? (
+              <CircleNotch className="w-4 h-4 animate-spin" />
+            ) : screenStatus === "granted" ? (
               t("onboarding.permissions.granted")
             ) : (
               t("onboarding.permissions.grant")
@@ -338,8 +419,16 @@ function ModelStep({
   const { t } = useTranslation();
   const [models, setModels] = useState<RecommendedModel[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
+  const [downloadedMap, setDownloadedMap] = useState<Record<string, boolean>>({});
 
   const recommendedModelName = getRecommendedModelName(language);
+  const recommendedModelProgress = resolveOnboardingModelProgress({
+    selectedModel: recommendedModelName,
+    models,
+    progressMap,
+    downloadedMap,
+  });
+  const recommendedModelReady = recommendedModelProgress >= 100;
 
   // Fetch recommendations when component mounts or language changes
   useEffect(() => {
@@ -360,8 +449,11 @@ function ModelStep({
         if (!mounted) return;
 
         if (isDownloaded) {
+          setDownloadedMap((prev) => ({ ...prev, [modelName]: true }));
           setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
         } else {
+          setDownloadedMap((prev) => ({ ...prev, [modelName]: false }));
+          setProgressMap((prev) => ({ ...prev, [modelName]: 0 }));
           await modelCommands.downloadModel(modelName);
         }
       } catch (err: unknown) {
@@ -386,6 +478,7 @@ function ModelStep({
         setProgressMap((prev) => ({ ...prev, [data.model]: data.progress }));
       }),
       await events.onModelDownloadComplete(async (modelName) => {
+        setDownloadedMap((prev) => ({ ...prev, [modelName]: true }));
         setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
         modelCommands
           .recommendModelsByLanguage(language || "auto")
@@ -406,18 +499,19 @@ function ModelStep({
 
   // Only allow next step when the currently selected model is downloaded
   useEffect(() => {
-    if (selectedModel) {
-      const model = models.find((m) => m.model_name === selectedModel);
-      const progress = progressMap[selectedModel] || 0;
-      onModelReadyChange(!!model?.downloaded || progress === 100);
-    } else {
-      onModelReadyChange(false);
-    }
-  }, [selectedModel, models, progressMap, onModelReadyChange]);
+    onModelReadyChange(
+      resolveOnboardingModelReady({
+        selectedModel,
+        models,
+        progressMap,
+        downloadedMap,
+      }),
+    );
+  }, [selectedModel, models, progressMap, downloadedMap, onModelReadyChange]);
 
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
-      <img src={modelSvg} alt="Model" className="w-full max-w-[200px] max-h-[100px] object-contain" />
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
+      <img src={modelSvg} alt="Model" className="w-full max-w-[220px] max-h-[120px] object-contain" />
       <div className="space-y-3 w-full">
         <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
           <div className="flex items-center gap-3">
@@ -435,18 +529,18 @@ function ModelStep({
             </div>
           </div>
           <div className="flex items-center justify-center w-[18px] h-[18px]">
-            {progressMap[recommendedModelName] === 100 ? (
+            {recommendedModelReady ? (
               <Check className="w-[18px] h-[18px] text-green-500" />
             ) : (
               <CircularProgress
-                progress={progressMap[recommendedModelName] ?? 0}
+                progress={recommendedModelProgress}
                 size={18}
                 strokeWidth={2}
               />
             )}
           </div>
         </div>
-        {progressMap[recommendedModelName] !== undefined && progressMap[recommendedModelName] < 100 && (
+        {recommendedModelProgress > 0 && recommendedModelProgress < 100 && (
           <p className="text-xs text-muted-foreground text-center">
             {t("onboarding.model.downloading")}
           </p>
@@ -459,6 +553,19 @@ function ModelStep({
 function LanguageStep() {
   const { t } = useTranslation();
   const { settings, updateSetting } = useSettingsContext();
+  const [initialized, setInitialized] = useState(false);
+
+  // On first mount, detect and set system language if current is "auto"
+  useEffect(() => {
+    if (!initialized && settings?.stt_engine_language === "auto") {
+      const detected = detectSystemLanguage();
+      if (detected !== "auto") {
+        updateSetting("stt_engine_language", detected)
+          .catch((err: unknown) => logger.error("failed_to_set_detected_language", { error: String(err) }));
+      }
+      setInitialized(true);
+    }
+  }, [initialized, settings?.stt_engine_language, updateSetting]);
 
   if (!settings) return null;
 
@@ -470,17 +577,20 @@ function LanguageStep() {
     await updateSetting("stt_engine_language", value);
   };
 
+  // Use detected language if available, otherwise show current setting
+  const displayLanguage = settings.stt_engine_language ?? "auto";
+
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
       <img
         src={languageSvg}
         alt="Language"
-        className="w-full max-w-[160px] max-h-[120px] object-contain"
+        className="w-full max-w-[180px] max-h-[140px] object-contain"
       />
       <div className="space-y-4 w-full">
         <div className="space-y-2">
           <Select
-            value={settings.stt_engine_language ?? "auto"}
+            value={displayLanguage}
             onChange={(e) => handleLanguageChange(e.target.value)}
             options={COMMON_LANGUAGES.map((lang) => ({
               value: lang.code,
@@ -518,11 +628,11 @@ function HotkeyStep() {
   };
 
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full">
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
       <img
         src={hotkeySvg}
         alt="Hotkey"
-        className="w-full max-w-[160px] max-h-[120px] object-contain"
+        className="w-full max-w-[180px] max-h-[140px] object-contain"
       />
       <div className="space-y-4 w-full">
         <div className="flex justify-center">
@@ -652,7 +762,7 @@ function PracticeStep({ hotkey }: { hotkey: string }) {
 
   return (
     <div
-      className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto h-full"
+      className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
@@ -706,7 +816,7 @@ function DoneStep() {
       highlight: t("onboarding.done.feature1Highlight"),
     },
     {
-      icon: Zap,
+      icon: Lightning,
       label: t("onboarding.done.feature2"),
       highlight: t("onboarding.done.feature2Highlight"),
     },
@@ -718,16 +828,8 @@ function DoneStep() {
   ];
 
   return (
-    <div className="flex flex-col items-center gap-2 text-center w-full max-w-lg mx-auto h-full justify-center">
-      <img src={doneSvg} alt="Done" className="w-full max-w-[140px] max-h-[100px] object-contain mb-2" />
-      <div className="mb-2">
-        <h3 className="text-xl font-medium mb-1">
-          {t("onboarding.done.congrats")}
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          {t("onboarding.done.ready")}
-        </p>
-      </div>
+    <div className="flex flex-col items-center gap-4 text-center w-full max-w-lg mx-auto">
+      <img src={doneSvg} alt="Done" className="w-full max-w-[160px] max-h-[120px] object-contain" />
 
       <div className="w-full grid grid-cols-3 gap-3">
         {features.map((feature, index) => (
@@ -760,7 +862,6 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [isModelReady, setIsModelReady] = useState(false);
-  const hasAutoDetectedLanguage = useRef(false);
   const allSteps: Step[] = [
     {
       id: "permissions",
@@ -789,8 +890,8 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
     },
     {
       id: "done",
-      title: t("onboarding.done.title"),
-      description: t("onboarding.done.description"),
+      title: t("onboarding.done.congrats"),
+      description: t("onboarding.done.ready"),
     },
   ];
 
@@ -850,17 +951,15 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && !hasAutoDetectedLanguage.current) {
-      hasAutoDetectedLanguage.current = true;
-      if (!settings?.stt_engine_language || settings.stt_engine_language === "auto") {
-        const detected = detectSystemLanguage();
-        if (detected !== "auto") {
-          updateSetting("stt_engine_language", detected)
-            .catch((err: unknown) => logger.error("failed_to_set_detected_language", { error: String(err) }));
-        }
-      }
-    }
-  }, [isOpen, settings?.stt_engine_language, updateSetting]);
+    const handleReset = () => {
+      setCurrentStep(0);
+      setSelectedModel(null);
+      setIsModelReady(false);
+    };
+
+    window.addEventListener(ONBOARDING_RESET_EVENT, handleReset);
+    return () => window.removeEventListener(ONBOARDING_RESET_EVENT, handleReset);
+  }, []);
 
   useEffect(() => {
     if (currentStep >= steps.length) {
@@ -919,7 +1018,11 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
         onClick={handleSkip}
       />
 
-      <div className="relative z-10 w-[560px] h-[520px] mx-4 bg-background rounded-3xl border border-border shadow-2xl flex flex-col">
+      <div
+        className="relative z-10 w-[640px] h-[620px] mx-4 bg-background rounded-3xl border border-border shadow-2xl flex flex-col"
+        data-testid="onboarding-modal"
+        data-step-id={current.id}
+      >
         <div className="flex flex-col items-center gap-3 pt-6 shrink-0">
           <div className="flex justify-center gap-2">
             {steps.map((_, index) => (
@@ -939,19 +1042,17 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
           </div>
         </div>
 
-        <div className="flex-1 px-14 py-6 flex flex-col">
-          {current.id !== "done" && (
-            <>
-              <h2 className="text-lg font-semibold text-center mb-2">
-                {current.title}
-              </h2>
-              <p className="text-sm text-muted-foreground text-center mb-4">
-                {current.description}
-              </p>
-            </>
-          )}
+        <div className="flex-1 flex flex-col">
+          <div className="pt-6 px-14 shrink-0">
+            <h2 className="text-lg font-semibold text-center mb-2">
+              {current.title}
+            </h2>
+            <p className="text-sm text-muted-foreground text-center">
+              {current.description}
+            </p>
+          </div>
 
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center px-14 pb-10">
             {renderStepContent()}
           </div>
         </div>
@@ -964,7 +1065,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
               onClick={handlePrev}
               className="gap-2"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <CaretLeft className="w-4 h-4" />
               {t("onboarding.prev")}
             </Button>
           ) : (
@@ -982,9 +1083,10 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
             onClick={handleNext}
             disabled={!canProceed()}
             className="gap-2"
+            data-testid="onboarding-primary-action"
           >
             {isLastStep ? t("onboarding.finish") : t("onboarding.next")}
-            {!isLastStep && <ChevronRight className="w-4 h-4" />}
+            {!isLastStep && <CaretRight className="w-4 h-4" />}
           </Button>
         </div>
 

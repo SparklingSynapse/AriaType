@@ -1,14 +1,7 @@
-import { test as base } from '@playwright/test';
-import { generateMockIPCScript } from './utils/mock-ipc.js';
+import { createTauriFixturesFromConfigModule } from '@ariatype/e2e-harness/playwright';
 
-export const test = base.extend({
-  page: async ({ page }, use) => {
-    await page.addInitScript(generateMockIPCScript());
-    await page.addInitScript(() => {
-      localStorage.setItem('onboarding_completed', 'true');
-    });
-    await use(page);
-  },
-});
+const { test, expect } = await createTauriFixturesFromConfigModule('./e2e.config.mjs', {
+  sharedRuntimeKey: 'shared',
+}, new URL('.', import.meta.url).pathname);
 
-export { expect } from '@playwright/test';
+export { test, expect };

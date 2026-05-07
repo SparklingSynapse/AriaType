@@ -16,6 +16,7 @@ use tracing_subscriber::{
     EnvFilter,
 };
 
+pub mod sensors;
 pub mod audio;
 pub mod commands;
 pub mod events;
@@ -87,7 +88,7 @@ where
     }
 }
 
-fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
+fn init_logging() {
     let log_dir = crate::utils::AppPaths::log_dir();
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -100,6 +101,10 @@ fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
 
     let file_appender = tracing_appender::rolling::hourly(&log_dir, "ariatype.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    // Leak the guard to ensure logs are flushed for the entire app lifetime.
+    // The guard will be cleaned up when the process terminates.
+    std::mem::forget(guard);
 
     #[cfg(debug_assertions)]
     let env_prefix = "DEV";
@@ -132,13 +137,12 @@ fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
         .init();
 
     tracing::info!(log_dir = ?log_dir, env = env_prefix, "logging_initialized");
-    guard
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Install panic hook BEFORE any other initialization
-    // This ensures panics are logged even if logging isn't fully initialized
+    // This ensures panics are logged to stderr even if logging isn't fully initialized
     std::panic::set_hook(Box::new(|panic_info| {
         let location = panic_info
             .location()
@@ -160,28 +164,12 @@ pub fn run() {
             _ => String::new(),
         };
 
-        // Log to tracing (may work if logging is initialized)
-        tracing::error!(
-            location = %location,
-            message = %message,
-            "application_panic{}", backtrace_str
-        );
-
-        // Also write to stderr as a fallback
+        // Write to stderr as fallback (tracing may not be initialized yet)
         eprintln!("PANIC at {}: {}{}", location, message, backtrace_str);
     }));
 
-    let _log_guard = init_logging();
-
-    info!("app_started");
-
-    // Ensure all application directories exist (models, recordings, cache, etc.)
-    crate::utils::AppPaths::ensure_dirs();
-
-    // Initialize the global beep player with settings
-    let beep_enabled = crate::commands::settings::load_settings_from_disk().beep_on_record;
-    crate::audio::beep::init_beep_player();
-    crate::audio::beep::initialize_beep_player(beep_enabled);
+    // Note: Full logging initialization moved to setup() to use correct app-specific paths
+    // Early stderr output is sufficient for pre-setup panics
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_aptabase::Builder::new("A-US-3957940978").build())
@@ -200,8 +188,16 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
 
+    #[cfg(feature = "e2e-testing")]
+    let playwright_socket = std::env::var("TAURI_PLAYWRIGHT_SOCKET")
+        .unwrap_or_else(|_| "/tmp/ariatype-tauri-playwright.sock".to_string());
+
+    #[cfg(feature = "e2e-testing")]
+    let builder = builder.plugin(tauri_plugin_playwright::init_with_config(
+        tauri_plugin_playwright::PluginConfig::new().socket_path(playwright_socket),
+    ));
+
     builder
-        .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             window::show_main_window,
             window::hide_main_window,
@@ -276,8 +272,31 @@ pub fn run() {
             hotkey::delete_custom_profile,
         ])
         .setup(|app| {
+            // Initialize AppPaths with Tauri's PathResolver for app-specific data directory
+            // This ensures e2e/dev/prod use isolated directories based on productName
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to resolve app data directory");
+            crate::utils::AppPaths::init_from_tauri(data_dir.clone());
+            crate::utils::AppPaths::ensure_dirs();
+
+            // Initialize logging with correct app-specific paths
+            init_logging();
+            tracing::info!(data_dir = ?data_dir, "app_paths_initialized");
+
+            // Initialize AppState now that AppPaths is configured
+            let state = AppState::new();
+            app.manage(state);
+            tracing::info!("app_state_initialized");
+
+            // Initialize beep player with settings
+            crate::audio::beep::init_beep_player();
+            let beep_enabled = app.state::<AppState>().settings.lock().beep_on_record;
+            crate::audio::beep::initialize_beep_player(beep_enabled);
+
             let _ = crate::permissions::report_startup_permission_snapshot();
-            info!("setup_completed");
+            tracing::info!("setup_completed");
 
             #[cfg(target_os = "macos")]
             {

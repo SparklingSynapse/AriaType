@@ -96,17 +96,38 @@ cd apps/desktop/src-tauri
 cargo test --test ipc_contract_test -- --format json
 ```
 
-### Mock Harness (Frontend)
-
-```bash
-pnpm run test:harness:mock
-```
-
 ### Full Verification
 
 ```bash
 pnpm run verify --request '{"expectedBehavior": {"backendCommand": "start_recording"}}'
 ```
+
+## Snapshot Principles
+
+- Use real raw screenshots from the running app. Do not use masks, cropping, or image post-processing to force snapshot stability.
+- Wait for UI stabilization before every snapshot. The minimum wait is 1000ms, and longer waits are required when transitions or async UI are still settling.
+- Keep visual assertions paired with behavioral assertions. A snapshot does not replace explicit checks for route state, labels, enabled/disabled actions, or backend-driven state changes.
+- Prefer stable UI states over tolerance inflation. If content is naturally time-varying or data-varying, move the snapshot point to a stable state instead of widening thresholds to hide drift.
+- Do not wipe the full snapshot directory during update runs. `e2e:update` should only refresh snapshots touched by the current run, followed by explicit cleanup for stale renamed artifacts.
+
+## Readiness Principles
+
+- For onboarding and other async UI, use explicit readiness assertions instead of guessed waits.
+- Permission steps should wait for resolved status signals such as granted icons or non-`pending` permission status attributes.
+- Model-download steps should wait for ready UI signals such as a visible ready icon or enabled primary action, not a fixed delay.
+- Fixed waits are reserved for pre-snapshot stabilization after the business state is already ready.
+
+## Model Cache Preservation
+
+- Normal E2E setup must not delete previously downloaded model files.
+- Keep model directories outside cleanup lists so repeated local runs can reuse existing downloads and stay fast.
+
+## Desktop E2E Defaults
+
+- The default desktop E2E entrypoint is the ordered Tauri runner: `pnpm --filter @ariatype/desktop run test:e2e`.
+- The first ordered spec is a black-box first-run journey that walks the visible user flow from onboarding into the main application.
+- Shared runtime is still the default for suite speed, but the runner must clear app-specific WebKit persistence between runs so first-run semantics stay deterministic on macOS.
+- Browser-only mock IPC flows are retired from the desktop E2E path. If a test needs mocked frontend-only behavior, it belongs in a lower-layer harness, not in `apps/desktop/tests/e2e`.
 
 ## Implementation Status
 

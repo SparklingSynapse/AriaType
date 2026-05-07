@@ -39,36 +39,19 @@ pub(super) fn start_unified_recording(
         settings.audio_device.clone()
     };
 
-    let (denoise_mode, vad_enabled, stt_context) = {
+    let (denoise_mode, vad_enabled, domain, subdomain, glossary, window_context_enabled) = {
         let settings = state.settings.lock();
-        let ctx = crate::stt_engine::traits::SttContext {
-            domain: {
-                let d = settings.stt_engine_work_domain.trim().to_string();
-                if d.is_empty() {
-                    None
-                } else {
-                    Some(d)
-                }
-            },
-            subdomain: {
-                let s = settings.stt_engine_work_subdomain.trim().to_string();
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            },
-            glossary: {
-                let g = settings.stt_engine_user_glossary.trim().to_string();
-                if g.is_empty() {
-                    None
-                } else {
-                    Some(g)
-                }
-            },
-            ..Default::default()
-        };
-        (settings.denoise_mode.clone(), settings.vad_enabled, ctx)
+        let d = settings.stt_engine_work_domain.trim().to_string();
+        let s = settings.stt_engine_work_subdomain.trim().to_string();
+        let g = settings.stt_engine_user_glossary.trim().to_string();
+        (
+            settings.denoise_mode.clone(),
+            settings.vad_enabled,
+            if d.is_empty() { None } else { Some(d) },
+            if s.is_empty() { None } else { Some(s) },
+            if g.is_empty() { None } else { Some(g) },
+            settings.window_context_enabled,
+        )
     };
 
     let (app_tx, mut app_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(100);
@@ -197,6 +180,33 @@ pub(super) fn start_unified_recording(
     let app_clone = app.clone();
     let resolved_polish_template_id_clone = resolved_polish_template_id.clone();
     let handle = tauri::async_runtime::spawn(async move {
+        let window_context = if window_context_enabled {
+            tokio::time::timeout(
+                tokio::time::Duration::from_millis(300),
+                crate::sensors::window_context::capture_window_context(),
+            )
+            .await
+            .ok()
+            .flatten()
+        } else {
+            None
+        };
+
+        if let Some(ref ctx) = window_context {
+            let state_for_session = app_clone.state::<AppState>();
+            let mut session = state_for_session.session_state.lock();
+            if let Some(s) = session.as_mut() {
+                s.window_context = Some(ctx.clone());
+            }
+        }
+
+        let stt_context = crate::stt_engine::traits::SttContext {
+            domain,
+            subdomain,
+            glossary,
+            initial_prompt: window_context,
+        };
+
         let consumer: Box<dyn RecordingConsumer> = if cloud_stt_enabled {
             let (domain, subdomain, glossary) = (
                 stt_context

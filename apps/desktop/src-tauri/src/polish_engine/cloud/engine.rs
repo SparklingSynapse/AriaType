@@ -367,12 +367,13 @@ impl PolishEngine for CloudPolishEngine {
         let input_text = request.text.clone();
         let input_chars = input_text.len();
 
-        let system_prompt = if request.system_prompt.is_empty() {
+        let effective_prompt = request.system_context.effective_prompt();
+        let system_prompt = if effective_prompt.is_empty() {
             CORE_POLISH_CONSTRAINT.to_string()
         } else {
             format!(
                 "{}\n\nUSER RULES:\n{}",
-                CORE_POLISH_CONSTRAINT, request.system_prompt
+                CORE_POLISH_CONSTRAINT, effective_prompt
             )
         };
 

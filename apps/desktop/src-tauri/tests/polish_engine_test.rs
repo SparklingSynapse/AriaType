@@ -25,10 +25,11 @@ fn test_unified_manager_initialization() {
     let manager = UnifiedPolishManager::new();
     let engines = manager.available_engines();
 
-    // Should have both engines registered
-    assert_eq!(engines.len(), 2);
+    // Should have three local engines registered
+    assert_eq!(engines.len(), 3);
     assert!(engines.contains(&PolishEngineType::Qwen));
     assert!(engines.contains(&PolishEngineType::Lfm));
+    assert!(engines.contains(&PolishEngineType::Gemma));
 }
 
 #[test]
@@ -102,7 +103,7 @@ fn test_polish_request_builder() {
         PolishRequest::new("Test text to polish", "System prompt", "en").with_model("model.gguf");
 
     assert_eq!(request.text, "Test text to polish");
-    assert_eq!(request.system_prompt, "System prompt");
+    assert_eq!(request.system_context.system_prompt, "System prompt");
     assert_eq!(request.language, "en");
     assert_eq!(request.model_name, Some("model.gguf".to_string()));
 }

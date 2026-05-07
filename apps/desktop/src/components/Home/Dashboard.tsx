@@ -335,7 +335,6 @@ export function Dashboard() {
             className="rounded-3xl border border-border bg-card px-5 py-5 md:px-6 md:py-6"
             style={{
               borderColor: palette.border,
-              backgroundImage: `linear-gradient(180deg, ${palette.panel}, transparent 36%)`,
             }}
           >
             <div>
@@ -430,6 +429,7 @@ export function Dashboard() {
                       dataKey="count"
                       fill="url(#capturesFade)"
                       stroke="none"
+                      isAnimationActive={false}
                     />
                     <Line
                       type="monotone"
@@ -437,6 +437,7 @@ export function Dashboard() {
                       stroke={palette.primary}
                       strokeWidth={2.7}
                       dot={false}
+                      isAnimationActive={false}
                       activeDot={{
                         r: 4,
                         strokeWidth: 0,
@@ -450,6 +451,7 @@ export function Dashboard() {
                       strokeWidth={2}
                       dot={false}
                       strokeDasharray="8 7"
+                      isAnimationActive={false}
                       activeDot={{
                         r: 4,
                         strokeWidth: 0,
@@ -462,6 +464,7 @@ export function Dashboard() {
                       stroke={palette.tertiary}
                       strokeWidth={2.1}
                       dot={false}
+                      isAnimationActive={false}
                       activeDot={{
                         r: 4,
                         strokeWidth: 0,
@@ -478,7 +481,6 @@ export function Dashboard() {
             className="rounded-3xl border border-border bg-card px-5 py-5 md:px-6 md:py-6"
             style={{
               borderColor: palette.border,
-              backgroundImage: `linear-gradient(180deg, ${palette.panelStrong}, transparent 36%)`,
             }}
           >
             <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
@@ -569,5 +571,3 @@ function formatDayCount(
     count: value ?? 0,
   });
 }
-
-

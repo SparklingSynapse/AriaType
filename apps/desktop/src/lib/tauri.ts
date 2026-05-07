@@ -150,6 +150,8 @@ export interface AppSettings {
   stay_in_tray: boolean;
   polish_custom_templates: CustomPolishTemplate[];
   shortcut_profiles: ShortcutProfilesMap;
+  window_context_enabled: boolean;
+  pill_size: number;
 }
 
 export interface ModelInfo {
@@ -231,9 +233,10 @@ export const hotkeyCommands = {
 
 export const systemCommands = {
   getAudioDevices: () => invokeWithLogging<string[]>("get_audio_devices"),
-  checkPermission: (kind: "accessibility" | "input_monitoring" | "microphone") =>
-    invokeWithLogging<string>("check_permission", { kind }),
-  applyPermission: (kind: "accessibility" | "input_monitoring" | "microphone") =>
+checkPermission: (kind: "accessibility" | "input_monitoring" | "microphone" | "screen_recording") =>
+    invokeWithLogging<string | null>("check_permission", { kind }),
+
+  applyPermission: (kind: "accessibility" | "input_monitoring" | "microphone" | "screen_recording") =>
     invokeWithLogging<void>("apply_permission", { kind }),
   getLogContent: (lines: number) => invokeWithLogging<string>("get_log_content", { lines }),
   openLogFolder: () => invokeWithLogging("open_log_folder"),

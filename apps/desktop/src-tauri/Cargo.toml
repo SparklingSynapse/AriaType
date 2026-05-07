@@ -1,11 +1,15 @@
 [package]
 name = "ariatype"
-version = "0.4.0"
+version = "0.5.1"
 description = "AriaType - Voice to Text Application"
 authors = ["AriaType Team"]
 edition = "2021"
 license = "AGPL-3.0-only"
 default-run = "ariatype"
+
+[features]
+default = []
+e2e-testing = ["dep:tauri-plugin-playwright"]
 
 [lib]
 name = "ariatype_lib"
@@ -23,6 +27,7 @@ tauri-plugin-store = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-process = "2"
+tauri-plugin-playwright = { version = "0.2.2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 cpal = "0.16"
@@ -50,6 +55,9 @@ async-trait = "0.1.89"
 tokio-tungstenite = { version = "0.29.0", features = ["native-tls"] }
 base64 = "0.22"
 rusqlite = { version = "0.34", features = ["bundled"] }
+uni-ocr = "0.1.5"
+xcap = "0.9.4"
+image = "0.25"
 
 [dev-dependencies]
 wiremock = "0.6"

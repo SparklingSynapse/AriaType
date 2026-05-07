@@ -10,15 +10,17 @@ export interface PermissionsState {
   accessibilityGranted: boolean | null;
   inputMonitoringGranted: boolean | null;
   microphoneStatus: MicrophoneStatus;
+  screenRecordingStatus: MicrophoneStatus;
   isLoading: boolean;
   checkPermissions: () => void;
-  handleApplyPermission: (kind: "accessibility" | "input_monitoring" | "microphone") => Promise<void>;
+  handleApplyPermission: (kind: "accessibility" | "input_monitoring" | "microphone" | "screen_recording") => Promise<void>;
 }
 
 export function usePermissions(): PermissionsState {
   const [accessibilityGranted, setAccessibilityGranted] = useState<boolean | null>(null);
   const [inputMonitoringGranted, setInputMonitoringGranted] = useState<boolean | null>(null);
   const [microphoneStatus, setMicrophoneStatus] = useState<MicrophoneStatus>(null);
+  const [screenRecordingStatus, setScreenRecordingStatus] = useState<MicrophoneStatus>(null);
   const [isLoading, setIsLoading] = useState(true);
   const mounted = useRef(true);
 
@@ -28,11 +30,13 @@ export function usePermissions(): PermissionsState {
       systemCommands.checkPermission("accessibility").catch(() => null),
       systemCommands.checkPermission("input_monitoring").catch(() => null),
       systemCommands.checkPermission("microphone").catch(() => null),
-    ]).then(([accessibility, inputMonitoring, microphone]) => {
+      systemCommands.checkPermission("screen_recording").catch(() => null),
+    ]).then(([accessibility, inputMonitoring, microphone, screenRecording]) => {
       if (mounted.current) {
         setAccessibilityGranted(accessibility === "granted");
         setInputMonitoringGranted(inputMonitoring === "granted");
         setMicrophoneStatus(microphone as MicrophoneStatus);
+        setScreenRecordingStatus(screenRecording as MicrophoneStatus);
         setIsLoading(false);
       }
     });
@@ -57,7 +61,7 @@ export function usePermissions(): PermissionsState {
   }, [checkPermissions]);
 
   const handleApplyPermission = async (
-    kind: "accessibility" | "input_monitoring" | "microphone"
+    kind: "accessibility" | "input_monitoring" | "microphone" | "screen_recording"
   ) => {
     analytics.track(AnalyticsEvents.PERMISSION_GRANT_REQUESTED, {
       permission: kind,
@@ -74,6 +78,7 @@ export function usePermissions(): PermissionsState {
     accessibilityGranted,
     inputMonitoringGranted,
     microphoneStatus,
+    screenRecordingStatus,
     isLoading,
     checkPermissions,
     handleApplyPermission,

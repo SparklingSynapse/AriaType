@@ -11,7 +11,7 @@ import { HotkeyInput } from "@/components/ui/hotkey-input";
 import { MultiSwitch } from "@/components/ui/multi-switch";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 import { hotkeyCommands, modelCommands, type ShortcutProfile, type PolishTemplate, type CustomPolishTemplate } from "@/lib/tauri";
-import { Plus, Trash2, AlertCircle } from "lucide-react";
+import { Plus, Trash, WarningCircle } from "@phosphor-icons/react";
 import { showErrorToast } from "@/lib/toast";
 
 const RECORDING_MODES = [
@@ -96,7 +96,7 @@ function ProfileSection({
           />
           {!polishAvailable && (
             <p className="text-xs text-amber-500 flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" />
+              <WarningCircle className="h-3 w-3" />
               {t("polish.unavailableHint")}
             </p>
           )}
@@ -241,7 +241,7 @@ export function HotkeySettings() {
               <CardDescription>{t("hotkey.profiles.customDesc", "Your custom profile")}</CardDescription>
             </div>
             <Button variant="ghost" size="icon" onClick={handleDeleteCustom} data-testid="delete-custom-profile">
-              <Trash2 className="h-4 w-4" />
+              <Trash className="h-4 w-4" />
             </Button>
           </CardHeader>
           <CardContent>
@@ -275,7 +275,7 @@ export function HotkeySettings() {
             </Button>
             {!polishAvailable && (
               <p className="text-xs text-amber-500 flex items-center gap-1 mt-2">
-                <AlertCircle className="h-3 w-3" />
+                <WarningCircle className="h-3 w-3" />
                 {t("polish.unavailableHint")}
               </p>
             )}

@@ -1,14 +1,23 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
-const APP_NAME: &str = "ariatype";
+/// Application data directory, initialized from Tauri's PathResolver at startup.
+/// Falls back to "ariatype" if not initialized (for tests or early bootstrapping).
+static APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 pub struct AppPaths;
 
 impl AppPaths {
+    /// Initialize from Tauri's PathResolver. Called once during app setup.
+    pub fn init_from_tauri(data_dir: PathBuf) {
+        let _ = APP_DATA_DIR.set(data_dir);
+    }
+
     pub fn data_dir() -> PathBuf {
-        dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(APP_NAME)
+        APP_DATA_DIR
+            .get()
+            .cloned()
+            .unwrap_or_else(|| dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("ariatype"))
     }
 
     pub fn models_dir() -> PathBuf {
@@ -20,9 +29,10 @@ impl AppPaths {
     }
 
     pub fn cache_dir() -> PathBuf {
-        dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(APP_NAME)
+        APP_DATA_DIR
+            .get()
+            .cloned()
+            .unwrap_or_else(|| dirs::cache_dir().unwrap_or_else(|| PathBuf::from(".")).join("ariatype"))
     }
 
     pub fn temp_dir() -> PathBuf {
@@ -39,21 +49,15 @@ impl AppPaths {
             dirs::home_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join("Library/Logs")
-                .join(APP_NAME)
+                .join(Self::data_dir().file_name().unwrap_or_default())
         }
         #[cfg(target_os = "windows")]
         {
-            dirs::data_local_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(APP_NAME)
-                .join("logs")
+            Self::data_dir().join("logs")
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
-            dirs::data_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(APP_NAME)
-                .join("logs")
+            Self::data_dir().join("logs")
         }
     }
 
@@ -110,9 +114,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_paths_are_consistent() {
+    fn test_paths_fallback_without_init() {
+        // Without init, falls back to "ariatype"
         let data = AppPaths::data_dir();
-        assert!(data.ends_with(APP_NAME));
+        assert!(data.ends_with("ariatype"));
 
         let models = AppPaths::models_dir();
         assert!(models.ends_with("models"));

@@ -21,6 +21,12 @@ impl PermissionProvider for WindowsPermissions {
         }
     }
 
+    fn check_screen_recording(&self) -> PermissionStatus {
+        // Windows does not require an explicit screen capture permission grant.
+        // Screen capture APIs are available to all desktop applications by default.
+        PermissionStatus::Granted
+    }
+
     fn apply_accessibility(&self) -> Result<(), String> {
         Command::new("cmd")
             .args(["/c", "start", "ms-settings:easeofaccess"])
@@ -36,6 +42,14 @@ impl PermissionProvider for WindowsPermissions {
     fn apply_microphone(&self) -> Result<(), String> {
         Command::new("cmd")
             .args(["/c", "start", "ms-settings:privacy-microphone"])
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    fn apply_screen_recording(&self) -> Result<(), String> {
+        Command::new("cmd")
+            .args(["/c", "start", "ms-settings:privacy-screencapture"])
             .spawn()
             .map_err(|error| error.to_string())?;
         Ok(())

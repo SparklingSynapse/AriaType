@@ -60,10 +60,7 @@ pub fn clear_transcription_history(state: State<'_, AppState>) -> Result<(), Str
 }
 
 #[tauri::command]
-pub fn get_history_count(
-    state: State<'_, AppState>,
-    filter: HistoryFilter,
-) -> Result<i64, String> {
+pub fn get_history_count(state: State<'_, AppState>, filter: HistoryFilter) -> Result<i64, String> {
     let store = state.history_store.lock();
     store.get_count(&filter)
 }

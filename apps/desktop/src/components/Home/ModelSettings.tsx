@@ -16,7 +16,7 @@ import { VoiceInputSection } from "./model/VoiceInputSection";
 import { PolishSection } from "./model/PolishSection";
 import { PerformanceSection } from "./model/PerformanceSection";
 
-import { cn } from "@/lib/utils";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 export function ModelSettings() {
   const { t } = useTranslation();
@@ -222,41 +222,15 @@ export function ModelSettings() {
       description={t("model.description")}
       testId="model-page"
     >
-      <div className="inline-flex h-11 items-center justify-center rounded-full bg-secondary p-1.5 text-muted-foreground ">
-        <button
-          onClick={() => setActiveTab("voice")}
-          className={cn(
-            "inline-flex h-full items-center justify-center whitespace-nowrap rounded-full px-5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-            activeTab === "voice"
-              ? "bg-background text-foreground shadow-sm"
-              : "hover:text-foreground hover:bg-background/40"
-          )}
-        >
-          {t("model.tabs.voice", "Voice Input")}
-        </button>
-        <button
-          onClick={() => setActiveTab("polish")}
-          className={cn(
-            "inline-flex h-full items-center justify-center whitespace-nowrap rounded-full px-5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-            activeTab === "polish"
-              ? "bg-background text-foreground shadow-sm"
-              : "hover:text-foreground hover:bg-background/40"
-          )}
-        >
-          {t("model.tabs.polish", "Polish")}
-        </button>
-        <button
-          onClick={() => setActiveTab("performance")}
-          className={cn(
-            "inline-flex h-full items-center justify-center whitespace-nowrap rounded-full px-5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-            activeTab === "performance"
-              ? "bg-background text-foreground shadow-sm"
-              : "hover:text-foreground hover:bg-background/40"
-          )}
-        >
-          {t("model.tabs.performance", "Performance")}
-        </button>
-      </div>
+      <SegmentedControl
+        items={[
+          { value: "voice", label: t("model.tabs.voice", "Voice Input") },
+          { value: "polish", label: t("model.tabs.polish", "Polish") },
+          { value: "performance", label: t("model.tabs.performance", "Performance") },
+        ]}
+        value={activeTab}
+        onChange={(v) => setActiveTab(v as "voice" | "polish" | "performance")}
+      />
 
       <div >
         {activeTab === "voice" && (

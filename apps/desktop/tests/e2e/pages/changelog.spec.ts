@@ -1,15 +1,12 @@
 import { test, expect } from '../fixtures';
+import { openRoute } from '../utils/helpers';
 
-test('Changelog page renders', async ({ page }) => {
-  await page.goto('/changelog');
-  await page.waitForLoadState('networkidle');
+test('Changelog page renders', async ({ tauriPage }) => {
+  await openRoute(tauriPage, '/changelog');
 
-  await expect(page.locator('[data-testid="changelog-page"]')).toBeVisible({ timeout: 10000 });
+  await expect(tauriPage.locator('[data-testid="changelog-page"]')).toBeVisible({ timeout: 10000 });
+  await expect(tauriPage.locator('h1')).toContainText('Changelog');
 
-  await page.waitForTimeout(500);
-
-  await expect(page).toHaveScreenshot('changelog.png', {
-    threshold: 0.2,
-    fullPage: true,
-  });
+  const versionHeadings = await tauriPage.locator('h2').count();
+  expect(versionHeadings).toBeGreaterThan(0);
 });

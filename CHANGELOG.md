@@ -6,8 +6,14 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
+- Add window context capture via OCR to improve polish accuracy (e749271)
+- Optimize UI for better experience (6f4936c)
 - Optimize onboarding guide (db9e682)
 - Optimize text inject performance (c92c4ce)
+
+### Bug Fixes
+
+- Add default value for pill_size field (f027349)
 
 ## v0.4.0 (2026-04-25)
 

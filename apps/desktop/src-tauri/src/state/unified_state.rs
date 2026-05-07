@@ -16,6 +16,8 @@ pub struct SessionState {
     pub chunk_count: usize,
     pub cancel_hotkey: Option<String>,
     pub cancel_trigger_mode: Option<ShortcutTriggerMode>,
+    /// OCR text captured from the focused window at recording start.
+    pub window_context: Option<String>,
 }
 
 /// Recording consumer state for all STT engines.
@@ -276,6 +278,7 @@ impl AppState {
             chunk_count: 0,
             cancel_hotkey: profile.map(|item| item.hotkey.clone()),
             cancel_trigger_mode: profile.map(|item| item.trigger_mode),
+            window_context: None,
         });
     }
 
@@ -311,6 +314,8 @@ impl AppState {
 
     pub fn finish_session(&self, task_id: u64) -> Option<(String, usize)> {
         let mut session = self.session_state.lock();
+        // take() drops the entire SessionState including window_context,
+        // ensuring no context leaks into the next session.
         session
             .take()
             .filter(|s| s.task_id == task_id)

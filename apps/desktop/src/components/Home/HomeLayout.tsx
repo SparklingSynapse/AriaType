@@ -1,18 +1,18 @@
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
-  Settings,
+  SquaresFour,
+  GearSix,
   Keyboard,
   Brain,
-  CloudCog,
+  Cloud,
+  Sparkle,
+  ShieldCheck,
+  ClockCounterClockwise,
   Info,
-  Shield,
-  MessageSquare,
-  ExternalLink,
-  ArrowUpCircle,
-  LayoutDashboard,
-  History,
-  Sparkles,
-} from "lucide-react";
+  ChatCircleText,
+  ArrowSquareOut,
+  ArrowCircleUp,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import logo from "../../../assets/logo.png";
@@ -44,16 +44,16 @@ export function HomeLayout() {
   }, [location]);
 
   const navItems = [
-    { to: "/", icon: LayoutDashboard, label: t("nav.dashboard") },
-    { to: "/settings", icon: Settings, label: t("nav.general") },
+    { to: "/", icon: SquaresFour, label: t("nav.dashboard") },
+    { to: "/settings", icon: GearSix, label: t("nav.general") },
     { to: "/hotkey", icon: Keyboard, label: t("nav.hotkey") },
     { to: "/private-ai", icon: Brain, label: t("nav.privateAi"), badge: !hasModel },
-    { to: "/cloud", icon: CloudCog, label: t("cloud.title") },
-    { to: "/polish-templates", icon: Sparkles, label: t("nav.polishTemplates") },
-    { to: "/permission", icon: Shield, label: t("nav.permission"), badge: badges.permission },
-    { to: "/history", icon: History, label: t("nav.history") },
+    { to: "/cloud", icon: Cloud, label: t("cloud.title") },
+    { to: "/polish-templates", icon: Sparkle, label: t("nav.polishTemplates") },
+    { to: "/permission", icon: ShieldCheck, label: t("nav.permission"), badge: badges.permission },
+    { to: "/history", icon: ClockCounterClockwise, label: t("nav.history") },
     { to: "/about", icon: Info, label: t("nav.about"), badge: badges.about },
-    { type: "external" as const, icon: MessageSquare, label: t("nav.feedback"), href: FEEDBACK_URL },
+    { type: "external" as const, icon: ChatCircleText, label: t("nav.feedback"), href: FEEDBACK_URL },
   ];
 
   const handleOnboardingClose = useCallback(async () => {
@@ -88,7 +88,7 @@ export function HomeLayout() {
     <div className="flex flex-col h-screen bg-background">
       <div className="flex flex-1 overflow-hidden ">
         <OnboardingGuide isOpen={isOpen} onClose={handleOnboardingClose} />
-        <aside className="w-56 border-r border-border bg-card pt-7">
+        <aside className="w-[234px] border-r border-border bg-card pt-7">
           <div className="px-6 py-6 border-b border-border flex items-center gap-3.5">
             <img
               src={logo}
@@ -99,7 +99,7 @@ export function HomeLayout() {
               {t("app.name")}
             </span>
           </div>
-          <nav className="p-4 flex flex-col h-[calc(100%-4.5rem)]">
+          <nav className="px-5 py-4 flex flex-col h-[calc(100%-4.5rem)]">
             <div className="space-y-1 flex-1">
               {navItems.filter(i => i.type !== "external").map((item) => {
                 const to = (item as { to: string }).to;
@@ -117,10 +117,10 @@ export function HomeLayout() {
                       )
                     }
                   >
-                    <item.icon className="h-4 w-4" />
+                    <item.icon className="h-4 w-4" weight="fill" />
                     {item.label}
                     {"badge" in item && item.badge && (
-                      <ArrowUpCircle className="h-4 w-4 text-green-500 ml-auto" />
+                      <ArrowCircleUp className="h-4 w-4 text-green-500 ml-auto" weight="fill" />
                     )}
                   </NavLink>
                 );
@@ -135,9 +135,9 @@ export function HomeLayout() {
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 rounded-full px-4 py-2.5 text-sm text-muted-foreground hover:bg-secondary/80 hover:text-secondary-foreground transition-all duration-200"
                 >
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className="h-4 w-4" weight="fill" />
                   {item.label}
-                  <ExternalLink className="h-3 w-3 ml-auto opacity-50" />
+                  <ArrowSquareOut className="h-3 w-3 ml-auto opacity-50" weight="fill" />
                 </a>
               ))}
             </div>

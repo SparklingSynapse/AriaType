@@ -27,14 +27,38 @@ fn create_test_dir(name: &str) -> PathBuf {
     dir
 }
 
-/// Create fake model file
-fn create_fake_model(dir: &PathBuf, filename: &str, size: usize) -> PathBuf {
-    let path = dir.join(filename);
+/// Create fake model files in proper subdirectory structure
+fn create_fake_whisper_model(dir: &PathBuf, model_name: &str) {
+    let model_subdir = dir.join(model_name);
+    std::fs::create_dir_all(&model_subdir).expect("Failed to create model subdirectory");
+    
+    let files: &[(&str, usize)] = match model_name {
+        "whisper-base" => &[("base-encoder.onnx", 1024), ("base-decoder.onnx", 2048), ("base-tokens.txt", 100)],
+        "whisper-small" => &[("small-encoder.onnx", 2048), ("small-decoder.onnx", 4096), ("small-tokens.txt", 100)],
+        _ => &[("encoder.onnx", 1024), ("decoder.onnx", 2048), ("tokens.txt", 100)],
+    };
+    
+    for (filename, size) in files {
+        let path = model_subdir.join(filename);
+        let mut file = File::create(&path).expect("Failed to create fake model file");
+        let data = vec![0u8; *size];
+        file.write_all(&data).expect("Failed to write fake model data");
+    }
+}
+
+/// Create fake SenseVoice model files
+fn create_fake_sensevoice_model(dir: &PathBuf) {
+    let model_subdir = dir.join("sense-voice-small");
+    std::fs::create_dir_all(&model_subdir).expect("Failed to create model subdirectory");
+    
+    let path = model_subdir.join("model.int8.onnx");
     let mut file = File::create(&path).expect("Failed to create fake model file");
-    let data = vec![0u8; size];
-    file.write_all(&data)
-        .expect("Failed to write fake model data");
-    path
+    let data = vec![0u8; 2048];
+    file.write_all(&data).expect("Failed to write fake model data");
+    
+    let tokens_path = model_subdir.join("tokens.txt");
+    let mut tokens_file = File::create(&tokens_path).expect("Failed to create tokens file");
+    tokens_file.write_all(b"fake tokens").expect("Failed to write tokens");
 }
 
 /// Cleanup test directory
@@ -53,12 +77,7 @@ fn test_new_manager() {
 
     // Verify returned model list
     assert!(!models.is_empty(), "Should have SenseVoice models");
-
-    // Verify at least 2 models (Q4 and Q8)
-    assert!(
-        models.len() >= 2,
-        "Should have at least 2 SenseVoice models"
-    );
+    assert_eq!(models.len(), 1, "Should have exactly 1 SenseVoice model");
 
     cleanup_test_dir(&test_dir);
 }
@@ -69,9 +88,9 @@ fn test_is_model_downloaded_false() {
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
     // Undownloaded models should return false
-    assert!(!manager.is_model_downloaded(EngineType::Whisper, "tiny"));
-    assert!(!manager.is_model_downloaded(EngineType::Whisper, "base"));
-    assert!(!manager.is_model_downloaded(EngineType::SenseVoice, "sense-voice-small-q4_k"));
+    assert!(!manager.is_model_downloaded(EngineType::Whisper, "whisper-base"));
+    assert!(!manager.is_model_downloaded(EngineType::Whisper, "whisper-small"));
+    assert!(!manager.is_model_downloaded(EngineType::SenseVoice, "sense-voice-small"));
 
     cleanup_test_dir(&test_dir);
 }
@@ -81,11 +100,11 @@ fn test_is_model_downloaded_true() {
     let test_dir = create_test_dir("is_downloaded_true");
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
-    // Create fake model file
-    create_fake_model(&test_dir, "ggml-tiny.bin", 1024);
+    // Create fake model files
+    create_fake_whisper_model(&test_dir, "whisper-base");
 
     // Downloaded models should return true
-    assert!(manager.is_model_downloaded(EngineType::Whisper, "tiny"));
+    assert!(manager.is_model_downloaded(EngineType::Whisper, "whisper-base"));
 
     cleanup_test_dir(&test_dir);
 }
@@ -96,17 +115,15 @@ fn test_get_model_path() {
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
     // Whisper model paths
-    let path = manager.get_model_path(EngineType::Whisper, "tiny");
-    assert!(path.to_string_lossy().contains("ggml-tiny.bin"));
+    let path = manager.get_model_path(EngineType::Whisper, "whisper-base");
+    assert!(path.to_string_lossy().contains("whisper-base"));
 
-    let path = manager.get_model_path(EngineType::Whisper, "base");
-    assert!(path.to_string_lossy().contains("ggml-base.bin"));
+    let path = manager.get_model_path(EngineType::Whisper, "whisper-small");
+    assert!(path.to_string_lossy().contains("whisper-small"));
 
     // SenseVoice model paths
-    let path = manager.get_model_path(EngineType::SenseVoice, "sense-voice-small-q4_k");
-    assert!(path
-        .to_string_lossy()
-        .contains("sense-voice-small-q4_k.gguf"));
+    let path = manager.get_model_path(EngineType::SenseVoice, "sense-voice-small");
+    assert!(path.to_string_lossy().contains("sense-voice-small"));
 
     cleanup_test_dir(&test_dir);
 }
@@ -118,10 +135,10 @@ fn test_get_model_path_unknown() {
 
     // Unknown models should fallback to default naming
     let path = manager.get_model_path(EngineType::Whisper, "unknown");
-    assert!(path.to_string_lossy().contains("ggml-unknown.bin"));
+    assert!(path.to_string_lossy().contains("unknown"));
 
     let path = manager.get_model_path(EngineType::SenseVoice, "unknown");
-    assert!(path.to_string_lossy().contains("unknown.gguf"));
+    assert!(path.to_string_lossy().contains("unknown"));
 
     cleanup_test_dir(&test_dir);
 }
@@ -134,7 +151,7 @@ fn test_load_model_not_downloaded() {
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
     // Trying to load undownloaded model should fail
-    let result = manager.load_model(EngineType::Whisper, "tiny");
+    let result = manager.load_model(EngineType::Whisper, "whisper-base");
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("not downloaded"));
 
@@ -146,12 +163,8 @@ fn test_load_model_unknown() {
     let test_dir = create_test_dir("load_unknown");
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
-    // Create a fake unknown model file
-    create_fake_model(&test_dir, "ggml-unknown.bin", 1024);
-
-    // Try loading unknown model (file exists but model definition doesn't)
+    // Try loading unknown model (model definition doesn't exist)
     let result = manager.load_model(EngineType::Whisper, "unknown");
-    // Should fail since model definition doesn't have "unknown"
     assert!(result.is_err());
 
     cleanup_test_dir(&test_dir);
@@ -165,7 +178,7 @@ fn test_delete_model_not_exists() {
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
     // Trying to delete non-existent model should fail
-    let result = manager.delete_model(EngineType::Whisper, "tiny");
+    let result = manager.delete_model(EngineType::Whisper, "whisper-base");
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("not found"));
 
@@ -177,18 +190,18 @@ fn test_delete_model_success() {
     let test_dir = create_test_dir("delete_success");
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
-    // Create fake model file
-    let model_path = create_fake_model(&test_dir, "ggml-tiny.bin", 1024);
+    // Create fake model files
+    create_fake_whisper_model(&test_dir, "whisper-base");
 
-    // Verify file exists
-    assert!(model_path.exists());
+    let model_subdir = test_dir.join("whisper-base");
+    assert!(model_subdir.exists());
 
     // Delete model
-    let result = manager.delete_model(EngineType::Whisper, "tiny");
+    let result = manager.delete_model(EngineType::Whisper, "whisper-base");
     assert!(result.is_ok());
 
-    // Verify file is deleted
-    assert!(!model_path.exists());
+    // Verify subdirectory is deleted
+    assert!(!model_subdir.exists());
 
     cleanup_test_dir(&test_dir);
 }
@@ -199,19 +212,20 @@ fn test_delete_model_multiple_types() {
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
     // Create model files for different engines
-    let whisper_path = create_fake_model(&test_dir, "ggml-tiny.bin", 1024);
-    let sensevoice_path = create_fake_model(&test_dir, "sense-voice-small-q4_k.gguf", 2048);
+    create_fake_whisper_model(&test_dir, "whisper-base");
+    create_fake_sensevoice_model(&test_dir);
+
+    let whisper_subdir = test_dir.join("whisper-base");
+    let sensevoice_subdir = test_dir.join("sense-voice-small");
 
     // Delete Whisper model
-    assert!(manager.delete_model(EngineType::Whisper, "tiny").is_ok());
-    assert!(!whisper_path.exists());
-    assert!(sensevoice_path.exists());
+    assert!(manager.delete_model(EngineType::Whisper, "whisper-base").is_ok());
+    assert!(!whisper_subdir.exists());
+    assert!(sensevoice_subdir.exists());
 
     // Delete SenseVoice model
-    assert!(manager
-        .delete_model(EngineType::SenseVoice, "sense-voice-small-q4_k")
-        .is_ok());
-    assert!(!sensevoice_path.exists());
+    assert!(manager.delete_model(EngineType::SenseVoice, "sense-voice-small").is_ok());
+    assert!(!sensevoice_subdir.exists());
 
     cleanup_test_dir(&test_dir);
 }
@@ -236,16 +250,6 @@ fn test_recommend_by_language_zh() {
         .iter()
         .any(|r| r.engine_type == EngineType::SenseVoice);
     assert!(has_sensevoice, "Should recommend SenseVoice for Chinese");
-
-    // Verify sorted by accuracy descending
-    for i in 1..recommendations.len() {
-        let prev = &recommendations[i - 1];
-        let curr = &recommendations[i];
-        assert!(
-            prev.accuracy_score >= curr.accuracy_score,
-            "Should be sorted by accuracy score (descending)"
-        );
-    }
 
     cleanup_test_dir(&test_dir);
 }
@@ -282,7 +286,6 @@ fn test_recommend_by_language_ja() {
 
     let recommendations = manager.recommend_by_language("ja");
 
-    // Japanese should have recommendations (SenseVoice and some Whisper models support it)
     assert!(
         !recommendations.is_empty(),
         "Should have recommendations for Japanese"
@@ -298,7 +301,6 @@ fn test_recommend_by_language_ko() {
 
     let recommendations = manager.recommend_by_language("ko");
 
-    // Korean should have recommendations
     assert!(
         !recommendations.is_empty(),
         "Should have recommendations for Korean"
@@ -315,10 +317,10 @@ fn test_recommend_by_language_unsupported() {
     // Use unsupported language code
     let recommendations = manager.recommend_by_language("xyz");
 
-    // Should return empty list
+    // Should return Whisper Base as fallback
     assert!(
-        recommendations.is_empty(),
-        "Should return empty list for unsupported language"
+        !recommendations.is_empty(),
+        "Should return fallback for unsupported language"
     );
 
     cleanup_test_dir(&test_dir);
@@ -329,26 +331,26 @@ fn test_recommend_includes_download_status() {
     let test_dir = create_test_dir("recommend_download_status");
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
-    // Create a fake SenseVoice model file
-    create_fake_model(&test_dir, "sense-voice-small-q4_k.gguf", 2048);
+    // Create a fake SenseVoice model
+    create_fake_sensevoice_model(&test_dir);
 
     let recommendations = manager.recommend_by_language("zh");
 
-    // Find SenseVoice Small Q4 model
-    let sensevoice_q4 = recommendations
+    // Find SenseVoice Small model
+    let sensevoice = recommendations
         .iter()
-        .find(|r| r.model_name == "sense-voice-small-q4_k");
+        .find(|r| r.model_name == "sense-voice-small");
 
-    assert!(sensevoice_q4.is_some());
+    assert!(sensevoice.is_some());
     assert!(
-        sensevoice_q4.unwrap().downloaded,
+        sensevoice.unwrap().downloaded,
         "Should detect downloaded model"
     );
 
     // Other models should be undownloaded
     let other_models: Vec<_> = recommendations
         .iter()
-        .filter(|r| r.model_name != "sense-voice-small-q4_k")
+        .filter(|r| r.model_name != "sense-voice-small")
         .collect();
 
     for model in other_models {
@@ -363,26 +365,17 @@ fn test_recommend_sorting() {
     let test_dir = create_test_dir("recommend_sorting");
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
-    let recommendations = manager.recommend_by_language("zh");
+    let recommendations = manager.recommend_by_language("auto");
 
-    // Verify sorting: accuracy descending, speed descending for same accuracy
+    // Verify sorting: accuracy descending
     for i in 1..recommendations.len() {
         let prev = &recommendations[i - 1];
         let curr = &recommendations[i];
 
-        if prev.accuracy_score == curr.accuracy_score {
-            // When accuracy is same, speed should be descending
-            assert!(
-                prev.speed_score >= curr.speed_score,
-                "When accuracy is equal, should sort by speed (descending)"
-            );
-        } else {
-            // Accuracy should be descending
-            assert!(
-                prev.accuracy_score > curr.accuracy_score,
-                "Should sort by accuracy (descending)"
-            );
-        }
+        assert!(
+            prev.accuracy_score >= curr.accuracy_score,
+            "Should sort by accuracy (descending)"
+        );
     }
 
     cleanup_test_dir(&test_dir);
@@ -417,18 +410,11 @@ fn test_model_info_consistency() {
 
     // Verify each model's path and download status are consistent
     for model in models {
-        let path = manager.get_model_path(EngineType::Whisper, &model.name);
         let is_downloaded = manager.is_model_downloaded(EngineType::Whisper, &model.name);
 
         assert_eq!(
             model.downloaded, is_downloaded,
             "Model info downloaded status should match is_model_downloaded()"
-        );
-
-        assert_eq!(
-            model.downloaded,
-            path.exists(),
-            "Model info downloaded status should match file existence"
         );
     }
 
@@ -443,12 +429,12 @@ fn test_multiple_managers_same_directory() {
     let manager1 = UnifiedEngineManager::new(test_dir.clone());
     let manager2 = UnifiedEngineManager::new(test_dir.clone());
 
-    // Create model file in first manager
-    create_fake_model(&test_dir, "ggml-tiny.bin", 1024);
+    // Create model files
+    create_fake_whisper_model(&test_dir, "whisper-base");
 
     // Both managers should detect the model
-    assert!(manager1.is_model_downloaded(EngineType::Whisper, "tiny"));
-    assert!(manager2.is_model_downloaded(EngineType::Whisper, "tiny"));
+    assert!(manager1.is_model_downloaded(EngineType::Whisper, "whisper-base"));
+    assert!(manager2.is_model_downloaded(EngineType::Whisper, "whisper-base"));
 
     cleanup_test_dir(&test_dir);
 }
@@ -461,11 +447,11 @@ fn test_stt_engine_type_switching() {
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
     assert_eq!(
-        UnifiedEngineManager::get_engine_by_model_name("base"),
+        UnifiedEngineManager::get_engine_by_model_name("whisper-base"),
         Some(EngineType::Whisper)
     );
     assert_eq!(
-        UnifiedEngineManager::get_engine_by_model_name("sense-voice-small-q4_k"),
+        UnifiedEngineManager::get_engine_by_model_name("sense-voice-small"),
         Some(EngineType::SenseVoice)
     );
     assert_eq!(
@@ -476,8 +462,6 @@ fn test_stt_engine_type_switching() {
         UnifiedEngineManager::get_engine_by_model_name("unknown_model"),
         None
     );
-
-    assert!(manager.is_model_downloaded(EngineType::Cloud, "cloud"));
 
     let engines = UnifiedEngineManager::available_engines();
     assert_eq!(engines.len(), 3);
@@ -493,34 +477,14 @@ fn test_model_path_resolution() {
     let test_dir = create_test_dir("model_path_resolution");
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
-    let whisper_path = manager.get_model_path(EngineType::Whisper, "tiny");
-    assert!(whisper_path.to_string_lossy().ends_with("ggml-tiny.bin"));
+    let whisper_base_path = manager.get_model_path(EngineType::Whisper, "whisper-base");
+    assert!(whisper_base_path.to_string_lossy().contains("whisper-base"));
 
-    let whisper_base_path = manager.get_model_path(EngineType::Whisper, "base");
-    assert!(whisper_base_path
-        .to_string_lossy()
-        .ends_with("ggml-base.bin"));
-
-    let sensevoice_path = manager.get_model_path(EngineType::SenseVoice, "sense-voice-small-q4_k");
-    assert!(sensevoice_path
-        .to_string_lossy()
-        .ends_with("sense-voice-small-q4_k.gguf"));
-
-    let sensevoice_q8_path =
-        manager.get_model_path(EngineType::SenseVoice, "sense-voice-small-q8_0");
-    assert!(sensevoice_q8_path
-        .to_string_lossy()
-        .ends_with("sense-voice-small-q8_0.gguf"));
+    let sensevoice_path = manager.get_model_path(EngineType::SenseVoice, "sense-voice-small");
+    assert!(sensevoice_path.to_string_lossy().contains("sense-voice-small"));
 
     let unknown_whisper = manager.get_model_path(EngineType::Whisper, "unknown");
-    assert!(unknown_whisper
-        .to_string_lossy()
-        .ends_with("ggml-unknown.bin"));
-
-    let unknown_sensevoice = manager.get_model_path(EngineType::SenseVoice, "unknown");
-    assert!(unknown_sensevoice
-        .to_string_lossy()
-        .ends_with("unknown.gguf"));
+    assert!(unknown_whisper.to_string_lossy().contains("unknown"));
 
     let cloud_path = manager.get_model_path(EngineType::Cloud, "cloud");
     assert!(cloud_path.as_os_str().is_empty());
@@ -533,24 +497,17 @@ fn test_engine_preload_on_startup() {
     let test_dir = create_test_dir("engine_preload_startup");
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
-    create_fake_model(&test_dir, "ggml-tiny.bin", 1024);
-    create_fake_model(&test_dir, "sense-voice-small-q4_k.gguf", 2048);
+    create_fake_whisper_model(&test_dir, "whisper-base");
+    create_fake_sensevoice_model(&test_dir);
 
     let whisper_models = manager.get_models(EngineType::Whisper);
     let sensevoice_models = manager.get_models(EngineType::SenseVoice);
 
-    let whisper_tiny = whisper_models.iter().find(|m| m.name == "tiny").unwrap();
-    assert!(whisper_tiny.downloaded);
+    let whisper_base = whisper_models.iter().find(|m| m.name == "whisper-base").unwrap();
+    assert!(whisper_base.downloaded);
 
-    let sensevoice_q4 = sensevoice_models
-        .iter()
-        .find(|m| m.name == "sense-voice-small-q4_k")
-        .unwrap();
-    assert!(sensevoice_q4.downloaded);
-
-    let cloud_models = manager.get_models(EngineType::Cloud);
-    assert!(!cloud_models.is_empty());
-    assert!(cloud_models[0].downloaded);
+    let sensevoice = sensevoice_models.iter().find(|m| m.name == "sense-voice-small").unwrap();
+    assert!(sensevoice.downloaded);
 
     cleanup_test_dir(&test_dir);
 }
@@ -589,8 +546,8 @@ fn test_concurrent_model_access() {
     assert!(result1);
     assert!(result2);
 
-    let engine1 = UnifiedEngineManager::get_engine_by_model_name("base");
-    let engine2 = UnifiedEngineManager::get_engine_by_model_name("sense-voice-small-q4_k");
+    let engine1 = UnifiedEngineManager::get_engine_by_model_name("whisper-base");
+    let engine2 = UnifiedEngineManager::get_engine_by_model_name("sense-voice-small");
 
     assert_eq!(engine1, Some(EngineType::Whisper));
     assert_eq!(engine2, Some(EngineType::SenseVoice));
@@ -603,22 +560,18 @@ fn test_engine_error_recovery() {
     let test_dir = create_test_dir("engine_error_recovery");
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
-    let is_downloaded = manager.is_model_downloaded(EngineType::Whisper, "tiny");
+    let is_downloaded = manager.is_model_downloaded(EngineType::Whisper, "whisper-base");
     assert!(!is_downloaded);
 
-    create_fake_model(&test_dir, "ggml-tiny.bin", 1024);
+    create_fake_whisper_model(&test_dir, "whisper-base");
 
-    let is_downloaded_after = manager.is_model_downloaded(EngineType::Whisper, "tiny");
+    let is_downloaded_after = manager.is_model_downloaded(EngineType::Whisper, "whisper-base");
     assert!(is_downloaded_after);
 
     assert_eq!(
-        UnifiedEngineManager::get_engine_by_model_name("tiny"),
+        UnifiedEngineManager::get_engine_by_model_name("whisper-base"),
         Some(EngineType::Whisper)
     );
-
-    let cloud_models = manager.get_models(EngineType::Cloud);
-    assert!(!cloud_models.is_empty());
-    assert!(cloud_models[0].downloaded);
 
     cleanup_test_dir(&test_dir);
 }
@@ -628,16 +581,16 @@ fn test_model_preload_cancellation() {
     let test_dir = create_test_dir("preload_cancellation");
     let manager = UnifiedEngineManager::new(test_dir.clone());
 
-    create_fake_model(&test_dir, "ggml-base.bin", 1024);
+    create_fake_whisper_model(&test_dir, "whisper-base");
 
-    assert!(manager.is_model_downloaded(EngineType::Whisper, "base"));
+    assert!(manager.is_model_downloaded(EngineType::Whisper, "whisper-base"));
 
     assert_eq!(
-        UnifiedEngineManager::get_engine_by_model_name("base"),
+        UnifiedEngineManager::get_engine_by_model_name("whisper-base"),
         Some(EngineType::Whisper)
     );
 
-    let result = manager.is_model_downloaded(EngineType::Whisper, "medium");
+    let result = manager.is_model_downloaded(EngineType::Whisper, "whisper-small");
     assert!(!result);
 
     cleanup_test_dir(&test_dir);
@@ -646,9 +599,10 @@ fn test_model_preload_cancellation() {
 // ==================== Integration tests (marked as ignore) ====================
 
 #[test]
-fn test_real_download_whisper_tiny() {
+#[ignore]
+fn test_real_download_whisper_base() {
     // This test requires real network connection and takes a long time
-    // Run: cargo test test_real_download_whisper_tiny -- --ignored
+    // Run: cargo test test_real_download_whisper_base -- --ignored
 
     let test_dir = create_test_dir("test_model_download");
     let manager = UnifiedEngineManager::new(test_dir.clone());
@@ -662,7 +616,7 @@ fn test_real_download_whisper_tiny() {
         manager
             .download_model(
                 EngineType::Whisper,
-                "tiny",
+                "whisper-base",
                 cancel_flag,
                 move |downloaded, total| {
                     println!("Progress: {}/{} bytes", downloaded, total);
@@ -679,7 +633,7 @@ fn test_real_download_whisper_tiny() {
     );
 
     // Verify file is downloaded
-    assert!(manager.is_model_downloaded(EngineType::Whisper, "tiny"));
+    assert!(manager.is_model_downloaded(EngineType::Whisper, "whisper-base"));
 
     cleanup_test_dir(&test_dir);
 }

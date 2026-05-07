@@ -181,6 +181,21 @@ cd apps/desktop/src-tauri && cargo llvm-cov --html
 - End-to-end: 100% for affected user workflow
 - Unit: 100% for affected critical core modules
 
+### Desktop E2E
+
+```bash
+# Ordered shared-runtime desktop E2E
+pnpm --filter @ariatype/desktop run test:e2e
+
+# Update only touched snapshots
+pnpm --filter @ariatype/desktop run test:e2e:update
+```
+
+- Desktop E2E is real Tauri black-box verification with `@srsholmes/tauri-playwright`.
+- The ordered suite starts from a first-run user journey in `tests/e2e/pages/journey.spec.ts`.
+- Do not reintroduce browser-only mock IPC into `tests/e2e`. If behavior needs mocking, move it to a lower-layer harness instead.
+- On macOS, the harness clears the app-specific WebKit persistence used by the dev app so first-run onboarding stays deterministic across runs.
+
 ---
 
 ## Key Boundaries

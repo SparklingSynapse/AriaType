@@ -7,6 +7,7 @@ use super::shared::ProcessingEventTarget;
 
 struct LocalPolishContext {
     system_prompt: String,
+    window_context: Option<String>,
     language: String,
     model_id: String,
     log_context: &'static str,
@@ -21,6 +22,7 @@ async fn run_local_polish(
 ) -> (String, u64) {
     let LocalPolishContext {
         system_prompt,
+        window_context,
         language,
         model_id,
         log_context,
@@ -54,6 +56,10 @@ async fn run_local_polish(
                     language,
                 )
                 .with_model(model_filename);
+                let request = match window_context {
+                    Some(ref ctx) => request.with_window_context(ctx),
+                    None => request,
+                };
 
                 event_target.emit_polishing(task_id);
 
@@ -153,6 +159,11 @@ pub(super) async fn maybe_polish_transcription_text(
                 )
             };
 
+            let window_context = {
+                let session = state.session_state.lock();
+                session.as_ref().and_then(|s| s.window_context.clone())
+            };
+
             if cloud_polish_enabled {
                 if let Some(cfg) = cloud_config {
                     if !cfg.api_key.is_empty() && !cfg.model.is_empty() {
@@ -163,6 +174,10 @@ pub(super) async fn maybe_polish_transcription_text(
                             system_prompt,
                             language,
                         );
+                        let request = match window_context {
+                            Some(ref ctx) => request.with_window_context(ctx),
+                            None => request,
+                        };
 
                         event_target.emit_polishing(task_id);
 
@@ -207,6 +222,7 @@ pub(super) async fn maybe_polish_transcription_text(
                 accumulated_text,
                 LocalPolishContext {
                     system_prompt,
+                    window_context,
                     language,
                     model_id: polish_model_id,
                     log_context: "local",

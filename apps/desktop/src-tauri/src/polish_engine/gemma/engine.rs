@@ -37,7 +37,7 @@ impl PolishEngine for GemmaPolishEngine {
         }
 
         let text = request.text.clone();
-        let system_prompt = request.system_prompt.clone();
+        let system_prompt = request.system_context.effective_prompt().into_owned();
         let language = request.language.clone();
         let default_prompt = super::DEFAULT_POLISH_PROMPT.to_string();
 

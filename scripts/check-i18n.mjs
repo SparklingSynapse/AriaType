@@ -73,8 +73,9 @@ function getKeyValues(obj, prefix = '') {
 function scanSourceFiles(srcPath, localeKeys) {
   const usedKeys = new Set();
   const returnObjectsKeys = new Set();
+  const dynamicKeyWarnings = [];
   const extensions = ['.tsx', '.ts', '.jsx', '.js'];
-  
+
   function scanDir(dir) {
     try {
       const entries = readdirSync(dir);
@@ -87,15 +88,15 @@ function scanSourceFiles(srcPath, localeKeys) {
             scanDir(fullPath);
           } else if (stat.isFile() && extensions.includes(extname(entry))) {
             const content = readFileSync(fullPath, 'utf-8');
-            extractKeysFromContent(content, usedKeys, returnObjectsKeys);
+            extractKeysFromContent(content, usedKeys, returnObjectsKeys, dynamicKeyWarnings, fullPath);
           }
         } catch {}
       }
     } catch {}
   }
-  
+
   scanDir(srcPath);
-  
+
   // When returnObjects: true is used with a parent key, mark all child keys as used
   for (const parentKey of returnObjectsKeys) {
     for (const key of localeKeys) {
@@ -104,29 +105,48 @@ function scanSourceFiles(srcPath, localeKeys) {
       }
     }
   }
-  
-  return usedKeys;
+
+  return { usedKeys, dynamicKeyWarnings };
 }
 
-function extractKeysFromContent(content, usedKeys, returnObjectsKeys) {
+function extractKeysFromContent(content, usedKeys, returnObjectsKeys, dynamicKeyWarnings, filePath) {
   const patterns = [
     /\bt\s*\(\s*"([^"]+)"\s*[,\)]/g,
     /\bt\s*\(\s*'([^']+)'\s*[,\)]/g,
   ];
-  
+
   for (const regex of patterns) {
     let match;
     while ((match = regex.exec(content)) !== null) {
       usedKeys.add(match[1]);
     }
   }
-  
+
   // Detect returnObjects: true usage
   const returnObjectsRegex = /t\s*\(\s*["']([^"']+)["']\s*,\s*\{[^}]*returnObjects\s*:/g;
   let match;
   while ((match = returnObjectsRegex.exec(content)) !== null) {
     returnObjectsKeys.add(match[1]);
     usedKeys.add(match[1]);
+  }
+
+  // Detect dynamic key concatenation patterns (PROHIBITED)
+  // Pattern: t(`prefix.${variable}`) or t('prefix.' + variable) or t("prefix." + variable)
+  const dynamicPatterns = [
+    // Template literal with interpolation: t(`key.${var}`)
+    /\bt\s*\(\s*`([^`]+)\$\{[^}]+\}([^`]*)`\s*[,\)]/g,
+    // String concatenation: t('key.' + var) or t("key." + var)
+    /\bt\s*\(\s*["']([^"']+)["']\s*\+\s*[a-zA-Z_][a-zA-Z0-9_]*\s*[,\)]/g,
+  ];
+
+  for (const regex of dynamicPatterns) {
+    let m;
+    while ((m = regex.exec(content)) !== null) {
+      dynamicKeyWarnings.push({
+        file: filePath,
+        pattern: m[0].trim(),
+      });
+    }
   }
 }
 
@@ -144,11 +164,22 @@ for (const project of PROJECTS) {
   }
 
   const enKeys = getKeys(locales.en);
-  
+
   // Scan source code
   console.log('  📂 Scanning source files...');
-  const usedKeys = scanSourceFiles(project.srcPath, enKeys);
+  const { usedKeys, dynamicKeyWarnings } = scanSourceFiles(project.srcPath, enKeys);
   console.log(`  📊 Keys in code: ${usedKeys.size} | Keys in locale: ${enKeys.size}`);
+
+  // Report dynamic key concatenation (PROHIBITED)
+  if (dynamicKeyWarnings.length > 0) {
+    console.log(`  🚫 ${dynamicKeyWarnings.length} DYNAMIC KEY CONCATENATION detected (PROHIBITED):`);
+    dynamicKeyWarnings.forEach(w => {
+      const relativePath = w.file.replace(PROJECT_ROOT, '');
+      console.log(`     - ${relativePath}`);
+      console.log(`       ${w.pattern}`);
+    });
+    allPassed = false;
+  }
   
   // Missing in locale
   const missingInLocale = [...usedKeys].filter(k => !enKeys.has(k));
@@ -162,14 +193,12 @@ for (const project of PROJECTS) {
   const redundantInLocale = [...enKeys].filter(k => !usedKeys.has(k));
   
   // Known dynamic key patterns (constructed at runtime)
+  // NOTE: These patterns are ONLY for keys that cannot be statically detected.
+  // If code uses static keys like t("key.name"), they will be auto-detected.
   const dynamicKeyPatterns = [
-    /^model\.polish\.template[A-Z]/, // templateFiller, templateFormal, templateConcise, templateAgent, templateCustom
-    /^model\.domain\.subdomain_/,    // subdomain_general, subdomain_security, etc.
-    /^model\.domain\.domain_/,       // domain_general, domain_it, etc.
-    /^model\.hint\./,                // model.hint.* (used in VoiceInputSection)
-    /^general\.pill\./,              // pill position options
-    /^dashboard\.time\./,            // time format keys
-    /^history\.(minutesAgo|hoursAgo|daysAgo)$/, // relative time keys
+    /^model\.polish\.template[A-Z]/, // templateFiller, templateFormal, templateConcise, templateAgent, templateCustom (used via switch/map)
+    /^model\.domain\.subdomain_/,    // subdomain_general, subdomain_security, etc. (used via switch)
+    /^dashboard\.time\./,            // time format keys (used via switch)
   ];
   
   const trulyRedundant = redundantInLocale.filter(k => 

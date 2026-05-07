@@ -10,21 +10,43 @@ import { logger } from "@/lib/logger";
 import { settingsCommands, windowCommands, events, type AppSettings } from "@/lib/tauri";
 import type { RecordingStateEvent } from "@/lib/tauri";
 
+// Font-size scaling factor for pill size (1-5 levels)
+// Applied to document root so Tailwind rem units scale proportionally
+const PILL_SIZE_SCALE: Record<number, number> = {
+  1: 0.875,  // 14px / 16px
+  2: 1,      // default (16px)
+  3: 1.125,  // 18px / 16px
+  4: 1.25,   // 20px / 16px
+  5: 1.375,  // 22px / 16px
+};
+
 export function PillWindow() {
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
   const [hasAudioActivity, setHasAudioActivity] = useState(false);
   const [indicatorMode, setIndicatorMode] = useState("always");
+  const [pillSize, setPillSize] = useState(2);
   const latestTaskId = useRef<number>(0);
+
+  // Apply font-size to document root for rem-based scaling
+  useEffect(() => {
+    const scale = PILL_SIZE_SCALE[pillSize] ?? 1;
+    document.documentElement.style.fontSize = `${16 * scale}px`;
+    return () => {
+      document.documentElement.style.fontSize = "16px";
+    };
+  }, [pillSize]);
 
   useEffect(() => {
     settingsCommands.getSettings().then((s) => {
       setIndicatorMode(s.pill_indicator_mode ?? "always");
+      setPillSize(s.pill_size ?? 2);
     });
 
     let unlisten: (() => void) | undefined;
     events.onSettingsChanged((s: AppSettings) => {
       setIndicatorMode(s.pill_indicator_mode ?? "always");
+      setPillSize(s.pill_size ?? 2);
     }).then((fn) => { unlisten = fn; });
 
     return () => { unlisten?.(); };
@@ -130,10 +152,10 @@ export function PillWindow() {
               <div
                 className="relative flex items-center justify-center rounded-full bg-[#1d1d1d] shadow-[inset_0_0_0_1px_#2c2f3685,inset_0_0_50px_#ffffff05]"
                 style={{
-                  paddingLeft: isActive ? 16 : 12,
-                  paddingRight: isActive ? 16 : 12,
-                  paddingTop: isActive ? 7 : 5,
-                  paddingBottom: isActive ? 7 : 5,
+                  paddingLeft: "0.75rem",
+                  paddingRight: "0.75rem",
+                  paddingTop: "0.3125rem",
+                  paddingBottom: "0.3125rem",
                   WebkitAppRegion: "no-drag",
                 } as React.CSSProperties}
               >

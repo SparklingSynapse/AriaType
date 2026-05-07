@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/capabilities/2",
+  "identifier": "e2e",
+  "description": "E2E testing capability (playwright plugin)",
+  "local": true,
+  "windows": ["main", "pill", "toast"],
+  "permissions": [
+    "playwright:default"
+  ]
+}

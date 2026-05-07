@@ -51,11 +51,50 @@ impl std::fmt::Display for PolishEngineType {
     }
 }
 
+/// System context provided to polish engines.
+///
+/// Contains structured context information that engines can consume flexibly:
+/// - `system_prompt`: Complete prompt assembled by upper layer (template + app system info)
+/// - `window_context`: OCR text from focused window at recording start
+///
+/// Engines decide how to incorporate these fields into their final prompt.
+#[derive(Debug, Clone, Default)]
+pub struct SystemContext {
+    pub system_prompt: String,
+    pub window_context: Option<String>,
+}
+
+impl SystemContext {
+    pub fn new(system_prompt: impl Into<String>) -> Self {
+        Self {
+            system_prompt: system_prompt.into(),
+            window_context: None,
+        }
+    }
+
+    pub fn with_window_context(mut self, ctx: impl Into<String>) -> Self {
+        self.window_context = Some(ctx.into());
+        self
+    }
+
+    /// Resolve effective prompt by prepending window context if present.
+    pub fn effective_prompt(&self) -> std::borrow::Cow<'_, str> {
+        match &self.window_context {
+            Some(ctx) if !ctx.is_empty() => std::borrow::Cow::Owned(format!(
+                "The user is currently looking at a window containing the following text:\n\"\"\"\n{}\n\"\"\"\n\n{}",
+                ctx,
+                self.system_prompt
+            )),
+            _ => std::borrow::Cow::Borrowed(&self.system_prompt),
+        }
+    }
+}
+
 /// Polish request parameters
 #[derive(Debug, Clone)]
 pub struct PolishRequest {
     pub text: String,
-    pub system_prompt: String,
+    pub system_context: SystemContext,
     pub language: String,
     pub model_name: Option<String>,
 }
@@ -68,7 +107,7 @@ impl PolishRequest {
     ) -> Self {
         Self {
             text: text.into(),
-            system_prompt: system_prompt.into(),
+            system_context: SystemContext::new(system_prompt),
             language: language.into(),
             model_name: None,
         }
@@ -76,6 +115,11 @@ impl PolishRequest {
 
     pub fn with_model(mut self, model_name: impl Into<String>) -> Self {
         self.model_name = Some(model_name.into());
+        self
+    }
+
+    pub fn with_window_context(mut self, ctx: impl Into<String>) -> Self {
+        self.system_context.window_context = Some(ctx.into());
         self
     }
 }
@@ -209,9 +253,10 @@ mod tests {
     fn test_polish_request_new() {
         let request = PolishRequest::new("test text", "system prompt", "en");
         assert_eq!(request.text, "test text");
-        assert_eq!(request.system_prompt, "system prompt");
+        assert_eq!(request.system_context.system_prompt, "system prompt");
         assert_eq!(request.language, "en");
         assert!(request.model_name.is_none());
+        assert!(request.system_context.window_context.is_none());
     }
 
     #[test]
@@ -219,6 +264,25 @@ mod tests {
         let request = PolishRequest::new("test", "prompt", "zh").with_model("model.gguf");
         assert_eq!(request.text, "test");
         assert_eq!(request.model_name, Some("model.gguf".to_string()));
+    }
+
+    #[test]
+    fn test_polish_request_with_window_context() {
+        let request = PolishRequest::new("test", "prompt", "en")
+            .with_window_context("window text");
+        assert_eq!(request.system_context.window_context, Some("window text".to_string()));
+    }
+
+    #[test]
+    fn test_system_context_effective_prompt() {
+        let ctx = SystemContext::new("base prompt");
+        assert_eq!(ctx.effective_prompt(), "base prompt");
+
+        let ctx_with_window = SystemContext::new("base prompt")
+            .with_window_context("window content");
+        let effective = ctx_with_window.effective_prompt();
+        assert!(effective.contains("window content"));
+        assert!(effective.contains("base prompt"));
     }
 
     #[test]

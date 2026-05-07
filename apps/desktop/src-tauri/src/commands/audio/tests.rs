@@ -52,8 +52,10 @@ async fn streaming_finalization_honors_cloud_polish_settings() {
         .await;
 
     let state = AppState::new();
+    state.start_session(1, None);
     {
         let mut settings = state.settings.lock();
+        settings.cloud_polish_enabled = true;
         settings.active_cloud_polish_provider = "openai".to_string();
         settings.stt_engine_language = "en-US".to_string();
         settings.cloud_polish_configs.insert(
@@ -79,6 +81,83 @@ async fn streaming_finalization_honors_cloud_polish_settings() {
     .await;
 
     assert_eq!(final_text, "Polished streaming text");
+}
+
+#[tokio::test]
+async fn window_context_is_injected_into_polish_prompt() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("Authorization", "Bearer test_openai_api_key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+            "choices": [{"message": {"content": "Polished"}}]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let state = AppState::new();
+    state.start_session(2, None);
+    {
+        let mut session = state.session_state.lock();
+        if let Some(s) = session.as_mut() {
+            s.window_context = Some("Screen content here".to_string());
+        }
+    }
+    {
+        let mut settings = state.settings.lock();
+        settings.cloud_polish_enabled = true;
+        settings.active_cloud_polish_provider = "openai".to_string();
+        settings.stt_engine_language = "en-US".to_string();
+        settings.cloud_polish_configs.insert(
+            "openai".to_string(),
+            CloudProviderConfig {
+                enabled: true,
+                provider_type: "openai".to_string(),
+                api_key: "test_openai_api_key".to_string(),
+                base_url: mock_server.uri(),
+                model: "gpt-4o-mini".to_string(),
+                enable_thinking: false,
+            },
+        );
+    }
+
+    let (final_text, _) = maybe_polish_transcription_text(
+        &ProcessingEventTarget::None,
+        &state,
+        2,
+        "User input".to_string(),
+        Some("filler".to_string()),
+    )
+    .await;
+
+    assert_eq!(final_text, "Polished");
+}
+
+#[tokio::test]
+async fn window_context_disabled_skips_capture() {
+    let state = AppState::new();
+    state.start_session(3, None);
+    {
+        let mut settings = state.settings.lock();
+        settings.window_context_enabled = false;
+    }
+
+    let (denoise_mode, vad_enabled, _domain, _subdomain, _glossary, window_context_enabled) = {
+        let settings = state.settings.lock();
+        (
+            settings.denoise_mode.clone(),
+            settings.vad_enabled,
+            None::<String>,
+            None::<String>,
+            None::<String>,
+            settings.window_context_enabled,
+        )
+    };
+
+    assert!(!window_context_enabled);
+    assert_eq!(denoise_mode, "off");
+    assert!(!vad_enabled);
 }
 
 #[test]
