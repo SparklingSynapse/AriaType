@@ -9,17 +9,17 @@ AriaType - Entrada por voz con IA y codigo abierto | Una potente alternativa a T
 
 [English](README.md) | [简体中文](README-cn.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | Español
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.3-green)](https://github.com/joe223/AriaType/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.5-green)](https://github.com/joe223/AriaType/releases)
 
 [Descargar](https://github.com/joe223/AriaType/releases) • [Docs](context/README.md) • [Discusiones](https://github.com/joe223/AriaType/discussions) • [Web](https://ariatype.com)
 
 </div>
 
 > [!TIP]
-> **Novedades de v0.4 (2026-04-25)**
-> - **Modo Riff** – habla libremente, AI refina tus palabras en texto claro
-> - **Tres modos de hotkey** – Dictate (texto raw), Riff (refinado), Custom (tu estilo)
-> - **Plantillas por perfil** – cada shortcut puede usar su propio estilo de refinamiento
+> **Novedades de v0.5 (2026-05-07)**
+> - **Captura de contexto de ventana** – análisis de pantalla con OCR para refinamiento más preciso
+> - **Mejora de rendimiento** – inyección de texto más rápida y UI más fluida
+> - **Guía de inicio refinada** – experiencia de primera ejecución más clara
 
 ---
 

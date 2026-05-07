@@ -9,17 +9,17 @@ AriaType - 开源 AI 语音转文字输入工具 | 强大的Typeless替代方案
 
 [English](README.md) | 简体中文 | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md)
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.3-green)](https://github.com/joe223/AriaType/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-pink)](https://github.com/joe223/AriaType/releases) [![Windows](https://img.shields.io/badge/Windows-WIP-yellow)](https://github.com/joe223/AriaType) [![Version](https://img.shields.io/badge/version-0.5-green)](https://github.com/joe223/AriaType/releases)
 
 [下载](https://github.com/joe223/AriaType/releases) • [文档](context/README.md) • [讨论区](https://github.com/joe223/AriaType/discussions) • [官网](https://ariatype.com)
 
 </div>
 
 > [!TIP]
-> **v0.4 更新内容 (2026-04-25)**
-> - **Riff 模式** – 随意口述，AI 自动润色为清晰表达
-> - **三种快捷键模式** – Dictate（原文）、Riff（润色）、Custom（自定义）
-> - **独立润色模板** – 每个快捷键可配置专属润色风格
+> **v0.5 更新内容 (2026-05-07)**
+> - **窗口上下文捕获** – OCR 智能识别屏幕内容，润色更精准
+> - **性能提升** – 文本注入更快，UI 更流畅
+> - **引导优化** – 更清晰的新手入门体验
 
 ---
 
