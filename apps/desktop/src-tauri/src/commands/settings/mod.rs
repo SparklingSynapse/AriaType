@@ -110,7 +110,12 @@ pub struct AppSettings {
     pub window_context_enabled: bool,
     /// Pill window size level: 1-5, default 2.
     /// Controls the visual scale of the pill indicator via CSS font-size scaling.
+    #[serde(default = "default_pill_size")]
     pub pill_size: u8,
+}
+
+fn default_pill_size() -> u8 {
+    2
 }
 
 impl Default for AppSettings {
