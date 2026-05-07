@@ -1,13 +1,13 @@
 {
-  "version": "0.5.0",
-  "pub_date": "2026-05-07T07:29:41.661Z",
+  "version": "0.5.1",
+  "pub_date": "2026-05-07T10:55:25.664Z",
   "notes": "",
-  "url": "https://ariatype.com/release/AriaType_0.5.0_aarch64.dmg",
+  "url": "https://ariatype.com/release/AriaType_0.5.1_aarch64.dmg",
   "platforms": {
     "mac": {
       "universal": "",
-      "aarch64": "https://ariatype.com/release/AriaType_0.5.0_aarch64.dmg",
-      "x86_64": "https://ariatype.com/release/AriaType_0.5.0_x64.dmg"
+      "aarch64": "https://ariatype.com/release/AriaType_0.5.1_aarch64.dmg",
+      "x86_64": "https://ariatype.com/release/AriaType_0.5.1_x64.dmg"
     },
     "windows": {
       "exe": "",
@@ -16,14 +16,14 @@
   },
   "files": [
     {
-      "file": "AriaType_0.5.0_aarch64.dmg",
+      "file": "AriaType_0.5.1_aarch64.dmg",
       "channel": "mac-aarch",
-      "url": "https://ariatype.com/release/AriaType_0.5.0_aarch64.dmg"
+      "url": "https://ariatype.com/release/AriaType_0.5.1_aarch64.dmg"
     },
     {
-      "file": "AriaType_0.5.0_x64.dmg",
+      "file": "AriaType_0.5.1_x64.dmg",
       "channel": "mac-intel",
-      "url": "https://ariatype.com/release/AriaType_0.5.0_x64.dmg"
+      "url": "https://ariatype.com/release/AriaType_0.5.1_x64.dmg"
     }
   ]
 }
