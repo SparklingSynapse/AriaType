@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Mic,
+  Microphone,
   Keyboard,
-  Type,
-  Palette,
-  Sparkles,
+  TextT,
+  PaintBrush,
+  Sparkle,
   Lock,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
 import { useNavigate } from "react-router-dom";
@@ -35,7 +35,7 @@ export function About() {
       highlight: true,
     },
     {
-      icon: Mic,
+      icon: Microphone,
       title: t("about.feature.voice.title"),
       description: t("about.feature.voice.description"),
     },
@@ -45,17 +45,17 @@ export function About() {
       description: t("about.feature.hotkey.description"),
     },
     {
-      icon: Type,
+      icon: TextT,
       title: t("about.feature.insert.title"),
       description: t("about.feature.insert.description"),
     },
     {
-      icon: Sparkles,
+      icon: Sparkle,
       title: t("about.feature.polish.title"),
       description: t("about.feature.polish.description"),
     },
     {
-      icon: Palette,
+      icon: PaintBrush,
       title: t("about.feature.design.title"),
       description: t("about.feature.design.description"),
     },

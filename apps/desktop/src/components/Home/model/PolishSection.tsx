@@ -9,7 +9,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Check } from "lucide-react";
+import { Check } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import {
   type PolishModelInfo,

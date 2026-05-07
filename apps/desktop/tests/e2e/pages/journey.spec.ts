@@ -21,10 +21,10 @@ async function assertJourneyStep(
     case 'permissions':
       await expect(tauriPage.locator('h2')).toContainText('Permissions');
       await expect(
-        tauriPage.locator('[data-testid="onboarding-permission-microphone"] svg.lucide-check').first(),
+        tauriPage.locator('[data-testid="onboarding-permission-microphone"] svg.text-green-500').first(),
       ).toBeVisible({ timeout: 10000 });
       await expect(
-        tauriPage.locator('[data-testid="onboarding-permission-accessibility"] svg.lucide-check').first(),
+        tauriPage.locator('[data-testid="onboarding-permission-accessibility"] svg.text-green-500').first(),
       ).toBeVisible({ timeout: 10000 });
       return;
     case 'language':
@@ -40,7 +40,7 @@ async function assertJourneyStep(
       await expect(tauriPage.locator('[data-step-id="model"] .rounded-2xl').first()).toBeVisible({
         timeout: modelReadyTimeoutMs,
       });
-      await expect(tauriPage.locator('[data-step-id="model"] svg.lucide-check').first()).toBeVisible({
+      await expect(tauriPage.locator('[data-step-id="model"] svg.text-green-500').first()).toBeVisible({
         timeout: modelReadyTimeoutMs,
       });
       return;

@@ -314,6 +314,8 @@ impl AppState {
 
     pub fn finish_session(&self, task_id: u64) -> Option<(String, usize)> {
         let mut session = self.session_state.lock();
+        // take() drops the entire SessionState including window_context,
+        // ensuring no context leaks into the next session.
         session
             .take()
             .filter(|s| s.task_id == task_id)

@@ -45,11 +45,7 @@ pub async fn capture_window_context() -> Option<String> {
                 debug!("window_context_ocr_empty");
                 return None;
             }
-            let result = if trimmed.chars().count() > MAX_CONTEXT_CHARS {
-                trimmed.chars().take(MAX_CONTEXT_CHARS).collect::<String>()
-            } else {
-                trimmed.to_string()
-            };
+            let result = truncate_to_max_chars(trimmed);
             info!(chars = result.len(), "window_context_captured");
             Some(result)
         }
@@ -69,36 +65,48 @@ fn capture_focused_window_image_blocking() -> Option<image::DynamicImage> {
         }
     };
 
-    for window in windows {
-        let is_minimized = window.is_minimized().unwrap_or(true);
-        if is_minimized {
-            continue;
-        }
+    // xcap::Window::all() returns windows in z-order (topmost first).
+    // is_focused() checks at app level (PID), so the first focused+visible
+    // window is the frontmost window of the active app.
+    let focused = windows.iter().find(|w| {
+        !w.is_minimized().unwrap_or(true)
+            && w.width().unwrap_or(0) > 0
+            && w.height().unwrap_or(0) > 0
+            && w.is_focused().unwrap_or(false)
+    });
 
-        let width = window.width().unwrap_or(0);
-        let height = window.height().unwrap_or(0);
-        if width == 0 || height == 0 {
-            continue;
+    let window = match focused {
+        Some(w) => w,
+        None => {
+            debug!("no_focused_window_found, falling back to monitor");
+            return capture_primary_monitor_blocking();
         }
+    };
 
-        match window.capture_image() {
-            Ok(rgba) => {
-                info!(
-                    title = %window.title().unwrap_or_default(),
-                    width = width,
-                    height = height,
-                    "window_captured"
-                );
-                return Some(image::DynamicImage::ImageRgba8(rgba));
-            }
-            Err(e) => {
-                debug!(error = %e, title = %window.title().unwrap_or_default(), "window_capture_failed");
-                continue;
-            }
+    match window.capture_image() {
+        Ok(rgba) => {
+            info!(
+                title = %window.title().unwrap_or_default(),
+                width = window.width().unwrap_or(0),
+                height = window.height().unwrap_or(0),
+                "focused_window_captured"
+            );
+            Some(image::DynamicImage::ImageRgba8(rgba))
+        }
+        Err(e) => {
+            warn!(error = %e, title = %window.title().unwrap_or_default(), "window_capture_failed");
+            capture_primary_monitor_blocking()
         }
     }
+}
 
-    capture_primary_monitor_blocking()
+fn truncate_to_max_chars(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() > MAX_CONTEXT_CHARS {
+        trimmed.chars().take(MAX_CONTEXT_CHARS).collect()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn capture_primary_monitor_blocking() -> Option<image::DynamicImage> {
@@ -135,22 +143,13 @@ mod tests {
     #[test]
     fn truncation_preserves_first_800_chars() {
         let long_text = "a".repeat(1000);
-        let result = if long_text.chars().count() > MAX_CONTEXT_CHARS {
-            long_text.chars().take(MAX_CONTEXT_CHARS).collect::<String>()
-        } else {
-            long_text.clone()
-        };
+        let result = truncate_to_max_chars(&long_text);
         assert_eq!(result.chars().count(), MAX_CONTEXT_CHARS);
     }
 
     #[test]
     fn truncation_keeps_short_text_unchanged() {
-        let short_text = "hello world";
-        let result = if short_text.chars().count() > MAX_CONTEXT_CHARS {
-            short_text.chars().take(MAX_CONTEXT_CHARS).collect::<String>()
-        } else {
-            short_text.to_string()
-        };
+        let result = truncate_to_max_chars("hello world");
         assert_eq!(result, "hello world");
     }
 

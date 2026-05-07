@@ -55,7 +55,8 @@ export default createRunnerConfig({
   seedDataFiles: [
     {
       src: join(e2eDir, 'fixtures', 'settings-cloud-enabled.json'),
-      dest: join(userHome, 'Library', 'Application Support', 'ariatype', 'settings.json'),
+      // Use e2e-specific directory based on productName "AriaType E2E"
+      dest: join(userHome, 'Library', 'Application Support', 'AriaType E2E', 'settings.json'),
     },
   ],
   startTimeoutSeconds: 180,

@@ -22,6 +22,8 @@ impl PermissionProvider for WindowsPermissions {
     }
 
     fn check_screen_recording(&self) -> PermissionStatus {
+        // Windows does not require an explicit screen capture permission grant.
+        // Screen capture APIs are available to all desktop applications by default.
         PermissionStatus::Granted
     }
 

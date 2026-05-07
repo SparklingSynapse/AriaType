@@ -3,18 +3,18 @@ import { useTranslation } from "react-i18next";
 import { useEventListeners } from "@/hooks/useEventListeners";
 import { Button } from "@/components/ui/button";
 import {
-  ChevronRight,
-  ChevronLeft,
+  CaretRight,
+  CaretLeft,
   X,
-  Mic,
-  Accessibility,
-  Monitor,
+  Microphone,
+  Wheelchair,
+  Desktop,
   Check,
-  Loader2,
+  CircleNotch,
   Shield,
-  Zap,
+  Lightning,
   Eye,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
@@ -101,6 +101,7 @@ function detectSystemLanguage(): string {
 }
 
 const COMMON_LANGUAGES = [
+  { code: "auto", label: "Auto" },
   { code: "en-US", label: "English" },
   { code: "zh-CN", label: "Chinese (Simplified)" },
   { code: "zh-TW", label: "Chinese (Traditional)" },
@@ -238,7 +239,7 @@ function PermissionStep() {
               {micStatus === "granted" ? (
                 <Check className="w-4 h-4 text-green-500" />
               ) : (
-                <Mic className="w-4 h-4 text-muted-foreground" />
+                <Microphone className="w-4 h-4 text-muted-foreground" />
               )}
             </div>
             <div>
@@ -258,7 +259,7 @@ function PermissionStep() {
             className="w-20"
           >
             {micLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <CircleNotch className="w-4 h-4 animate-spin" />
             ) : micStatus === "granted" ? (
               t("onboarding.permissions.granted")
             ) : (
@@ -284,7 +285,7 @@ function PermissionStep() {
               {axStatus === true ? (
                 <Check className="w-4 h-4 text-green-500" />
               ) : (
-                <Accessibility className="w-4 h-4 text-muted-foreground" />
+                <Wheelchair className="w-4 h-4 text-muted-foreground" />
               )}
             </div>
             <div>
@@ -304,7 +305,7 @@ function PermissionStep() {
             className="w-20"
           >
             {axLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <CircleNotch className="w-4 h-4 animate-spin" />
             ) : axStatus === true ? (
               t("onboarding.permissions.granted")
             ) : (
@@ -330,7 +331,7 @@ function PermissionStep() {
               {screenStatus === "granted" ? (
                 <Check className="w-4 h-4 text-green-500" />
               ) : (
-                <Monitor className="w-4 h-4 text-muted-foreground" />
+                <Desktop className="w-4 h-4 text-muted-foreground" />
               )}
             </div>
             <div>
@@ -350,7 +351,7 @@ function PermissionStep() {
             className="w-20"
           >
             {screenLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <CircleNotch className="w-4 h-4 animate-spin" />
             ) : screenStatus === "granted" ? (
               t("onboarding.permissions.granted")
             ) : (
@@ -552,6 +553,19 @@ function ModelStep({
 function LanguageStep() {
   const { t } = useTranslation();
   const { settings, updateSetting } = useSettingsContext();
+  const [initialized, setInitialized] = useState(false);
+
+  // On first mount, detect and set system language if current is "auto"
+  useEffect(() => {
+    if (!initialized && settings?.stt_engine_language === "auto") {
+      const detected = detectSystemLanguage();
+      if (detected !== "auto") {
+        updateSetting("stt_engine_language", detected)
+          .catch((err: unknown) => logger.error("failed_to_set_detected_language", { error: String(err) }));
+      }
+      setInitialized(true);
+    }
+  }, [initialized, settings?.stt_engine_language, updateSetting]);
 
   if (!settings) return null;
 
@@ -563,6 +577,9 @@ function LanguageStep() {
     await updateSetting("stt_engine_language", value);
   };
 
+  // Use detected language if available, otherwise show current setting
+  const displayLanguage = settings.stt_engine_language ?? "auto";
+
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
       <img
@@ -573,7 +590,7 @@ function LanguageStep() {
       <div className="space-y-4 w-full">
         <div className="space-y-2">
           <Select
-            value={settings.stt_engine_language ?? "auto"}
+            value={displayLanguage}
             onChange={(e) => handleLanguageChange(e.target.value)}
             options={COMMON_LANGUAGES.map((lang) => ({
               value: lang.code,
@@ -799,7 +816,7 @@ function DoneStep() {
       highlight: t("onboarding.done.feature1Highlight"),
     },
     {
-      icon: Zap,
+      icon: Lightning,
       label: t("onboarding.done.feature2"),
       highlight: t("onboarding.done.feature2Highlight"),
     },
@@ -945,16 +962,6 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   }, []);
 
   useEffect(() => {
-    if (isOpen && (!settings?.stt_engine_language || settings.stt_engine_language === "auto")) {
-      const detected = detectSystemLanguage();
-      if (detected !== "auto") {
-        updateSetting("stt_engine_language", detected)
-          .catch((err: unknown) => logger.error("failed_to_set_detected_language", { error: String(err) }));
-      }
-    }
-  }, [isOpen, settings?.stt_engine_language, updateSetting]);
-
-  useEffect(() => {
     if (currentStep >= steps.length) {
       setCurrentStep(Math.max(0, steps.length - 1));
     }
@@ -1058,7 +1065,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
               onClick={handlePrev}
               className="gap-2"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <CaretLeft className="w-4 h-4" />
               {t("onboarding.prev")}
             </Button>
           ) : (
@@ -1079,7 +1086,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
             data-testid="onboarding-primary-action"
           >
             {isLastStep ? t("onboarding.finish") : t("onboarding.next")}
-            {!isLastStep && <ChevronRight className="w-4 h-4" />}
+            {!isLastStep && <CaretRight className="w-4 h-4" />}
           </Button>
         </div>
 

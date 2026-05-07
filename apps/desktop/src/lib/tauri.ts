@@ -150,6 +150,8 @@ export interface AppSettings {
   stay_in_tray: boolean;
   polish_custom_templates: CustomPolishTemplate[];
   shortcut_profiles: ShortcutProfilesMap;
+  window_context_enabled: boolean;
+  pill_size: number;
 }
 
 export interface ModelInfo {

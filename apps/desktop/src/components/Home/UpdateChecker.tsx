@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, CheckCircle2, ExternalLink, AlertCircle, Download } from "lucide-react";
+import { ArrowsClockwise, CheckCircle, ArrowSquareOut, WarningCircle, DownloadSimple } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-shell";
 import { getVersion } from "@tauri-apps/api/app";
@@ -79,13 +79,13 @@ export function UpdateChecker() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {checking ? (
-            <RefreshCw className="h-4 w-4 text-muted-foreground shrink-0 animate-spin" />
+            <ArrowsClockwise className="h-4 w-4 text-muted-foreground shrink-0 animate-spin" />
           ) : error ? (
-            <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+            <WarningCircle className="h-4 w-4 text-destructive shrink-0" />
           ) : updateAvailable ? (
-            <Download className="h-4 w-4 text-green-500 shrink-0" />
+            <DownloadSimple className="h-4 w-4 text-green-500 shrink-0" />
           ) : (
-            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+            <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
           )}
           <span className="text-sm font-medium">
             {checking
@@ -108,7 +108,7 @@ export function UpdateChecker() {
           disabled={checking}
           className="h-7 px-2 text-xs text-muted-foreground"
         >
-          <RefreshCw className="h-3 w-3 mr-1.5" />
+          <ArrowsClockwise className="h-3 w-3 mr-1.5" />
           {t("update.checkNow")}
         </Button>
       </div>
@@ -127,7 +127,7 @@ export function UpdateChecker() {
               </p>
             </div>
             <Button size="sm" onClick={openDownloadPage}>
-              <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+              <ArrowSquareOut className="h-3.5 w-3.5 mr-1.5" />
               {t("update.download")}
             </Button>
           </div>

@@ -21,6 +21,7 @@ import { useSettingsContext } from "@/contexts/SettingsContext";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 import langCodes from "@/lib/lang-codes.json";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Slider } from "@/components/ui/slider";
 
 function getLanguageLabel(code: string): string {
   return (langCodes as Record<string, string>)[code] || code;
@@ -33,6 +34,38 @@ export function GeneralSettings() {
   const [isMacOS, setIsMacOS] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "transcription">("general");
   const [availableSubdomains, setAvailableSubdomains] = useState<string[]>([]);
+
+  // Helper functions with static i18n keys (for scanner detection)
+  const getPillSizeLabel = (size: number): string => {
+    switch (size) {
+      case 1: return t("general.display.pillSize.small");
+      case 2: return t("general.display.pillSize.default");
+      case 3: return t("general.display.pillSize.medium");
+      case 4: return t("general.display.pillSize.large");
+      case 5: return t("general.display.pillSize.xlarge");
+      default: return t("general.display.pillSize.default");
+    }
+  };
+
+  const getSubdomainLabel = (subdomain: string): string => {
+    switch (subdomain) {
+      case "general": return t("model.domain.subdomain_general", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "security": return t("model.domain.subdomain_security", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "hardware": return t("model.domain.subdomain_hardware", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "software": return t("model.domain.subdomain_software", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "web": return t("model.domain.subdomain_web", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "ai": return t("model.domain.subdomain_ai", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "civil": return t("model.domain.subdomain_civil", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "criminal": return t("model.domain.subdomain_criminal", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "corporate": return t("model.domain.subdomain_corporate", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "international": return t("model.domain.subdomain_international", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "pharmacy": return t("model.domain.subdomain_pharmacy", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "diagnostics": return t("model.domain.subdomain_diagnostics", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "cardiology": return t("model.domain.subdomain_cardiology", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      case "neurology": return t("model.domain.subdomain_neurology", subdomain.charAt(0).toUpperCase() + subdomain.slice(1));
+      default: return subdomain.charAt(0).toUpperCase() + subdomain.slice(1);
+    }
+  };
 
   useEffect(() => {
     systemCommands.getAudioDevices().then(setAudioDevices).catch((err: unknown) => logger.error("failed_to_get_audio_devices", { error: String(err) }));
@@ -77,6 +110,11 @@ export function GeneralSettings() {
     await updateSetting("pill_indicator_mode", value);
   };
 
+  const handlePillSizeChange = async (value: number) => {
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "pill_size", value: String(value) });
+    await updateSetting("pill_size", value);
+  };
+
   const handleAppLanguageChange = async (value: string) => {
     analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "language", value });
     if (value === "auto") {
@@ -119,6 +157,11 @@ export function GeneralSettings() {
   const handleVadChange = async (checked: boolean) => {
     analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "vad_enabled", value: String(checked) });
     await updateSetting("vad_enabled", checked);
+  };
+
+  const handleWindowContextChange = async (checked: boolean) => {
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "window_context_enabled", value: String(checked) });
+    await updateSetting("window_context_enabled", checked);
   };
 
   const handleSttLanguageChange = async (value: string) => {
@@ -175,7 +218,7 @@ export function GeneralSettings() {
               <CardTitle>{t("general.language.title")}</CardTitle>
               <CardDescription>{t("general.language.description")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label>{t("general.language.select")}</Label>
                 <Select
@@ -198,7 +241,7 @@ export function GeneralSettings() {
               <CardTitle>{t("general.startup.title")}</CardTitle>
               <CardDescription>{t("general.startup.description")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="flex items-center justify-between space-x-4">
                 <div>
                   <Label htmlFor="auto-start">{t("general.startup.autoStart")}</Label>
@@ -248,7 +291,7 @@ export function GeneralSettings() {
               <CardTitle>{t("general.display.title")}</CardTitle>
               <CardDescription>{t("general.display.description")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="space-y-4">
                 <div className="text-sm font-medium">{t("general.display.themeMode")}</div>
                 <MultiSwitch
@@ -276,6 +319,25 @@ export function GeneralSettings() {
                   ]}
                 />
               </div>
+              <div className="space-y-2">
+                <Label>{t("general.display.pillSize")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("general.display.pillSizeDesc")}
+                </p>
+                <div className="flex items-center gap-3">
+                  <Slider
+                    min={1}
+                    max={5}
+                    step={1}
+                    value={settings.pill_size ?? 2}
+                    onChange={(e) => handlePillSizeChange(Number(e.target.value))}
+                    className="w-24"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {getPillSizeLabel(settings.pill_size ?? 2)}
+                  </span>
+                </div>
+              </div>
               <div className="space-y-4">
                 <div className="text-sm font-medium">{t("general.display.indicatorMode")}</div>
                 <MultiSwitch
@@ -296,7 +358,7 @@ export function GeneralSettings() {
               <CardTitle>{t("general.privacy.title")}</CardTitle>
               <CardDescription>{t("general.privacy.description")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="flex items-center justify-between space-x-4">
                 <div>
                   <Label htmlFor="analytics-toggle">
@@ -324,7 +386,7 @@ export function GeneralSettings() {
               <CardTitle>{t("general.audio.title")}</CardTitle>
               <CardDescription>{t("general.audio.description")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label>{t("general.audio.inputDevice")}</Label>
                 <Select
@@ -344,7 +406,7 @@ export function GeneralSettings() {
               <CardTitle>{t("general.transcription.outputLanguage")}</CardTitle>
               <CardDescription>{t("general.transcription.outputLanguageDesc")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label>{t("model.active.language")}</Label>
                 <Select
@@ -364,7 +426,7 @@ export function GeneralSettings() {
               <CardTitle>{t("general.audio.processing", "Audio Processing")}</CardTitle>
               <CardDescription>{t("general.audio.processingDesc", "Configure noise reduction and silence trimming to optimize recognition speed and quality.")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="space-y-4">
                 <div className="text-sm font-medium">{t("general.audio.denoise")}</div>
                 <MultiSwitch
@@ -391,6 +453,20 @@ export function GeneralSettings() {
                   onCheckedChange={handleVadChange}
                 />
               </div>
+
+              <div className="flex items-center justify-between space-x-4">
+                <div>
+                  <Label htmlFor="window-context-toggle">{t("general.audio.screenContext", "Screen Context")}</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t("general.audio.screenContextDesc", "Capture the focused window content via OCR at recording start. This context helps polish models better understand your intent.")}
+                  </p>
+                </div>
+                <Switch
+                  id="window-context-toggle"
+                  checked={settings.window_context_enabled}
+                  onCheckedChange={handleWindowContextChange}
+                />
+              </div>
             </CardContent>
           </Card>
 
@@ -399,7 +475,7 @@ export function GeneralSettings() {
               <CardTitle>{t("general.transcription.domainTitle")}</CardTitle>
               <CardDescription>{t("general.transcription.domainDesc")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label>{t("model.domain.domain")}</Label>
                 <Select
@@ -422,10 +498,7 @@ export function GeneralSettings() {
                     onChange={(e) => handleSubdomainChange(e.target.value)}
                     options={availableSubdomains.map((sub) => ({
                       value: sub,
-                      label: t(
-                        `model.domain.subdomain_${sub}`,
-                        sub.charAt(0).toUpperCase() + sub.slice(1),
-                      ),
+                      label: getSubdomainLabel(sub),
                     }))}
                   />
                 </div>

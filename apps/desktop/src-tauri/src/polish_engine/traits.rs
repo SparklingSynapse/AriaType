@@ -78,14 +78,14 @@ impl SystemContext {
     }
 
     /// Resolve effective prompt by prepending window context if present.
-    pub fn effective_prompt(&self) -> String {
+    pub fn effective_prompt(&self) -> std::borrow::Cow<'_, str> {
         match &self.window_context {
-            Some(ctx) if !ctx.is_empty() => format!(
+            Some(ctx) if !ctx.is_empty() => std::borrow::Cow::Owned(format!(
                 "The user is currently looking at a window containing the following text:\n\"\"\"\n{}\n\"\"\"\n\n{}",
                 ctx,
                 self.system_prompt
-            ),
-            _ => self.system_prompt.clone(),
+            )),
+            _ => std::borrow::Cow::Borrowed(&self.system_prompt),
         }
     }
 }

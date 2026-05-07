@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { modelCommands } from "@/lib/tauri";
@@ -145,7 +145,7 @@ export function PolishTemplatesPage() {
                       size="icon"
                       onClick={() => handleEdit(template)}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <PencilSimple className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -153,7 +153,7 @@ export function PolishTemplatesPage() {
                       onClick={() => handleDelete(template)}
                       className="text-muted-foreground hover:text-destructive"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Loader2, WifiOff } from "lucide-react";
+import { CircleNotch, WifiSlash } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { logger } from "@/lib/logger";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
@@ -106,13 +106,13 @@ export function ChangelogPage() {
       <div className="h-full rounded-2xl border border-border bg-card p-6 overflow-hidden">
         {loading && (
           <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <CircleNotch className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         )}
 
         {error && !loading && (
           <div className="flex flex-col items-center justify-center h-full gap-3">
-            <WifiOff className="h-6 w-6 text-muted-foreground" />
+            <WifiSlash className="h-6 w-6 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">{error}</p>
             <Button variant="outline" size="sm" onClick={handleRetry}>
               {t("about.changelog.retry")}

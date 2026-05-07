@@ -1,4 +1,4 @@
-import { Settings } from "lucide-react";
+import { GearSix } from "@phosphor-icons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
 
@@ -19,7 +19,7 @@ export function SettingsButton({}: SettingsButtonProps) {
       onClick={handleClick}
       className="ml-2 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-700 text-zinc-400 opacity-60 hover:opacity-100 transition-opacity duration-100"
     >
-      <Settings className="h-2.5 w-2.5" />
+      <GearSix className="h-2.5 w-2.5" />
     </button>
   );
 }

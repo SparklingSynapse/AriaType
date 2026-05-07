@@ -9,16 +9,16 @@ import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
-  Search,
+  MagnifyingGlass,
   Clock,
-  ChevronLeft,
-  ChevronRight,
+  CaretLeft,
+  CaretRight,
   X,
-  Copy,
-  AlertCircle,
-  RotateCcw,
-  Trash2,
-} from "lucide-react";
+  CopySimple,
+  WarningCircle,
+  ArrowCounterClockwise,
+  Trash,
+} from "@phosphor-icons/react";
 import { logger } from "@/lib/logger";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 
@@ -74,7 +74,7 @@ function HistoryEntryCard({ entry, t, onRetry, retryingIds }: HistoryEntryCardPr
       <div className="flex-1 min-w-0">
         {isError ? (
           <div className="flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <WarningCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
             <div className="flex flex-col gap-1">
               <p className="text-[14px] text-muted-foreground leading-relaxed">
                 {t("history.error.failed")}
@@ -105,7 +105,7 @@ function HistoryEntryCard({ entry, t, onRetry, retryingIds }: HistoryEntryCardPr
               onClick={handleCopy}
               title={t("history.copy")}
             >
-              <Copy className={cn("h-3.5 w-3.5 pointer-events-none", copied && "text-primary")} />
+              <CopySimple className={cn("h-3.5 w-3.5 pointer-events-none", copied && "text-primary")} />
             </Button>
           )}
           {isError && (
@@ -120,7 +120,7 @@ function HistoryEntryCard({ entry, t, onRetry, retryingIds }: HistoryEntryCardPr
               disabled={isRetrying}
               title={t("history.retry")}
             >
-              <RotateCcw className={cn("h-3.5 w-3.5 pointer-events-none", isRetrying && "animate-spin")} />
+              <ArrowCounterClockwise className={cn("h-3.5 w-3.5 pointer-events-none", isRetrying && "animate-spin")} />
               <span className="pointer-events-none">
                 {isRetrying ? t("history.retrying") : t("history.retry")}
               </span>
@@ -349,7 +349,7 @@ export function HistoryPage() {
           size="sm"
         />
         <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             type="text"
             placeholder={t("history.search.placeholder")}
@@ -413,7 +413,7 @@ export function HistoryPage() {
                 onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
                 disabled={!hasPrevPage}
               >
-                <ChevronLeft className="h-4 w-4 mr-1" />
+                <CaretLeft className="h-4 w-4 mr-1" />
                 {t("history.pagination.prev")}
               </Button>
               <Button
@@ -423,7 +423,7 @@ export function HistoryPage() {
                 disabled={!hasNextPage}
               >
                 {t("history.pagination.next")}
-                <ChevronRight className="h-4 w-4 ml-1" />
+                <CaretRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
           </div>
@@ -438,7 +438,7 @@ export function HistoryPage() {
             onClick={handleClearHistory}
             className="text-muted-foreground hover:text-destructive text-xs gap-1"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash className="h-3.5 w-3.5" />
             {t("history.clear.button")}
           </Button>
         </div>

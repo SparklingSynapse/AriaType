@@ -7,7 +7,6 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/hooks/usePermissions";
 import { SettingsPageLayout } from "./SettingsPageLayout";
@@ -104,10 +103,7 @@ export function PermissionSettings() {
 
           <div className="flex items-center justify-between space-x-4">
             <div>
-              <div className="flex items-center gap-2">
-                <Label>{t("general.permissions.screenRecording")}</Label>
-                <Monitor className="w-4 h-4 text-muted-foreground" />
-              </div>
+              <Label>{t("general.permissions.screenRecording")}</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {t("general.permissions.screenRecordingDesc")}
                 {screenRecordingStatus === "granted" && (

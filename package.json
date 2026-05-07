@@ -43,5 +43,23 @@
     "node": ">=18",
     "pnpm": ">=8"
   },
-  "packageManager": "pnpm@8.15.0"
+  "packageManager": "pnpm@8.15.0",
+  "pnpm": {
+    "overrides": {
+      "cross-spawn": "7.0.6",
+      "flatted": "3.4.2",
+      "glob": "10.5.0",
+      "minimatch": "10.2.4",
+      "picomatch": "4.0.4",
+      "picomatch@2": "2.3.2",
+      "semver-regex": "4.0.5",
+      "trim-newlines": "5.0.0",
+      "http-cache-semantics": "4.2.0",
+      "fast-xml-parser": "5.7.3",
+      "got": "11.8.5",
+      "file-type": "22.0.1",
+      "postcss": "8.5.14",
+      "vite": "8.0.10"
+    }
+  }
 }

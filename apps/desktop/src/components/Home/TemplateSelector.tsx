@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { CaretDown, Plus, Trash } from "@phosphor-icons/react";
 import {
   useFloating,
   offset,
@@ -140,7 +140,7 @@ const getTemplateName = (id: string) => {
         {...getReferenceProps()}
       >
         <span>{selectedLabel}</span>
-        <ChevronDown
+        <CaretDown
           className={cn(
             "h-4 w-4 text-muted-foreground transition-transform duration-200",
             open && "rotate-180"
@@ -210,7 +210,7 @@ const getTemplateName = (id: string) => {
                           onClick={(e) => handleDelete(template, e)}
                           className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors outline-none"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash className="h-4 w-4" />
                         </button>
                       </div>
                     ))}

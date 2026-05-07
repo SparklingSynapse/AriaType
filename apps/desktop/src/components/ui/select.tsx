@@ -1,6 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown } from "lucide-react";
+import { CaretDown } from "@phosphor-icons/react";
 import {
   useFloating,
   offset,
@@ -78,7 +78,7 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
           )}
         >
           <span>{selectedLabel}</span>
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <CaretDown className="h-4 w-4 text-muted-foreground" />
         </button>
       );
     }
@@ -116,7 +116,7 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
           {...getReferenceProps()}
         >
           <span>{selectedLabel}</span>
-          <ChevronDown
+          <CaretDown
             className={cn(
               "h-4 w-4 text-muted-foreground transition-transform duration-200",
               open && "rotate-180",
