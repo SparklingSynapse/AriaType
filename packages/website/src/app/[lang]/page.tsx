@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useTranslation } from "react-i18next";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
+import { FileText, Globe, Keyboard, Lock, Mic, Sparkles } from "lucide-react";
 import { HomeDownloadButton } from "@/components/HomeDownloadButton";
 
 const reveal = {
@@ -22,6 +23,101 @@ function SectionLabel({ children }: { children: string }) {
     <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
       {children}
     </p>
+  );
+}
+
+function ContextVisual({ t }: { t: (key: string) => string }) {
+  return (
+    <div className="relative min-h-[460px] min-w-0 overflow-hidden rounded-3xl border border-border bg-card shadow-sm md:min-h-0" style={{ aspectRatio: "4 / 3" }}>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(96,165,250,0.16),transparent_32%),radial-gradient(circle_at_80%_10%,rgba(192,132,252,0.12),transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.7),rgba(231,229,228,0.32))]" />
+      <div className="relative flex h-full flex-col p-6 md:p-8">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+            <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
+          </div>
+          <div className="rounded-full border border-border bg-background/80 px-3 py-1 text-xs text-muted-foreground">
+            {t("homePage.visual.contextBadge")}
+          </div>
+        </div>
+
+        <div className="mt-8 rounded-2xl border border-border bg-background/85 p-5 shadow-sm backdrop-blur">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            <FileText className="h-3.5 w-3.5" />
+            {t("homePage.visual.activeField")}
+          </div>
+          <div className="mt-5 space-y-3 text-sm leading-6 text-foreground">
+            <p className="text-muted-foreground">{t("homePage.visual.roughSpeech")}</p>
+            <p className="rounded-2xl bg-card p-4 shadow-sm">
+              {t("homePage.visual.contextOutput")}
+              <span className="ml-1 inline-block h-5 w-0.5 animate-pulse bg-foreground align-middle" />
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-auto grid grid-cols-1 gap-2 text-xs sm:grid-cols-3 sm:gap-3">
+          <div className="rounded-2xl border border-border bg-background/70 p-2.5 sm:p-3">
+            <div className="text-muted-foreground">{t("homePage.visual.appLabel")}</div>
+            <div className="mt-1 font-medium text-foreground">{t("homePage.visual.appValue")}</div>
+          </div>
+          <div className="rounded-2xl border border-border bg-background/70 p-2.5 sm:p-3">
+            <div className="text-muted-foreground">{t("homePage.visual.fieldLabel")}</div>
+            <div className="mt-1 font-medium text-foreground">{t("homePage.visual.fieldValue")}</div>
+          </div>
+          <div className="rounded-2xl border border-border bg-background/70 p-2.5 sm:p-3">
+            <div className="text-muted-foreground">{t("homePage.visual.toneLabel")}</div>
+            <div className="mt-1 font-medium text-foreground">{t("homePage.visual.toneValue")}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LayerVisual({ t }: { t: (key: string) => string }) {
+  const items = [
+    { icon: Mic, title: t("homePage.visual.noiseTitle"), detail: t("homePage.visual.noiseDetail") },
+    { icon: Sparkles, title: t("homePage.visual.polishTitle"), detail: t("homePage.visual.polishDetail") },
+    { icon: Lock, title: t("homePage.visual.localTitle"), detail: t("homePage.visual.localDetail") },
+    { icon: Globe, title: t("homePage.visual.languageTitle"), detail: t("homePage.visual.languageDetail") },
+  ];
+
+  return (
+    <div className="relative min-h-[520px] min-w-0 overflow-hidden rounded-3xl border border-border bg-card shadow-sm md:min-h-0" style={{ aspectRatio: "4 / 3" }}>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(74,222,128,0.14),transparent_30%),linear-gradient(160deg,rgba(28,25,23,0.04),rgba(231,229,228,0.45))]" />
+      <div className="relative flex h-full flex-col p-5 md:p-6">
+        <div className="mx-auto flex items-center gap-2 rounded-full border border-border bg-background/85 px-3 py-1.5 shadow-sm">
+          <Keyboard className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium text-foreground md:text-sm">{t("homePage.visual.shortcut")}</span>
+        </div>
+
+        <div className="mx-auto mt-5 flex h-20 w-20 items-center justify-center rounded-full border border-border bg-foreground text-primary-foreground shadow-sm md:h-24 md:w-24">
+          <div className="flex items-end gap-1">
+            {[24, 38, 52, 32, 44].map((height, index) => (
+              <span
+                key={index}
+                className="w-1.5 rounded-full bg-primary-foreground/90"
+                style={{ height }}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.title} className="rounded-2xl border border-border bg-background/75 p-3">
+                <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                <div className="mt-2 text-sm font-medium text-foreground">{item.title}</div>
+                <div className="mt-0.5 text-xs leading-4 text-muted-foreground">{item.detail}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -208,6 +304,7 @@ export default function HomePage() {
               whileInView="visible"
               viewport={{ once: true, margin: "-60px" }}
               transition={transition}
+              className="min-w-0"
             >
               <SectionLabel>{t("homePage.controlsEyebrow")}</SectionLabel>
               <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-foreground md:text-4xl">
@@ -233,17 +330,16 @@ export default function HomePage() {
               </div>
             </motion.div>
 
-            <motion.img
+            <motion.div
               variants={reveal}
               initial="hidden"
               whileInView="visible"
               viewport={{ once: true, margin: "-60px" }}
               transition={{ ...transition, delay: 0.08 }}
-              src="/illustration/img-1.webp"
-              alt={t("homePage.featureImageAlt")}
-              className="w-full rounded-3xl object-cover"
-              style={{ aspectRatio: "4 / 3" }}
-            />
+              className="min-w-0"
+            >
+              <ContextVisual t={t} />
+            </motion.div>
           </div>
         </div>
       </section>
@@ -251,17 +347,16 @@ export default function HomePage() {
       <section className="py-20 md:py-28">
         <div className="mx-auto max-w-6xl px-6">
           <div className="grid items-center gap-16 lg:grid-cols-2">
-            <motion.img
+            <motion.div
               variants={reveal}
               initial="hidden"
               whileInView="visible"
               viewport={{ once: true, margin: "-60px" }}
               transition={transition}
-              src="/illustration/img-2.webp"
-              alt={t("homePage.featureImageAlt")}
-              className="w-full rounded-3xl object-cover"
-              style={{ aspectRatio: "4 / 3" }}
-            />
+              className="min-w-0"
+            >
+              <LayerVisual t={t} />
+            </motion.div>
 
             <motion.div
               variants={reveal}
@@ -269,6 +364,7 @@ export default function HomePage() {
               whileInView="visible"
               viewport={{ once: true, margin: "-60px" }}
               transition={{ ...transition, delay: 0.08 }}
+              className="min-w-0"
             >
               <SectionLabel>{t("homePage.summaryEyebrow")}</SectionLabel>
               <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-foreground md:text-4xl">

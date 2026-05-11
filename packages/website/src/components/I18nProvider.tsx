@@ -1,19 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '@/i18n';
 
-export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
+export function I18nProvider({
+  children,
+  lang,
+}: {
+  children: React.ReactNode;
+  lang: string;
+}) {
+  if (i18n.language !== lang) {
+    void i18n.changeLanguage(lang);
+  }
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return <>{children}</>;
-  }
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   return <I18nextProvider i18n={i18n}>{children}</I18nextProvider>;
 }

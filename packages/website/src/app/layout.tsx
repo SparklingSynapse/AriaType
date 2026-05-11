@@ -1,13 +1,25 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { AnalyticsProvider } from '@/components/AnalyticsProvider';
-import { I18nProvider } from '@/components/I18nProvider';
 
 export const metadata: Metadata = {
-  title: 'AriaType - Open-Source AI Voice-to-Text Input',
+  title: 'AriaType - Voice Layer for Your Desktop',
   description:
-    'AriaType is an open-source AI voice-to-text input for macOS and Windows, and a powerful Typeless alternative. Hold a hotkey, speak naturally, and your words appear right where you are already working.',
+    'AriaType is the voice layer for your desktop, turning spoken thoughts into context-aware work right where your cursor is.',
   icons: { icon: '/logo.svg' },
+  openGraph: {
+    title: 'AriaType - Voice Layer for Your Desktop',
+    description:
+      'Voice-driven writing, input, and cross-app work for your desktop.',
+    siteName: 'AriaType',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'AriaType - Voice Layer for Your Desktop',
+    description:
+      'Voice-driven writing, input, and cross-app work for your desktop.',
+  },
 };
 
 export default function RootLayout({
@@ -19,7 +31,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AnalyticsProvider>
-          <I18nProvider>{children}</I18nProvider>
+          {children}
         </AnalyticsProvider>
       </body>
     </html>
