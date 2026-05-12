@@ -6,8 +6,10 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::commands::settings::CloudProviderConfig;
+use crate::runtime_context::window::{WindowContextBundle, WindowContextSource};
 use crate::state::app_state::AppState;
 
+use super::capture::should_cancel_window_context_capture;
 use super::polish::maybe_polish_transcription_text;
 use super::shared::{
     await_streaming_task_in_background, discard_canceled_result, flush_pending_chunk_for_stop,
@@ -90,9 +92,11 @@ async fn window_context_is_injected_into_polish_prompt() {
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
         .and(header("Authorization", "Bearer test_openai_api_key"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
-            "choices": [{"message": {"content": "Polished"}}]
-        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "choices": [{"message": {"content": "Polished"}}]
+            })),
+        )
         .mount(&mock_server)
         .await;
 
@@ -101,7 +105,14 @@ async fn window_context_is_injected_into_polish_prompt() {
     {
         let mut session = state.session_state.lock();
         if let Some(s) = session.as_mut() {
-            s.window_context = Some("Screen content here".to_string());
+            s.window_context = WindowContextBundle::from_ocr_result(
+                "Screen content here",
+                WindowContextSource::FocusedWindow,
+                Some("Notes".to_string()),
+                900,
+                600,
+                Some(0.9),
+            );
         }
     }
     {
@@ -158,6 +169,14 @@ async fn window_context_disabled_skips_capture() {
     assert!(!window_context_enabled);
     assert_eq!(denoise_mode, "off");
     assert!(!vad_enabled);
+}
+
+#[test]
+fn window_context_capture_cancels_when_recording_ends() {
+    assert!(!should_cancel_window_context_capture(true, true, false));
+    assert!(should_cancel_window_context_capture(true, false, false));
+    assert!(should_cancel_window_context_capture(true, true, true));
+    assert!(should_cancel_window_context_capture(false, true, false));
 }
 
 #[test]

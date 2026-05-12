@@ -14,10 +14,11 @@ impl AppPaths {
     }
 
     pub fn data_dir() -> PathBuf {
-        APP_DATA_DIR
-            .get()
-            .cloned()
-            .unwrap_or_else(|| dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("ariatype"))
+        APP_DATA_DIR.get().cloned().unwrap_or_else(|| {
+            dirs::data_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("ariatype")
+        })
     }
 
     pub fn models_dir() -> PathBuf {
@@ -29,10 +30,11 @@ impl AppPaths {
     }
 
     pub fn cache_dir() -> PathBuf {
-        APP_DATA_DIR
-            .get()
-            .cloned()
-            .unwrap_or_else(|| dirs::cache_dir().unwrap_or_else(|| PathBuf::from(".")).join("ariatype"))
+        APP_DATA_DIR.get().cloned().unwrap_or_else(|| {
+            dirs::cache_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("ariatype")
+        })
     }
 
     pub fn temp_dir() -> PathBuf {

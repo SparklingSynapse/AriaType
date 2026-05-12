@@ -607,7 +607,8 @@ pub fn load_settings_from_disk() -> AppSettings {
             let migrated_model = validate_model_name(&mut json_value);
             let migrated_profiles = migrate_to_profiles_map(&mut json_value);
             let migrated_window_context = migrate_window_context_enabled(&mut json_value);
-            let migrated = migrated_cloud || migrated_model || migrated_profiles || migrated_window_context;
+            let migrated =
+                migrated_cloud || migrated_model || migrated_profiles || migrated_window_context;
 
             match serde_json::from_value::<AppSettings>(json_value.clone()) {
                 Ok(settings) => {
@@ -884,7 +885,7 @@ pub fn update_settings(
             "pill_size" => {
                 if let Some(v) = value.as_u64() {
                     let size = v as u8;
-                    if size >= 1 && size <= 5 {
+                    if (1..=5).contains(&size) {
                         settings.pill_size = size;
                     }
                 }

@@ -427,6 +427,13 @@ impl VolcengineStreamingClient {
         if !context_json.is_empty() {
             req_json["request"]["corpus"]["context"] = json!(context_json);
         }
+        info!(
+            provider = "volcengine",
+            has_corpus_context = !context_json.is_empty(),
+            corpus_context_chars = context_json.chars().count(),
+            corpus_context = %context_json,
+            "client_request_context"
+        );
 
         let req_str = req_json.to_string();
         debug!(provider = "volcengine", request = %req_str, "client_request_payload");

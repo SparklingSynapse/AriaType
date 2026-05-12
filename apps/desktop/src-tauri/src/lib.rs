@@ -16,7 +16,6 @@ use tracing_subscriber::{
     EnvFilter,
 };
 
-pub mod sensors;
 pub mod audio;
 pub mod commands;
 pub mod events;
@@ -24,6 +23,8 @@ pub mod history;
 pub mod permissions;
 pub mod polish_engine;
 pub mod provider_schema;
+pub mod runtime_context;
+pub mod sensors;
 pub mod services;
 pub mod shortcut;
 pub mod state;

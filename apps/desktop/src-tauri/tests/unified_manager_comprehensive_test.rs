@@ -31,18 +31,31 @@ fn create_test_dir(name: &str) -> PathBuf {
 fn create_fake_whisper_model(dir: &PathBuf, model_name: &str) {
     let model_subdir = dir.join(model_name);
     std::fs::create_dir_all(&model_subdir).expect("Failed to create model subdirectory");
-    
+
     let files: &[(&str, usize)] = match model_name {
-        "whisper-base" => &[("base-encoder.onnx", 1024), ("base-decoder.onnx", 2048), ("base-tokens.txt", 100)],
-        "whisper-small" => &[("small-encoder.onnx", 2048), ("small-decoder.onnx", 4096), ("small-tokens.txt", 100)],
-        _ => &[("encoder.onnx", 1024), ("decoder.onnx", 2048), ("tokens.txt", 100)],
+        "whisper-base" => &[
+            ("base-encoder.onnx", 1024),
+            ("base-decoder.onnx", 2048),
+            ("base-tokens.txt", 100),
+        ],
+        "whisper-small" => &[
+            ("small-encoder.onnx", 2048),
+            ("small-decoder.onnx", 4096),
+            ("small-tokens.txt", 100),
+        ],
+        _ => &[
+            ("encoder.onnx", 1024),
+            ("decoder.onnx", 2048),
+            ("tokens.txt", 100),
+        ],
     };
-    
+
     for (filename, size) in files {
         let path = model_subdir.join(filename);
         let mut file = File::create(&path).expect("Failed to create fake model file");
         let data = vec![0u8; *size];
-        file.write_all(&data).expect("Failed to write fake model data");
+        file.write_all(&data)
+            .expect("Failed to write fake model data");
     }
 }
 
@@ -50,15 +63,18 @@ fn create_fake_whisper_model(dir: &PathBuf, model_name: &str) {
 fn create_fake_sensevoice_model(dir: &PathBuf) {
     let model_subdir = dir.join("sense-voice-small");
     std::fs::create_dir_all(&model_subdir).expect("Failed to create model subdirectory");
-    
+
     let path = model_subdir.join("model.int8.onnx");
     let mut file = File::create(&path).expect("Failed to create fake model file");
     let data = vec![0u8; 2048];
-    file.write_all(&data).expect("Failed to write fake model data");
-    
+    file.write_all(&data)
+        .expect("Failed to write fake model data");
+
     let tokens_path = model_subdir.join("tokens.txt");
     let mut tokens_file = File::create(&tokens_path).expect("Failed to create tokens file");
-    tokens_file.write_all(b"fake tokens").expect("Failed to write tokens");
+    tokens_file
+        .write_all(b"fake tokens")
+        .expect("Failed to write tokens");
 }
 
 /// Cleanup test directory
@@ -219,12 +235,16 @@ fn test_delete_model_multiple_types() {
     let sensevoice_subdir = test_dir.join("sense-voice-small");
 
     // Delete Whisper model
-    assert!(manager.delete_model(EngineType::Whisper, "whisper-base").is_ok());
+    assert!(manager
+        .delete_model(EngineType::Whisper, "whisper-base")
+        .is_ok());
     assert!(!whisper_subdir.exists());
     assert!(sensevoice_subdir.exists());
 
     // Delete SenseVoice model
-    assert!(manager.delete_model(EngineType::SenseVoice, "sense-voice-small").is_ok());
+    assert!(manager
+        .delete_model(EngineType::SenseVoice, "sense-voice-small")
+        .is_ok());
     assert!(!sensevoice_subdir.exists());
 
     cleanup_test_dir(&test_dir);
@@ -481,7 +501,9 @@ fn test_model_path_resolution() {
     assert!(whisper_base_path.to_string_lossy().contains("whisper-base"));
 
     let sensevoice_path = manager.get_model_path(EngineType::SenseVoice, "sense-voice-small");
-    assert!(sensevoice_path.to_string_lossy().contains("sense-voice-small"));
+    assert!(sensevoice_path
+        .to_string_lossy()
+        .contains("sense-voice-small"));
 
     let unknown_whisper = manager.get_model_path(EngineType::Whisper, "unknown");
     assert!(unknown_whisper.to_string_lossy().contains("unknown"));
@@ -503,10 +525,16 @@ fn test_engine_preload_on_startup() {
     let whisper_models = manager.get_models(EngineType::Whisper);
     let sensevoice_models = manager.get_models(EngineType::SenseVoice);
 
-    let whisper_base = whisper_models.iter().find(|m| m.name == "whisper-base").unwrap();
+    let whisper_base = whisper_models
+        .iter()
+        .find(|m| m.name == "whisper-base")
+        .unwrap();
     assert!(whisper_base.downloaded);
 
-    let sensevoice = sensevoice_models.iter().find(|m| m.name == "sense-voice-small").unwrap();
+    let sensevoice = sensevoice_models
+        .iter()
+        .find(|m| m.name == "sense-voice-small")
+        .unwrap();
     assert!(sensevoice.downloaded);
 
     cleanup_test_dir(&test_dir);

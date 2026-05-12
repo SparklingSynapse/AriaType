@@ -456,9 +456,9 @@ export function GeneralSettings() {
 
               <div className="flex items-center justify-between space-x-4">
                 <div>
-                  <Label htmlFor="window-context-toggle">{t("general.audio.screenContext", "Screen Context")}</Label>
+                  <Label htmlFor="window-context-toggle">{t("general.audio.contextAware")}</Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {t("general.audio.screenContextDesc", "Capture the focused window content via OCR at recording start. This context helps polish models better understand your intent.")}
+                    {t("general.audio.contextAwareDesc")}
                   </p>
                 </div>
                 <Switch

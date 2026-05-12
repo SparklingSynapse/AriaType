@@ -103,7 +103,10 @@ async fn run_local_polish(
     }
 }
 
-#[instrument(skip(state, accumulated_text), fields(task_id))]
+#[instrument(
+    skip(event_target, state, accumulated_text, resolved_polish_template_id),
+    fields(task_id)
+)]
 pub(super) async fn maybe_polish_transcription_text(
     event_target: &ProcessingEventTarget<'_>,
     state: &AppState,
@@ -161,13 +164,27 @@ pub(super) async fn maybe_polish_transcription_text(
 
             let window_context = {
                 let session = state.session_state.lock();
-                session.as_ref().and_then(|s| s.window_context.clone())
+                session
+                    .as_ref()
+                    .and_then(|s| s.window_context.as_ref())
+                    .and_then(|ctx| ctx.to_polish_context())
             };
+            let window_context_chars = window_context
+                .as_ref()
+                .map(|ctx| ctx.chars().count())
+                .unwrap_or(0);
 
             if cloud_polish_enabled {
                 if let Some(cfg) = cloud_config {
                     if !cfg.api_key.is_empty() && !cfg.model.is_empty() {
-                        info!(task_id, provider = %provider_type, model = %cfg.model, "polish_started-cloud");
+                        info!(
+                            task_id,
+                            provider = %provider_type,
+                            model = %cfg.model,
+                            has_window_context = window_context_chars > 0,
+                            window_context_chars,
+                            "polish_started-cloud"
+                        );
 
                         let request = crate::polish_engine::PolishRequest::new(
                             accumulated_text.clone(),

@@ -7,6 +7,7 @@ use std::sync::{
 use tauri::async_runtime::JoinHandle;
 use tokio::sync::mpsc as async_mpsc;
 
+use crate::runtime_context::window::WindowContextBundle;
 use crate::shortcut::{ShortcutProfile, ShortcutTriggerMode};
 
 #[derive(Debug, Clone, Default)]
@@ -16,8 +17,8 @@ pub struct SessionState {
     pub chunk_count: usize,
     pub cancel_hotkey: Option<String>,
     pub cancel_trigger_mode: Option<ShortcutTriggerMode>,
-    /// OCR text captured from the focused window at recording start.
-    pub window_context: Option<String>,
+    /// Structured OCR context captured from the focused window at recording start.
+    pub window_context: Option<WindowContextBundle>,
 }
 
 /// Recording consumer state for all STT engines.

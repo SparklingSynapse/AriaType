@@ -14,9 +14,12 @@ fn test_manager_new() {
 
     let models = manager.get_models(EngineType::Whisper);
     assert!(!models.is_empty(), "Should have Whisper models");
-    
+
     let sensevoice_models = manager.get_models(EngineType::SenseVoice);
-    assert!(!sensevoice_models.is_empty(), "Should have SenseVoice models");
+    assert!(
+        !sensevoice_models.is_empty(),
+        "Should have SenseVoice models"
+    );
 }
 
 #[test]

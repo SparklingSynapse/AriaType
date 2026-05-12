@@ -14,7 +14,12 @@ pub enum PermissionKind {
 }
 
 impl PermissionKind {
-    pub const ALL: [Self; 4] = [Self::Accessibility, Self::InputMonitoring, Self::Microphone, Self::ScreenRecording];
+    pub const ALL: [Self; 4] = [
+        Self::Accessibility,
+        Self::InputMonitoring,
+        Self::Microphone,
+        Self::ScreenRecording,
+    ];
 
     pub fn parse(value: &str) -> Option<Self> {
         match value {

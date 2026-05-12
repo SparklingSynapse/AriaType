@@ -23,6 +23,107 @@ use super::shared::{
     ParkingMutex, ProcessingEventTarget,
 };
 
+const WINDOW_CONTEXT_CAPTURE_TIMEOUT_MS: u64 = 8_000;
+const WINDOW_CONTEXT_RECORDING_POLL_MS: u64 = 20;
+
+pub(super) fn should_cancel_window_context_capture(
+    is_current_task: bool,
+    is_recording: bool,
+    cancellation_requested: bool,
+) -> bool {
+    !is_current_task || !is_recording || cancellation_requested
+}
+
+async fn wait_for_recording_to_end(app: AppHandle, task_id: u64) {
+    loop {
+        let should_stop_waiting = {
+            let state = app.state::<AppState>();
+            let is_current_task = state.task_counter.load(Ordering::SeqCst) == task_id;
+            should_cancel_window_context_capture(
+                is_current_task,
+                state.is_recording.load(Ordering::SeqCst),
+                state.is_cancellation_requested(task_id),
+            )
+        };
+
+        if should_stop_waiting {
+            return;
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(
+            WINDOW_CONTEXT_RECORDING_POLL_MS,
+        ))
+        .await;
+    }
+}
+
+async fn capture_window_context_while_recording(
+    app: AppHandle,
+    task_id: u64,
+) -> Option<crate::runtime_context::window::WindowContextBundle> {
+    info!(
+        task_id,
+        timeout_ms = WINDOW_CONTEXT_CAPTURE_TIMEOUT_MS,
+        "window_context_capture_started"
+    );
+
+    let mut context_task =
+        tauri::async_runtime::spawn(crate::sensors::window_context::capture_window_context());
+
+    tokio::select! {
+        result = &mut context_task => {
+            match result {
+                Ok(Some(ctx)) => {
+                    let state = app.state::<AppState>();
+                    if should_cancel_window_context_capture(
+                        state.task_counter.load(Ordering::SeqCst) == task_id,
+                        state.is_recording.load(Ordering::SeqCst),
+                        state.is_cancellation_requested(task_id),
+                    ) {
+                        info!(task_id, "window_context_capture_discarded-recording_ended");
+                        return None;
+                    }
+
+                    info!(
+                        task_id,
+                        source = ctx.source.as_str(),
+                        chars = ctx.filtered_text.len(),
+                        has_stt_hint = ctx.to_stt_prompt_hint().is_some(),
+                        "window_context_capture_available"
+                    );
+                    Some(ctx)
+                }
+                Ok(None) => {
+                    info!(task_id, "window_context_capture_unavailable");
+                    None
+                }
+                Err(e) => {
+                    warn!(
+                        task_id,
+                        error = %e,
+                        "window_context_capture_task_failed"
+                    );
+                    None
+                }
+            }
+        }
+        () = tokio::time::sleep(tokio::time::Duration::from_millis(WINDOW_CONTEXT_CAPTURE_TIMEOUT_MS)) => {
+            context_task.abort();
+            warn!(
+                task_id,
+                timeout_ms = WINDOW_CONTEXT_CAPTURE_TIMEOUT_MS,
+                "window_context_capture_timeout"
+            );
+            None
+        }
+        () = wait_for_recording_to_end(app.clone(), task_id) => {
+            context_task.abort();
+            info!(task_id, "window_context_capture_canceled-recording_ended");
+            None
+        }
+    }
+}
+
 pub(super) fn start_unified_recording(
     app: &AppHandle,
     task_id: u64,
@@ -181,14 +282,9 @@ pub(super) fn start_unified_recording(
     let resolved_polish_template_id_clone = resolved_polish_template_id.clone();
     let handle = tauri::async_runtime::spawn(async move {
         let window_context = if window_context_enabled {
-            tokio::time::timeout(
-                tokio::time::Duration::from_millis(300),
-                crate::sensors::window_context::capture_window_context(),
-            )
-            .await
-            .ok()
-            .flatten()
+            capture_window_context_while_recording(app_clone.clone(), task_id).await
         } else {
+            debug!(task_id, "window_context_capture_disabled");
             None
         };
 
@@ -200,14 +296,20 @@ pub(super) fn start_unified_recording(
             }
         }
 
+        let stt_initial_prompt = window_context
+            .as_ref()
+            .and_then(|ctx| ctx.to_stt_prompt_hint());
+
         let stt_context = crate::stt_engine::traits::SttContext {
             domain,
             subdomain,
             glossary,
-            initial_prompt: window_context,
+            initial_prompt: stt_initial_prompt,
         };
 
         let consumer: Box<dyn RecordingConsumer> = if cloud_stt_enabled {
+            let stt_initial_prompt_for_log = stt_context.initial_prompt.clone().unwrap_or_default();
+            let stt_initial_prompt_chars = stt_initial_prompt_for_log.chars().count();
             let (domain, subdomain, glossary) = (
                 stt_context
                     .domain
@@ -232,7 +334,17 @@ pub(super) fn start_unified_recording(
                 }
             };
             let provider_name = client.provider_name();
-            info!(task_id, provider = %provider_name, domain, subdomain, glossary, "streaming_client_created");
+            info!(
+                task_id,
+                provider = %provider_name,
+                domain,
+                subdomain,
+                glossary,
+                has_initial_prompt = stt_initial_prompt_chars > 0,
+                initial_prompt_chars = stt_initial_prompt_chars,
+                initial_prompt = %stt_initial_prompt_for_log,
+                "streaming_client_created"
+            );
 
             let app_event_clone = app_clone.clone();
             let callback = Arc::new(move |result: crate::stt_engine::traits::PartialResult| {

@@ -58,6 +58,7 @@ rusqlite = { version = "0.34", features = ["bundled"] }
 uni-ocr = "0.1.5"
 xcap = "0.9.4"
 image = "0.25"
+fast_image_resize = "6.0.0"
 
 [dev-dependencies]
 wiremock = "0.6"

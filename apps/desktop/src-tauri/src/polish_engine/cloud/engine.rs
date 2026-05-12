@@ -1,4 +1,6 @@
-use crate::polish_engine::traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
+use crate::polish_engine::traits::{
+    PolishEngine, PolishEngineType, PolishRequest, PolishResult, SystemContext,
+};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -150,6 +152,24 @@ impl CloudPolishEngine {
         }
     }
 
+    fn build_system_prompt(system_context: &SystemContext) -> String {
+        let user_rules = system_context.system_prompt.as_str();
+        let reference_context = system_context.reference_context_section();
+        match (user_rules.is_empty(), reference_context) {
+            (true, None) => CORE_POLISH_CONSTRAINT.to_string(),
+            (true, Some(reference_context)) => {
+                format!("{}\n\n{}", CORE_POLISH_CONSTRAINT, reference_context)
+            }
+            (false, Some(reference_context)) => {
+                format!(
+                    "{}\n\nUSER RULES:\n{}\n\n{}",
+                    CORE_POLISH_CONSTRAINT, user_rules, reference_context
+                )
+            }
+            (false, None) => format!("{}\n\nUSER RULES:\n{}", CORE_POLISH_CONSTRAINT, user_rules),
+        }
+    }
+
     async fn call_anthropic_api(
         &self,
         system_prompt: &str,
@@ -298,6 +318,11 @@ impl CloudPolishEngine {
             "cloud_polish_openai_request_start"
         );
 
+        info!(
+            request_body = %serde_json::to_string(&body).unwrap_or_default(),
+            "cloud_polish_openai_request_body"
+        );
+
         let response = self
             .client
             .post(&url)
@@ -319,6 +344,8 @@ impl CloudPolishEngine {
             error!(status = %status, body = %response_text, "cloud_polish_api_error");
             return Err(format!("API error ({}): {}", status, response_text));
         }
+
+        info!(raw_response = %response_text, "cloud_polish_openai_raw_response");
 
         #[derive(Deserialize)]
         struct Choice {
@@ -367,15 +394,7 @@ impl PolishEngine for CloudPolishEngine {
         let input_text = request.text.clone();
         let input_chars = input_text.len();
 
-        let effective_prompt = request.system_context.effective_prompt();
-        let system_prompt = if effective_prompt.is_empty() {
-            CORE_POLISH_CONSTRAINT.to_string()
-        } else {
-            format!(
-                "{}\n\nUSER RULES:\n{}",
-                CORE_POLISH_CONSTRAINT, effective_prompt
-            )
-        };
+        let system_prompt = Self::build_system_prompt(&request.system_context);
 
         info!(
             provider = %self.config.provider_type,
@@ -436,6 +455,22 @@ mod tests {
         let config = test_config("anthropic", "test-key", "", "claude-3-sonnet");
         let engine = CloudPolishEngine::new(config);
         assert_eq!(engine.engine_type(), PolishEngineType::Cloud);
+    }
+
+    #[test]
+    fn test_build_system_prompt_places_reference_context_after_user_rules() {
+        let context = SystemContext::new("Remove filler words.")
+            .with_window_context("Candidate visible terms: AriaType");
+        let prompt = CloudPolishEngine::build_system_prompt(&context);
+
+        let user_rules_index = prompt.find("USER RULES:").unwrap();
+        let task_index = prompt.find("Remove filler words.").unwrap();
+        let reference_index = prompt.find("REFERENCE CONTEXT").unwrap();
+
+        assert!(user_rules_index < task_index);
+        assert!(task_index < reference_index);
+        assert!(prompt.contains("not user rules"));
+        assert!(!prompt.contains("TASK RULES"));
     }
 
     #[test]
