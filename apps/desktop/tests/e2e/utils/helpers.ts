@@ -13,6 +13,7 @@ export {
   dismissOnboardingIfPresent,
   expectNativeScreenshot,
   setScreenshotThreshold,
+  setScreenshotMaxDiffPixelRatio,
   setScreenshotMaxDiffPixels,
   disableAutoSnapshot,
   sleep,

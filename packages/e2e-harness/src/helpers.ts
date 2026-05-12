@@ -15,8 +15,11 @@ type Page = {
 
 export type ScreenshotOptions = {
   captureMode?: 'native' | 'command' | 'native-with-fallback';
+  maxDiffPixelRatio?: number;
   stabilizationMs?: number;
 };
+
+const DEFAULT_SCREENSHOT_MAX_DIFF_PIXEL_RATIO = 0.02;
 
 export { sleep } from './snapshot';
 
@@ -177,7 +180,10 @@ export async function expectNativeScreenshot(
     stabilizationMs: options?.stabilizationMs,
   });
 
-  await playwrightExpect(image).toMatchSnapshot(name, { threshold });
+  await playwrightExpect(image).toMatchSnapshot(name, {
+    maxDiffPixelRatio: options?.maxDiffPixelRatio ?? DEFAULT_SCREENSHOT_MAX_DIFF_PIXEL_RATIO,
+    threshold,
+  });
 }
 
 /**
@@ -197,6 +203,16 @@ export function setScreenshotMaxDiffPixels(testInfo: TestInfo, maxDiffPixels: nu
   testInfo.annotations.push({
     type: 'screenshot-max-diff-pixels',
     description: String(maxDiffPixels),
+  });
+}
+
+/**
+ * Set the max diff pixel ratio for the current test via annotation.
+ */
+export function setScreenshotMaxDiffPixelRatio(testInfo: TestInfo, maxDiffPixelRatio: number): void {
+  testInfo.annotations.push({
+    type: 'screenshot-max-diff-pixel-ratio',
+    description: String(maxDiffPixelRatio),
   });
 }
 

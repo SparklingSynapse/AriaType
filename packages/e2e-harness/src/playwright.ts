@@ -75,6 +75,8 @@ type TauriPlaywrightConfigOptions = {
 
 const EXTERNAL_RUNTIME_ENV = 'E2E_HARNESS_EXTERNAL_RUNTIME';
 const EXTERNAL_SOCKET_ENV = 'E2E_HARNESS_SOCKET_PATH';
+const DEFAULT_SCREENSHOT_THRESHOLD = 0.1;
+const DEFAULT_SCREENSHOT_MAX_DIFF_PIXEL_RATIO = 0.02;
 
 function createRuntimePaths(
   runtimeRoot: string,
@@ -216,9 +218,18 @@ function getScreenshotThreshold(testInfo: TestInfo): number {
   const thresholdAnnotation = testInfo.annotations.find(
     (annotation: { type: string; description?: string }) => annotation.type === 'screenshot-threshold',
   );
-  const threshold = Number(thresholdAnnotation?.description ?? '0.1');
+  const threshold = Number(thresholdAnnotation?.description ?? DEFAULT_SCREENSHOT_THRESHOLD);
 
-  return Number.isFinite(threshold) ? threshold : 0.1;
+  return Number.isFinite(threshold) ? threshold : DEFAULT_SCREENSHOT_THRESHOLD;
+}
+
+function getScreenshotMaxDiffPixelRatio(testInfo: TestInfo): number {
+  const annotation = testInfo.annotations.find(
+    (entry: { type: string; description?: string }) => entry.type === 'screenshot-max-diff-pixel-ratio',
+  );
+  const value = Number(annotation?.description ?? DEFAULT_SCREENSHOT_MAX_DIFF_PIXEL_RATIO);
+
+  return Number.isFinite(value) ? value : DEFAULT_SCREENSHOT_MAX_DIFF_PIXEL_RATIO;
 }
 
 function getScreenshotMaxDiffPixels(testInfo: TestInfo): number | undefined {
@@ -238,9 +249,11 @@ function isAutoSnapshotDisabled(testInfo: TestInfo): boolean {
 
 async function assertFinalSnapshot(page: TauriPage, testInfo: TestInfo): Promise<void> {
   const threshold = getScreenshotThreshold(testInfo);
+  const maxDiffPixelRatio = getScreenshotMaxDiffPixelRatio(testInfo);
   const maxDiffPixels = getScreenshotMaxDiffPixels(testInfo);
   const screenshot = await captureStableScreenshot(page, { captureMode: 'native-with-fallback' });
   tauriExpect(screenshot).toMatchSnapshot({
+    maxDiffPixelRatio,
     threshold,
     maxDiffPixels,
   });
@@ -378,7 +391,8 @@ export function createTauriPlaywrightConfig(
     } as never,
     expect: {
       toHaveScreenshot: {
-        threshold: 0.1,
+        maxDiffPixelRatio: DEFAULT_SCREENSHOT_MAX_DIFF_PIXEL_RATIO,
+        threshold: DEFAULT_SCREENSHOT_THRESHOLD,
       },
     },
     reporter: [['list'], ['html', { open: 'never' }]],

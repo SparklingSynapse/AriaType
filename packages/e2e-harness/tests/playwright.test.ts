@@ -104,6 +104,7 @@ describe('createTauriPlaywrightConfig', () => {
     expect(playwrightConfig.globalSetup).toContain('playwright-global-setup.ts');
     expect(playwrightConfig.globalTeardown).toContain('playwright-global-teardown.ts');
     expect(playwrightConfig.use.mode).toBe('tauri');
+    expect(playwrightConfig.expect.toHaveScreenshot.maxDiffPixelRatio).toBe(0.02);
     expect(playwrightConfig.projects).toHaveLength(1);
     expect(playwrightConfig.projects[0]).toMatchObject({
       name: 'tauri',
