@@ -40,8 +40,11 @@ async function assertJourneyStep(
       await expect(tauriPage.locator('[data-step-id="model"] .rounded-2xl').first()).toBeVisible({
         timeout: modelReadyTimeoutMs,
       });
-      await expect(tauriPage.locator('[data-step-id="model"] svg.text-green-500').first()).toBeVisible({
+      await expect(tauriPage.locator('[data-testid="onboarding-primary-action"]')).toBeEnabled({
         timeout: modelReadyTimeoutMs,
+      });
+      await expect(tauriPage.getByText(/download complete/i)).not.toBeVisible({
+        timeout: 10000,
       });
       return;
     case 'practice':
