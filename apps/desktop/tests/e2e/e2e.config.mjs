@@ -8,10 +8,11 @@ const e2eDir = resolveHarnessDir(import.meta.url);
 export const projectRoot = join(e2eDir, '..', '..');
 export const runtimeKey = 'ordered-shared';
 const userHome = process.env.HOME ?? '/Users/bytedance';
+const e2eDataDir = join(userHome, 'Library', 'Application Support', 'com.ariatype.voicetotext.e2e');
 export const killCommand = 'pkill -f "target/debug/ariatype"';
 export const systemDataPaths = [
   join(userHome, 'Library', 'Application Support', 'AriaType E2E'),
-  join(userHome, 'Library', 'Application Support', 'com.ariatype.voicetotext.e2e'),
+  e2eDataDir,
   join(userHome, 'Library', 'WebKit', 'app'),
   join(userHome, 'Library', 'WebKit', 'com.ariatype.voicetotext.e2e'),
   join(userHome, 'Library', 'WebKit', 'com.ariatype.voicetotext'),
@@ -22,13 +23,13 @@ export const systemDataPaths = [
   join(userHome, 'Library', 'WebKit', 'notype'),
 ];
 export const tauriCommand = [
-  'tauri',
   'dev',
   '--config',
   'src-tauri/tauri.dev.conf.json',
   '--config',
   'src-tauri/tauri.e2e.conf.json',
 ];
+export const tauriExecutable = join(projectRoot, 'node_modules', '.bin', 'tauri');
 export const tauriFeatures = ['e2e-testing'];
 export const capabilityFiles = [
   {
@@ -46,20 +47,18 @@ export default createRunnerConfig({
   runtimeRoot: join(projectRoot, `tests/e2e/.runtime/${runtimeKey}`),
   socketPath: `/tmp/ariatype-pw-${runtimeKey}.sock`,
   killCommand,
-  devServerResetPaths: [join(projectRoot, 'node_modules', '.vite')],
-  devServerPrepareCommand: ['exec', 'vite', 'optimize', '--force'],
   systemDataPaths,
+  tauriExecutable,
   tauriCommand,
   tauriFeatures,
   capabilityFiles,
   seedDataFiles: [
     {
       src: join(e2eDir, 'fixtures', 'settings-cloud-enabled.json'),
-      // Use e2e-specific directory based on productName "AriaType E2E"
-      dest: join(userHome, 'Library', 'Application Support', 'AriaType E2E', 'settings.json'),
+      dest: join(e2eDataDir, 'settings.json'),
     },
   ],
-  startTimeoutSeconds: 180,
+  startTimeoutSeconds: 600,
   socketWaitMs: 5000,
   snapshotStabilizationMs: 1000,
   devServerCommand: ['exec', 'vite', '--port', '1423', '--strictPort'],

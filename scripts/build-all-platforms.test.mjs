@@ -65,3 +65,51 @@ test('does not retry unrelated build failures', () => {
   assert.equal(success, false);
   assert.equal(attempts, 1);
 });
+
+test('calls failure hook when final attempt fails', () => {
+  const failure = new Error('bundle_dmg.sh failed');
+  let observedError;
+
+  const success = runCommand('pnpm tauri build', 'Building macOS ARM', {
+    exec() {
+      throw failure;
+    },
+    log: {
+      info() {},
+      error() {},
+      warn() {},
+    },
+    onFailure(error) {
+      observedError = error;
+    },
+  });
+
+  assert.equal(success, false);
+  assert.equal(observedError, failure);
+});
+
+test('mirrors command output to a build log when requested', () => {
+  let observedCommand;
+  let observedOptions;
+
+  const success = runCommand('pnpm tauri build', 'Building macOS ARM', {
+    exec(command, options) {
+      observedCommand = command;
+      observedOptions = options;
+    },
+    log: {
+      info() {},
+      error() {},
+      warn() {},
+    },
+    logFile: '/tmp/ariatype build.log',
+  });
+
+  assert.equal(success, true);
+  assert.equal(
+    observedCommand,
+    "set -o pipefail; (pnpm tauri build) 2>&1 | tee '/tmp/ariatype build.log'",
+  );
+  assert.equal(observedOptions.shell, '/bin/bash');
+  assert.equal(observedOptions.stdio, 'inherit');
+});

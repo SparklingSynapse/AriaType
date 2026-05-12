@@ -61,7 +61,8 @@ Your app also needs a working Tauri dev command, for example `pnpm tauri dev`.
 
 Important command shape:
 
-- `tauriCommand` is an argument array appended after `pnpm`
+- `tauriExecutable` is the executable used to boot Tauri. Prefer the app-local `node_modules/.bin/tauri`.
+- `tauriCommand` is an argument array appended after `tauriExecutable`.
 - `devServerCommand` is an argument array appended after `pnpm`
 
 So this:
@@ -100,8 +101,8 @@ export default createRunnerConfig({
   runtimeRoot: join(projectRoot, `tests/e2e/.runtime/${runtimeKey}`),
   socketPath: `/tmp/tauri-e2e-${runtimeKey}.sock`,
   killCommand: 'pkill -f "target/debug/your-app-name"',
+  tauriExecutable: join(projectRoot, 'node_modules', '.bin', 'tauri'),
   tauriCommand: [
-    'tauri',
     'dev',
     '--config',
     'src-tauri/tauri.dev.conf.json',
@@ -242,7 +243,8 @@ These fields are the minimum you should understand:
 | `specOrder` | Explicit first batches to run before the rest |
 | `runtimeRoot` | Isolated XDG runtime directory for the app under test |
 | `socketPath` | Tauri Playwright plugin socket path |
-| `tauriCommand` | Command array passed after `pnpm` to boot Tauri |
+| `tauriExecutable` | Tauri CLI executable. Prefer the local `node_modules/.bin/tauri` path when using isolated XDG runtime paths |
+| `tauriCommand` | Argument array passed to the Tauri executable |
 | `devServerCommand` | Command array passed after `pnpm` to boot the frontend dev server |
 | `devServerUrl` | URL the runner probes until the dev server is ready |
 
@@ -252,6 +254,7 @@ Useful optional fields:
 | --- | --- |
 | `killCommand` | Your app leaves behind a previous process or single-instance lock |
 | `systemDataPaths` | You need to delete app-owned local state between cold starts |
+| `tauriExecutable` | You need to avoid package-manager self-install behavior under isolated runtime env vars |
 | `tauriFeatures` | Your Tauri E2E build needs feature flags |
 | `capabilityFiles` | You need to inject feature-gated capability files before the Tauri build |
 | `seedFiles` | You need to seed files into the XDG data directory before the app starts |
@@ -338,7 +341,7 @@ export default createRunnerConfig({
 });
 ```
 
-The runner copies each file before `TauriProcessManager.start()` and removes them in cleanup, so the capabilities directory stays clean for regular dev builds.
+The runner copies each file before starting Tauri and removes them in cleanup, so the capabilities directory stays clean for regular dev builds.
 
 ### `seedFiles`
 

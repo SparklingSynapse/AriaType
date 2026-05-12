@@ -1,8 +1,15 @@
-import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { execSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { TauriProcessManager } from '@srsholmes/tauri-playwright';
+
+function logStep(message) {
+  console.log(`[e2e-runner] ${new Date().toISOString()} ${message}`);
+}
+
+function formatCommand(command, args = []) {
+  return [command, ...args].join(' ');
+}
 
 function compareDesc(a, b) {
   return b.localeCompare(a);
@@ -43,13 +50,20 @@ function stripExecutionOnlyArgs(extraArgs) {
   return normalizeExtraArgs(extraArgs).filter((arg) => arg !== '--update-snapshots' && arg !== '-u');
 }
 
-function cleanupPaths(paths = []) {
+function cleanupPaths(paths = [], label = 'paths') {
+  if (!paths.length) {
+    logStep(`cleanup ${label}: no paths`);
+    return;
+  }
+
   for (const path of paths) {
+    logStep(`cleanup ${label}: ${path}`);
     rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
 
 function batchHasMatchingTests(specs, extraArgs, config) {
+  logStep(`enumerate tests: ${specs.join(', ')}`);
   const result = spawnSync(
     'pnpm',
     [
@@ -93,9 +107,11 @@ function batchHasMatchingTests(specs, extraArgs, config) {
 
 function runPlaywright(specs, extraArgs, config) {
   const normalizedExtraArgs = normalizeExtraArgs(extraArgs);
+  const args = ['exec', 'playwright', 'test', '--config', config.playwrightConfig, ...specs, ...normalizedExtraArgs];
+  logStep(`run playwright: ${formatCommand('pnpm', args)}`);
   const result = spawnSync(
     'pnpm',
-    ['exec', 'playwright', 'test', '--config', config.playwrightConfig, ...specs, ...normalizedExtraArgs],
+    args,
     {
       cwd: config.projectRoot,
       stdio: 'inherit',
@@ -120,8 +136,11 @@ function runPlaywright(specs, extraArgs, config) {
 }
 
 function prepareRuntimePaths(config) {
+  logStep(`prepare runtime: remove socket ${config.socketPath}`);
   rmSync(config.socketPath, { force: true });
+  logStep(`prepare runtime: reset ${config.runtimeRoot}`);
   rmSync(config.runtimeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  logStep('prepare runtime: create xdg-data, xdg-cache, xdg-config');
   mkdirSync(join(config.runtimeRoot, 'xdg-data'), { recursive: true });
   mkdirSync(join(config.runtimeRoot, 'xdg-cache'), { recursive: true });
   mkdirSync(join(config.runtimeRoot, 'xdg-config'), { recursive: true });
@@ -129,6 +148,7 @@ function prepareRuntimePaths(config) {
   if (config.seedFiles?.length) {
     for (const { src, dest } of config.seedFiles) {
       const destPath = join(config.runtimeRoot, 'xdg-data', dest);
+      logStep(`seed runtime file: ${src} -> ${destPath}`);
       mkdirSync(dirname(destPath), { recursive: true });
       copyFileSync(src, destPath);
     }
@@ -136,6 +156,7 @@ function prepareRuntimePaths(config) {
 
   if (config.seedDataFiles?.length) {
     for (const { src, dest } of config.seedDataFiles) {
+      logStep(`seed data file: ${src} -> ${dest}`);
       mkdirSync(dirname(dest), { recursive: true });
       copyFileSync(src, dest);
     }
@@ -143,15 +164,18 @@ function prepareRuntimePaths(config) {
 }
 
 function cleanupSystemDataPaths(config) {
-  cleanupPaths(config.systemDataPaths ?? []);
+  cleanupPaths(config.systemDataPaths ?? [], 'system data');
 }
 
 function cleanupExternalRuntime(config) {
+  logStep(`cleanup external runtime: ${config.killCommand}`);
   try {
     execSync(config.killCommand, { stdio: 'ignore' });
   } catch {}
 
+  logStep(`cleanup external runtime: socket ${config.socketPath}`);
   rmSync(config.socketPath, { force: true });
+  logStep(`cleanup external runtime: runtime ${config.runtimeRoot}`);
   rmSync(config.runtimeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   cleanupSystemDataPaths(config);
   cleanupCapabilities(config);
@@ -163,6 +187,8 @@ function prepareCapabilities(config) {
   }
 
   for (const { src, dest } of config.capabilityFiles) {
+    logStep(`prepare capability: ${src} -> ${dest}`);
+    mkdirSync(dirname(dest), { recursive: true });
     copyFileSync(src, dest);
   }
 }
@@ -173,41 +199,107 @@ function cleanupCapabilities(config) {
   }
 
   for (const { dest } of config.capabilityFiles) {
+    logStep(`cleanup capability: ${dest}`);
     rmSync(dest, { force: true });
   }
 }
 
-async function startExternalRuntime(config) {
+function registerCleanupSignalHandlers(cleanup) {
+  const signalExitCodes = new Map([
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+  ]);
+  const handlers = [];
+
+  const unregister = () => {
+    for (const [signal, handler] of handlers) {
+      process.off(signal, handler);
+    }
+  };
+
+  for (const [signal, exitCode] of signalExitCodes) {
+    const handler = () => {
+      unregister();
+      cleanup();
+      process.exit(exitCode);
+    };
+
+    process.once(signal, handler);
+    handlers.push([signal, handler]);
+  }
+
+  return unregister;
+}
+
+async function startExternalRuntime(config, onStarted) {
+  logStep('start external runtime: prepare paths and capabilities');
   prepareRuntimePaths(config);
   prepareCapabilities(config);
 
-  const processManager = new TauriProcessManager({
-    command: 'env',
-    args: [
-      `XDG_DATA_HOME=${join(config.runtimeRoot, 'xdg-data')}`,
-      `XDG_CACHE_HOME=${join(config.runtimeRoot, 'xdg-cache')}`,
-      `XDG_CONFIG_HOME=${join(config.runtimeRoot, 'xdg-config')}`,
-      'pnpm',
-      ...config.tauriCommand,
-    ],
-    cwd: config.projectRoot,
-    features: config.tauriFeatures,
-    socketPath: config.socketPath,
-    startTimeout: config.startTimeoutSeconds,
-  });
+  const tauriExecutable = config.tauriExecutable
+    ? (isAbsolute(config.tauriExecutable) ? config.tauriExecutable : resolve(config.projectRoot, config.tauriExecutable))
+    : 'pnpm';
+  if (config.tauriExecutable && !existsSync(tauriExecutable)) {
+    throw new Error(`Tauri executable does not exist: ${tauriExecutable}`);
+  }
 
-  await processManager.start();
-  await processManager.waitForSocket(config.socketWaitMs);
+  const args = [
+    ...config.tauriCommand,
+  ];
+
+  if (config.tauriFeatures?.length) {
+    args.push('--features', config.tauriFeatures.join(','));
+  }
+
+  const env = {
+    ...process.env,
+    XDG_DATA_HOME: join(config.runtimeRoot, 'xdg-data'),
+    XDG_CACHE_HOME: join(config.runtimeRoot, 'xdg-cache'),
+    XDG_CONFIG_HOME: join(config.runtimeRoot, 'xdg-config'),
+    TAURI_PLAYWRIGHT_SOCKET: config.socketPath,
+    CARGO_TERM_COLOR: process.env.CARGO_TERM_COLOR ?? 'always',
+    FORCE_COLOR: process.env.FORCE_COLOR ?? '1',
+  };
+
+  logStep(`start tauri: ${formatCommand(tauriExecutable, args)}`);
+
+  const child = spawn(tauriExecutable, args, {
+    cwd: config.projectRoot,
+    stdio: 'inherit',
+    env,
+    detached: true,
+  });
+  logStep(`tauri process spawned: pid ${child.pid ?? 'unknown'}`);
+
+  const processManager = {
+    stop() {
+      logStep(`stop tauri process group: pid ${child.pid ?? 'unknown'}`);
+      if (child.pid) {
+        try {
+          process.kill(-child.pid, 'SIGTERM');
+        } catch {
+          child.kill('SIGTERM');
+        }
+      }
+    },
+  };
+  onStarted?.(processManager);
+
+  await waitForProcessSocket(child, config.socketPath, config.startTimeoutSeconds);
+  logStep(`tauri runtime ready: socket ${config.socketPath}`);
+
   return processManager;
 }
 
 async function waitForHttpReady(url, timeoutMs = 30000) {
+  logStep(`wait for HTTP ready: ${url} timeout=${timeoutMs}ms`);
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
     try {
       const response = await fetch(url);
       if (response.ok) {
+        logStep(`HTTP ready: ${url}`);
         return;
       }
     } catch {}
@@ -218,13 +310,69 @@ async function waitForHttpReady(url, timeoutMs = 30000) {
   throw new Error(`Server ${url} did not become ready within ${timeoutMs}ms`);
 }
 
+async function waitForProcessSocket(child, socketPath, timeoutSeconds = 120) {
+  logStep(`wait for tauri process to expose playwright socket: timeout=${timeoutSeconds}s`);
+  const timeoutMs = timeoutSeconds * 1000;
+
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    let lastHeartbeatSecond = 0;
+    const timeout = setTimeout(() => {
+      if (child.pid) {
+        try {
+          process.kill(-child.pid, 'SIGTERM');
+        } catch {
+          child.kill('SIGTERM');
+        }
+      }
+      reject(new Error(`Tauri app did not expose ${socketPath} within ${timeoutSeconds}s`));
+    }, timeoutMs);
+
+    const poll = setInterval(() => {
+      if (existsSync(socketPath)) {
+        clearTimeout(timeout);
+        cleanup();
+        resolve();
+        return;
+      }
+
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+      if (elapsedSeconds > 0 && elapsedSeconds % 10 === 0 && elapsedSeconds !== lastHeartbeatSecond) {
+        lastHeartbeatSecond = elapsedSeconds;
+        logStep(`still waiting for tauri socket after ${elapsedSeconds}s: ${socketPath}`);
+      }
+    }, 1000);
+
+    const onExit = (code) => {
+      clearTimeout(timeout);
+      cleanup();
+      reject(new Error(`Tauri process exited before playwright socket was ready with code ${code}`));
+    };
+    const onError = (error) => {
+      clearTimeout(timeout);
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      clearInterval(poll);
+      child.off('exit', onExit);
+      child.off('error', onError);
+    };
+
+    child.once('exit', onExit);
+    child.once('error', onError);
+  });
+}
+
 function prepareDevServer(config) {
-  cleanupPaths(config.devServerResetPaths ?? []);
+  cleanupPaths(config.devServerResetPaths ?? [], 'dev server reset');
 
   if (!config.devServerPrepareCommand?.length) {
+    logStep('prepare dev server: no prepare command');
     return;
   }
 
+  logStep(`prepare dev server: ${formatCommand('pnpm', config.devServerPrepareCommand)}`);
   const result = spawnSync('pnpm', config.devServerPrepareCommand, {
     cwd: config.projectRoot,
     stdio: 'inherit',
@@ -241,11 +389,13 @@ function prepareDevServer(config) {
 }
 
 async function startDevServer(config) {
+  logStep('start dev server: prepare');
   prepareDevServer(config);
 
+  logStep(`start dev server: ${formatCommand('pnpm', config.devServerCommand)}`);
   const devServer = spawn('pnpm', config.devServerCommand, {
     cwd: config.projectRoot,
-    stdio: 'ignore',
+    stdio: 'inherit',
     env: process.env,
   });
 
@@ -254,33 +404,63 @@ async function startDevServer(config) {
 }
 
 export async function runOrderedTauriSuite(config, extraArgs) {
+  logStep('runner start');
   const specBatches = resolveSpecOrder(config);
+  logStep(`resolved spec batches: ${specBatches.map((specs) => specs.join(',')).join(' | ')}`);
   const filteredSpecBatches = hasBatchFilterArgs(extraArgs)
     ? specBatches.filter((specs) => batchHasMatchingTests(specs, extraArgs, config))
     : specBatches;
+  logStep(`filtered spec batches: ${filteredSpecBatches.map((specs) => specs.join(',')).join(' | ')}`);
   let exitCode = 0;
+  let devServer;
+  let processManager;
+  let cleanupDone = false;
+  const cleanup = () => {
+    if (cleanupDone) {
+      logStep('cleanup skipped: already done');
+      return;
+    }
 
-  cleanupExternalRuntime(config);
-
-  const devServer = await startDevServer(config);
-  const processManager = await startExternalRuntime(config);
+    logStep('cleanup start');
+    cleanupDone = true;
+    processManager?.stop();
+    devServer?.kill('SIGTERM');
+    cleanupExternalRuntime(config);
+    logStep('cleanup complete');
+  };
+  const unregisterSignalHandlers = registerCleanupSignalHandlers(cleanup);
 
   try {
+    logStep('phase: cleanup stale runtime');
+    cleanupExternalRuntime(config);
+    logStep('phase: start dev server');
+    devServer = await startDevServer(config);
+    logStep('phase: start tauri external runtime');
+    processManager = await startExternalRuntime(config, (manager) => {
+      processManager = manager;
+    });
+
     for (const specs of filteredSpecBatches) {
+      logStep(`phase: run spec batch ${specs.join(', ')}`);
       exitCode = runPlaywright(specs, extraArgs, config);
       if (exitCode !== 0) {
+        logStep(`spec batch failed with exit code ${exitCode}: ${specs.join(', ')}`);
         break;
       }
+      logStep(`spec batch passed: ${specs.join(', ')}`);
     }
   } finally {
-    processManager.stop();
-    devServer.kill('SIGTERM');
-    cleanupExternalRuntime(config);
+    logStep('phase: final cleanup');
+    unregisterSignalHandlers();
+    cleanup();
   }
 
   if (exitCode !== 0) {
+    logStep(`runner exit with code ${exitCode}`);
     process.exit(exitCode);
   }
+
+  logStep('runner complete');
 }
 
 export function normalizeRunnerCliArgs(argv) {

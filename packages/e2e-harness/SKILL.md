@@ -199,7 +199,8 @@ Check:
 
 Check:
 
-- `devServerCommand` and `tauriCommand` are argument arrays for `pnpm`, not full shell strings
+- `devServerCommand` is an argument array for `pnpm`; `tauriCommand` is an argument array for `tauriExecutable`
+- if `tauriExecutable` is set, `tauriCommand` must contain only arguments for that executable
 - `playwrightConfig` points at the app-local config file
 - `specOrder` references files under the configured `specsPrefix`
 

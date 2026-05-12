@@ -6,6 +6,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
+- Context aware visual terms (ce46436)
 - Add default value for pill_size field (f027349)
 
 ## v0.5.1 (2026-05-07)

@@ -42,6 +42,7 @@ export type TauriFixtureOptions = {
   socketPathFactory?: (runtimeKey: string) => string;
   killCommand?: string;
   systemDataPaths?: string[];
+  tauriExecutable?: string;
   tauriCommand: string[];
   tauriFeatures?: string[];
   startTimeoutSeconds?: number;
@@ -54,6 +55,7 @@ type RunnerBackedFixtureConfig = {
   socketPath: string;
   killCommand?: string;
   systemDataPaths?: string[];
+  tauriExecutable?: string;
   tauriCommand: string[];
   tauriFeatures?: string[];
   startTimeoutSeconds?: number;
@@ -139,7 +141,7 @@ async function startTauriRuntime(
       `XDG_DATA_HOME=${paths.xdgDataHome}`,
       `XDG_CACHE_HOME=${paths.xdgCacheHome}`,
       `XDG_CONFIG_HOME=${paths.xdgConfigHome}`,
-      'pnpm',
+      options.tauriExecutable ?? 'pnpm',
       ...options.tauriCommand,
     ],
     cwd: options.projectRoot,
@@ -321,6 +323,7 @@ export function createTauriFixturesOptionsFromRunnerConfig(
     sharedRuntimeKey: overrides.sharedRuntimeKey ?? 'shared',
     killCommand: config.killCommand,
     systemDataPaths: config.systemDataPaths,
+    tauriExecutable: config.tauriExecutable,
     tauriCommand: config.tauriCommand,
     tauriFeatures: config.tauriFeatures,
     startTimeoutSeconds: config.startTimeoutSeconds,

@@ -25,13 +25,19 @@ function isRetryableNotarizationTimeout(error, description) {
   );
 }
 
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
 export function runCommand(command, description, options = {}) {
   const {
     cwd,
     env,
     exec = execSync,
     log = console,
+    logFile,
     maxAttempts = 1,
+    onFailure,
   } = options;
 
   write(log, 'info', `\n${'═'.repeat(50)}`);
@@ -42,11 +48,20 @@ export function runCommand(command, description, options = {}) {
     const startTime = Date.now();
 
     try {
-      exec(command, {
+      const execOptions = {
         cwd,
         stdio: 'inherit',
         env,
-      });
+      };
+      const execCommand = logFile
+        ? `set -o pipefail; (${command}) 2>&1 | tee ${shellQuote(logFile)}`
+        : command;
+
+      if (logFile) {
+        execOptions.shell = '/bin/bash';
+      }
+
+      exec(execCommand, execOptions);
 
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       write(log, 'info', `\n✅ ${description} completed in ${elapsed}s\n`);
@@ -61,6 +76,7 @@ export function runCommand(command, description, options = {}) {
         continue;
       }
 
+      onFailure?.(error);
       write(log, 'error', `\n❌ ${description} failed\n`);
       return false;
     }

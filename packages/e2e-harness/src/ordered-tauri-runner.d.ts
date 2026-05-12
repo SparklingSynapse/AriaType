@@ -20,6 +20,7 @@ export type OrderedTauriRunnerConfig = {
   systemDataPaths?: string[];
   devServerResetPaths?: string[];
   devServerPrepareCommand?: string[];
+  tauriExecutable?: string;
   tauriCommand: string[];
   tauriFeatures?: string[];
   capabilityFiles?: CapabilityFileMapping[];

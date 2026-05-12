@@ -28,6 +28,9 @@ playwright-report/
 **/e2e-output/
 **/*-screenshot.png
 **/*-trace.zip
+apps/desktop/src-tauri/capabilities/e2e.json
+apps/desktop/tests/e2e/.runtime/
+apps/desktop/.build-diagnostics/
 
 # Next.js
 .next/
