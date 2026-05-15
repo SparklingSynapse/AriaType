@@ -102,6 +102,7 @@
   "hotkey.recording.modeTitle": "Aufnahmemodus",
   "hotkey.recording.modeHold": "Halten",
   "hotkey.recording.modeToggle": "Umschalten",
+  "hotkey.recording.modeDoubleTap": "Doppeltippen",
   "hotkey.registrationFailed": "Tastenkombination bereits verwendet",
   "hotkey.conflictDictate": "Tastenkombination bereits vom Dictate-Profil verwendet",
   "hotkey.conflictRiff": "Tastenkombination bereits vom Riff-Profil verwendet",

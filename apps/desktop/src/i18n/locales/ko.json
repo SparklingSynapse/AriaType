@@ -277,6 +277,7 @@
   "hotkey.recording.modeTitle": "녹음 모드",
   "hotkey.recording.modeHold": "누르고 있기",
   "hotkey.recording.modeToggle": "토글",
+  "hotkey.recording.modeDoubleTap": "두 번 누르기",
   "hotkey.registrationFailed": "단축키가 이미 사용 중입니다",
   "hotkey.conflictDictate": "단축키가 Dictate 프로필에서 사용 중입니다",
   "hotkey.conflictRiff": "단축키가 Riff 프로필에서 사용 중입니다",

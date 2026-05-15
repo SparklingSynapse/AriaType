@@ -22,7 +22,7 @@ export {
 type E2EPage = TauriFixtures['tauriPage'];
 type ShortcutProfilePayload = {
   hotkey: string;
-  trigger_mode: 'hold' | 'toggle';
+  trigger_mode: 'hold' | 'toggle' | 'double_tap';
   action: {
     Record: {
       polish_template_id: string | null;

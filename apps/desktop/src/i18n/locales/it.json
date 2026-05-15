@@ -277,6 +277,7 @@
   "hotkey.recording.modeTitle": "Modalità di registrazione",
   "hotkey.recording.modeHold": "Tenere premuto",
   "hotkey.recording.modeToggle": "Alternare",
+  "hotkey.recording.modeDoubleTap": "Doppio tocco",
   "hotkey.registrationFailed": "Tasto di scelta rapida già in uso",
   "hotkey.conflictDictate": "Tasto di scelta rapida già usato dal profilo Dictate",
   "hotkey.conflictRiff": "Tasto di scelta rapida già usato dal profilo Riff",

@@ -277,6 +277,7 @@
   "hotkey.recording.modeTitle": "Режим записи",
   "hotkey.recording.modeHold": "Удержание",
   "hotkey.recording.modeToggle": "Переключение",
+  "hotkey.recording.modeDoubleTap": "Двойное нажатие",
   "hotkey.registrationFailed": "Горячая клавиша уже используется",
   "hotkey.conflictDictate": "Горячая клавиша уже используется профилем Dictate",
   "hotkey.conflictRiff": "Горячая клавиша уже используется профилем Riff",

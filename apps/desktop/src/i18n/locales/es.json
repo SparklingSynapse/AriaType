@@ -102,6 +102,7 @@
   "hotkey.recording.modeTitle": "Modo de grabación",
   "hotkey.recording.modeHold": "Mantener",
   "hotkey.recording.modeToggle": "Alternar",
+  "hotkey.recording.modeDoubleTap": "Doble toque",
   "hotkey.registrationFailed": "Tecla de acceso rápido ya en uso",
   "hotkey.conflictDictate": "Tecla de acceso rápido ya usada por el perfil Dictate",
   "hotkey.conflictRiff": "Tecla de acceso rápido ya usada por el perfil Riff",

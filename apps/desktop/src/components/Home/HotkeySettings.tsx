@@ -10,13 +10,21 @@ import { useSettingsContext } from "@/contexts/SettingsContext";
 import { HotkeyInput } from "@/components/ui/hotkey-input";
 import { MultiSwitch } from "@/components/ui/multi-switch";
 import { SettingsPageLayout } from "./SettingsPageLayout";
-import { hotkeyCommands, modelCommands, type ShortcutProfile, type PolishTemplate, type CustomPolishTemplate } from "@/lib/tauri";
+import {
+  hotkeyCommands,
+  modelCommands,
+  type ShortcutProfile,
+  type ShortcutTriggerMode,
+  type PolishTemplate,
+  type CustomPolishTemplate,
+} from "@/lib/tauri";
 import { Plus, Trash, WarningCircle } from "@phosphor-icons/react";
 import { showErrorToast } from "@/lib/toast";
 
 const RECORDING_MODES = [
   { value: "hold", label: "Hold" },
   { value: "toggle", label: "Toggle" },
+  { value: "double_tap", label: "Double Tap" },
 ] as const;
 
 interface ProfileSectionProps {
@@ -26,7 +34,11 @@ interface ProfileSectionProps {
   canChangeTemplate: boolean;
   allowNullTemplate: boolean;
   polishAvailable: boolean;
-  onUpdate: (hotkey: string, templateId: string | null, triggerMode: "hold" | "toggle") => void;
+  onUpdate: (
+    hotkey: string,
+    templateId: string | null,
+    triggerMode: ShortcutTriggerMode,
+  ) => void;
   testId?: string;
 }
 
@@ -53,7 +65,9 @@ function ProfileSection({
     label:
       option.value === "hold"
         ? t("hotkey.recording.modeHold")
-        : t("hotkey.recording.modeToggle"),
+        : option.value === "toggle"
+          ? t("hotkey.recording.modeToggle")
+          : t("hotkey.recording.modeDoubleTap"),
   }));
 
   return (
@@ -74,7 +88,9 @@ function ProfileSection({
         <MultiSwitch
           options={recordingModes}
           value={triggerMode}
-          onChange={(value) => onUpdate(profile?.hotkey || "", templateId, value as "hold" | "toggle")}
+          onChange={(value) =>
+            onUpdate(profile?.hotkey || "", templateId, value as ShortcutTriggerMode)
+          }
         />
       </div>
 
@@ -134,7 +150,7 @@ export function HotkeySettings() {
   const handleUpdateDictate = async (
     hotkey: string,
     _: string | null,
-    triggerMode: "hold" | "toggle",
+    triggerMode: ShortcutTriggerMode,
   ) => {
     analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "dictate_hotkey", value: hotkey });
     await hotkeyCommands.updateProfile("dictate", {
@@ -147,7 +163,7 @@ export function HotkeySettings() {
   const handleUpdateRiff = async (
     hotkey: string,
     templateId: string | null,
-    triggerMode: "hold" | "toggle",
+    triggerMode: ShortcutTriggerMode,
   ) => {
     if (!templateId) {
       showErrorToast(t("hotkey.riffTemplateRequired", "Riff profile requires a polish template"));
@@ -164,7 +180,7 @@ export function HotkeySettings() {
   const handleUpdateCustom = async (
     hotkey: string,
     templateId: string | null,
-    triggerMode: "hold" | "toggle",
+    triggerMode: ShortcutTriggerMode,
   ) => {
     analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "custom_profile", value: `${hotkey}:${templateId ?? "none"}` });
     await hotkeyCommands.updateProfile("custom", {

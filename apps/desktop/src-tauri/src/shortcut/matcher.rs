@@ -8,6 +8,8 @@ pub enum MatcherEvent {
     ProfileReleased { profile_id: String },
     CancelPressed,
     CancelReleased,
+    EndPressed,
+    EndReleased,
     CapturePressed(PressedInput),
     CaptureReleased,
 }
@@ -16,6 +18,7 @@ pub enum MatcherEvent {
 pub struct MatcherSnapshot {
     pub profiles: HashMap<String, HotkeyPattern>,
     pub cancel: Vec<HotkeyPattern>,
+    pub end: Vec<HotkeyPattern>,
     pub capture_active: bool,
 }
 
@@ -46,6 +49,7 @@ pub struct MatcherState {
     pub(crate) pressed_key: Option<String>,
     pub(crate) active_profile: Option<String>,
     pub(crate) active_cancel: bool,
+    pub(crate) active_end: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -86,12 +90,23 @@ pub fn handle_input(
     let matches_cancel = snapshot.cancel.iter().any(|pattern| {
         pattern_matches_state(pattern, &state.modifiers, state.pressed_key.as_deref())
     });
+    let matches_end = snapshot.end.iter().any(|pattern| {
+        pattern_matches_state(pattern, &state.modifiers, state.pressed_key.as_deref())
+    });
 
     if matches_cancel && state.active_profile.is_some() {
         state.active_profile = None;
         state.active_cancel = true;
         outcome.swallow = true;
         outcome.events.push(MatcherEvent::CancelPressed);
+        return outcome;
+    }
+
+    if matches_end && state.active_profile.is_some() {
+        state.active_profile = None;
+        state.active_end = true;
+        outcome.swallow = true;
+        outcome.events.push(MatcherEvent::EndPressed);
         return outcome;
     }
 
@@ -129,6 +144,17 @@ pub fn handle_input(
         return outcome;
     }
 
+    if state.active_end {
+        if !matches_end {
+            state.active_end = false;
+            outcome.swallow = true;
+            outcome.events.push(MatcherEvent::EndReleased);
+        } else {
+            outcome.swallow = true;
+        }
+        return outcome;
+    }
+
     for (profile_id, pattern) in &snapshot.profiles {
         if pattern_matches_state(pattern, &state.modifiers, state.pressed_key.as_deref()) {
             state.active_profile = Some(profile_id.clone());
@@ -144,6 +170,12 @@ pub fn handle_input(
         state.active_cancel = true;
         outcome.swallow = true;
         outcome.events.push(MatcherEvent::CancelPressed);
+    }
+
+    if matches_end {
+        state.active_end = true;
+        outcome.swallow = true;
+        outcome.events.push(MatcherEvent::EndPressed);
     }
 
     outcome
@@ -214,6 +246,7 @@ mod tests {
         let snapshot = MatcherSnapshot {
             profiles,
             cancel: Vec::new(),
+            end: Vec::new(),
             capture_active: false,
         };
         let mut state = MatcherState::default();
@@ -248,6 +281,7 @@ mod tests {
         let snapshot = MatcherSnapshot {
             profiles,
             cancel: Vec::new(),
+            end: Vec::new(),
             capture_active: false,
         };
         let mut state = MatcherState::default();
@@ -282,6 +316,7 @@ mod tests {
         let snapshot = MatcherSnapshot {
             profiles: HashMap::new(),
             cancel: Vec::new(),
+            end: Vec::new(),
             capture_active: true,
         };
         let mut state = MatcherState::default();
@@ -327,6 +362,7 @@ mod tests {
         let snapshot = MatcherSnapshot {
             profiles,
             cancel: Vec::new(),
+            end: Vec::new(),
             capture_active: false,
         };
         let mut state = MatcherState::default();
@@ -356,6 +392,7 @@ mod tests {
                 parse_hotkey_pattern("Escape").unwrap(),
                 parse_hotkey_pattern("Fn+Escape").unwrap(),
             ],
+            end: Vec::new(),
             capture_active: false,
         };
         let mut state = MatcherState::default();
@@ -383,6 +420,68 @@ mod tests {
     }
 
     #[test]
+    fn end_hotkey_takes_precedence_over_active_hold_profile() {
+        let mut profiles = HashMap::new();
+        profiles.insert(
+            "dictate".to_string(),
+            parse_hotkey_pattern("Cmd+Slash").unwrap(),
+        );
+        let snapshot = MatcherSnapshot {
+            profiles,
+            cancel: Vec::new(),
+            end: vec![parse_hotkey_pattern("Cmd+Enter").unwrap()],
+            capture_active: false,
+        };
+        let mut state = MatcherState::default();
+
+        let _ = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::ModifierPressed(ModifierKey::CmdLeft),
+        );
+        let _ = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyPressed("Slash".to_string()),
+        );
+        let end = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyPressed("Return".to_string()),
+        );
+
+        assert!(end.swallow);
+        assert_eq!(end.events, vec![MatcherEvent::EndPressed]);
+    }
+
+    #[test]
+    fn enter_end_hotkey_releases_when_enter_is_lifted() {
+        let snapshot = MatcherSnapshot {
+            profiles: HashMap::new(),
+            cancel: Vec::new(),
+            end: vec![parse_hotkey_pattern("Enter").unwrap()],
+            capture_active: false,
+        };
+        let mut state = MatcherState::default();
+
+        let pressed = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyPressed("Return".to_string()),
+        );
+        let released = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyReleased("Return".to_string()),
+        );
+
+        assert!(pressed.swallow);
+        assert_eq!(pressed.events, vec![MatcherEvent::EndPressed]);
+        assert!(released.swallow);
+        assert_eq!(released.events, vec![MatcherEvent::EndReleased]);
+    }
+
+    #[test]
     fn fn_escape_cancel_releases_when_escape_is_lifted() {
         let mut profiles = HashMap::new();
         profiles.insert("dictate".to_string(), parse_hotkey_pattern("Fn").unwrap());
@@ -392,6 +491,7 @@ mod tests {
                 parse_hotkey_pattern("Escape").unwrap(),
                 parse_hotkey_pattern("Fn+Escape").unwrap(),
             ],
+            end: Vec::new(),
             capture_active: false,
         };
         let mut state = MatcherState::default();

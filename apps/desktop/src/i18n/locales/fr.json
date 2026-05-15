@@ -102,6 +102,7 @@
   "hotkey.recording.modeTitle": "Mode d'enregistrement",
   "hotkey.recording.modeHold": "Maintenir",
   "hotkey.recording.modeToggle": "Basculer",
+  "hotkey.recording.modeDoubleTap": "Double pression",
   "hotkey.registrationFailed": "Touche de raccourci déjà utilisée",
   "hotkey.conflictDictate": "Touche de raccourci déjà utilisée par le profil Dictate",
   "hotkey.conflictRiff": "Touche de raccourci déjà utilisée par le profil Riff",

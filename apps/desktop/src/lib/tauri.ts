@@ -99,9 +99,11 @@ export interface CloudProviderSchemas {
   polish: ProviderSchema[];
 }
 
+export type ShortcutTriggerMode = "hold" | "toggle" | "double_tap";
+
 export interface ShortcutProfile {
   hotkey: string;
-  trigger_mode: "hold" | "toggle";
+  trigger_mode: ShortcutTriggerMode;
   action: {
     Record?: {
       polish_template_id?: string | null;

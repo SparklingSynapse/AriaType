@@ -14,8 +14,8 @@ use tauri::{Emitter, Manager};
 use crate::events::EventName;
 use crate::services::shortcut::{
     cancel_hotkey_release_unregister_owner, capture_cancel_hotkey_release_owner,
-    primary_shortcut_action, primary_shortcut_context, should_unregister_cancel_hotkeys,
-    PrimaryShortcutAction,
+    double_tap_shortcut_action, primary_shortcut_action, primary_shortcut_context,
+    should_unregister_cancel_hotkeys, DoubleTapShortcutAction, PrimaryShortcutAction,
 };
 
 use super::hotkey_codec::{analyze_pressed_sequence, PressedInput};
@@ -201,6 +201,11 @@ struct FacadeState {
     last_captured_hotkey: Mutex<Option<String>>,
 }
 
+struct PendingDoubleTap {
+    profile_id: String,
+    first_tap_at: Instant,
+}
+
 struct OwnerState {
     app_handle: Option<tauri::AppHandle>,
     started: bool,
@@ -219,6 +224,7 @@ struct OwnerState {
     next_runner_generation: u64,
     cancel_owner_task_id: Option<u64>,
     pending_cancel_release_owner_task_id: Option<u64>,
+    pending_double_tap: Option<PendingDoubleTap>,
     capture_sequence: Vec<PressedInput>,
 }
 
@@ -259,6 +265,7 @@ impl ShortcutManager {
             next_runner_generation: 1,
             cancel_owner_task_id: None,
             pending_cancel_release_owner_task_id: None,
+            pending_double_tap: None,
             capture_sequence: Vec::new(),
         };
 
@@ -393,6 +400,7 @@ const SHORTCUT_RUNTIME_PROBE_INTERVAL: Duration = Duration::from_millis(500);
 #[cfg(target_os = "macos")]
 const SHORTCUT_CAPTURE_RECONCILE_INTERVAL: Duration = Duration::from_millis(500);
 const SHORTCUT_RUNTIME_RESTART_INTERVAL: Duration = Duration::from_millis(500);
+const DOUBLE_TAP_TRIGGER_WINDOW: Duration = Duration::from_millis(500);
 
 #[cfg(target_os = "macos")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -686,6 +694,7 @@ fn handle_runtime_event(
             }
         }
         MatcherEvent::CancelPressed => {
+            state.pending_double_tap = None;
             let _ = state.event_tx.send(ShortcutEvent::CancelTriggered {
                 state: ShortcutState::Pressed,
             });
@@ -701,6 +710,14 @@ fn handle_runtime_event(
                 handle_cancel_release_owner_loop(state, &app_handle);
             }
         }
+        MatcherEvent::EndPressed => {
+            state.pending_double_tap = None;
+            if let Some(app_handle) = state.app_handle.as_ref() {
+                handle_end_trigger(app_handle);
+                let _ = refresh_matcher_snapshot(state);
+            }
+        }
+        MatcherEvent::EndReleased => {}
         MatcherEvent::CapturePressed(input) => {
             if state.facade_state.capture_active.load(Ordering::SeqCst) {
                 state.capture_sequence.push(input);
@@ -922,6 +939,7 @@ fn start_capture(state: &mut OwnerState) -> Result<(), String> {
         .store(true, Ordering::SeqCst);
     *state.facade_state.last_captured_hotkey.lock() = None;
     state.capture_sequence.clear();
+    state.pending_double_tap = None;
     if let Err(error) = refresh_matcher_snapshot(state) {
         state
             .facade_state
@@ -1071,6 +1089,14 @@ fn build_matcher_snapshot(
     } else {
         Vec::new()
     };
+    let end_patterns = if cancel_owner_task_id.is_some() {
+        build_end_hotkeys_for_app(app_handle)
+            .into_iter()
+            .map(|hotkey| parse_hotkey_pattern(&hotkey))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Vec::new()
+    };
 
     let mut profiles = HashMap::new();
     for (profile_id, hotkey) in desired_profiles {
@@ -1083,6 +1109,7 @@ fn build_matcher_snapshot(
     Ok(MatcherSnapshot {
         profiles,
         cancel: cancel_patterns,
+        end: end_patterns,
         capture_active,
     })
 }
@@ -1113,6 +1140,10 @@ fn handle_cancel_trigger(
             capture_cancel_hotkey_release_owner(is_recording, is_transcribing, task_id);
     }
     let _ = crate::commands::audio::cancel_recording_from_hotkey_sync(app_handle.clone());
+}
+
+fn handle_end_trigger(app_handle: &tauri::AppHandle) {
+    let _ = crate::commands::audio::stop_recording_sync(app_handle.clone());
 }
 
 fn handle_cancel_release_owner_loop(state: &mut OwnerState, app_handle: &tauri::AppHandle) {
@@ -1151,10 +1182,52 @@ fn handle_recording_trigger_owner_loop(
             .cloned()
     };
     let context = primary_shortcut_context(&app_state, capture_active, profile.as_ref());
+    let pending_profile_id = owner_state
+        .pending_double_tap
+        .as_ref()
+        .map(|pending| pending.profile_id.as_str());
+    let pending_elapsed = owner_state
+        .pending_double_tap
+        .as_ref()
+        .map(|pending| pending.first_tap_at.elapsed());
+
+    match double_tap_shortcut_action(
+        context,
+        state,
+        profile_id,
+        pending_profile_id,
+        pending_elapsed,
+        DOUBLE_TAP_TRIGGER_WINDOW,
+    ) {
+        DoubleTapShortcutAction::Ignore => {}
+        DoubleTapShortcutAction::ArmFirstTap => {
+            owner_state.pending_double_tap = Some(PendingDoubleTap {
+                profile_id: profile_id.to_string(),
+                first_tap_at: Instant::now(),
+            });
+            return;
+        }
+        DoubleTapShortcutAction::StartRecording => {
+            owner_state.pending_double_tap = None;
+            let _ = crate::commands::audio::start_recording_sync_internal(
+                app_handle,
+                profile.as_ref(),
+                false,
+            );
+            return;
+        }
+        DoubleTapShortcutAction::StopRecording => {
+            owner_state.pending_double_tap = None;
+            let _ = crate::commands::audio::stop_recording_sync(app_handle.clone());
+            let _ = refresh_matcher_snapshot(owner_state);
+            return;
+        }
+    }
 
     match primary_shortcut_action(context, state) {
         PrimaryShortcutAction::Ignore => {}
         PrimaryShortcutAction::StartRecording => {
+            owner_state.pending_double_tap = None;
             let _ = crate::commands::audio::start_recording_sync_internal(
                 app_handle,
                 profile.as_ref(),
@@ -1162,7 +1235,9 @@ fn handle_recording_trigger_owner_loop(
             );
         }
         PrimaryShortcutAction::StopRecording => {
+            owner_state.pending_double_tap = None;
             let _ = crate::commands::audio::stop_recording_sync(app_handle.clone());
+            let _ = refresh_matcher_snapshot(owner_state);
         }
     }
 }
@@ -1186,6 +1261,45 @@ fn build_cancel_hotkeys(trigger_mode: ShortcutTriggerMode, hotkey: &str) -> Vec<
     }
 
     cancel_hotkeys
+}
+
+fn build_end_hotkeys_for_app(app_handle: Option<&tauri::AppHandle>) -> Vec<String> {
+    let Some(app_handle) = app_handle else {
+        return vec!["Enter".to_string()];
+    };
+    let Some(app_state) = app_handle.try_state::<crate::state::app_state::AppState>() else {
+        return vec!["Enter".to_string()];
+    };
+
+    if !app_state.is_recording.load(Ordering::SeqCst) {
+        return Vec::new();
+    }
+
+    match app_state.current_cancel_profile() {
+        Some((hotkey, trigger_mode)) => build_end_hotkeys(trigger_mode, &hotkey),
+        None => vec!["Enter".to_string()],
+    }
+}
+
+fn build_end_hotkeys(trigger_mode: ShortcutTriggerMode, hotkey: &str) -> Vec<String> {
+    let mut end_hotkeys = vec!["Enter".to_string()];
+
+    if trigger_mode == ShortcutTriggerMode::Hold {
+        let modifiers = hotkey
+            .split('+')
+            .map(str::trim)
+            .filter(|token| !token.is_empty() && is_modifier_token(token))
+            .collect::<Vec<_>>();
+
+        if !modifiers.is_empty() {
+            let modifier_enter = format!("{}+Enter", modifiers.join("+"));
+            if !end_hotkeys.contains(&modifier_enter) {
+                end_hotkeys.push(modifier_enter);
+            }
+        }
+    }
+
+    end_hotkeys
 }
 
 fn is_modifier_token(token: &str) -> bool {
@@ -1426,6 +1540,26 @@ mod tests {
         assert_eq!(
             build_cancel_hotkeys(ShortcutTriggerMode::Toggle, "Cmd+Shift+Space"),
             vec!["Escape".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_end_hotkeys_hold_mode_includes_active_modifiers() {
+        assert_eq!(
+            build_end_hotkeys(ShortcutTriggerMode::Hold, "Cmd+Shift+Space"),
+            vec!["Enter".to_string(), "Cmd+Shift+Enter".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_end_hotkeys_toggle_and_double_tap_use_enter_only() {
+        assert_eq!(
+            build_end_hotkeys(ShortcutTriggerMode::Toggle, "Cmd+Shift+Space"),
+            vec!["Enter".to_string()]
+        );
+        assert_eq!(
+            build_end_hotkeys(ShortcutTriggerMode::DoubleTap, "Cmd+Shift+Space"),
+            vec!["Enter".to_string()]
         );
     }
 

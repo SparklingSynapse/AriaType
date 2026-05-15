@@ -110,6 +110,7 @@
   "hotkey.recording.modeTitle": "录音模式",
   "hotkey.recording.modeHold": "按住",
   "hotkey.recording.modeToggle": "切换",
+  "hotkey.recording.modeDoubleTap": "双击",
   "hotkey.registrationFailed": "快捷键已被占用",
   "hotkey.conflictDictate": "快捷键已被 Dictate 配置占用",
   "hotkey.conflictRiff": "快捷键已被 Riff 配置占用",

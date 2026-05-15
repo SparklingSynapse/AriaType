@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 pub enum ShortcutTriggerMode {
     Hold,
     Toggle,
+    #[serde(rename = "double_tap", alias = "doubletap")]
+    DoubleTap,
 }
 
 impl ShortcutTriggerMode {
@@ -19,6 +21,7 @@ impl ShortcutTriggerMode {
         match self {
             Self::Hold => "hold",
             Self::Toggle => "toggle",
+            Self::DoubleTap => "double_tap",
         }
     }
 }
@@ -265,7 +268,7 @@ mod tests {
             riff: ShortcutProfile::default_riff(),
             custom: Some(ShortcutProfile {
                 hotkey: String::new(),
-                trigger_mode: ShortcutTriggerMode::Toggle,
+                trigger_mode: ShortcutTriggerMode::DoubleTap,
                 action: ShortcutAction::Record {
                     polish_template_id: Some("filler".to_string()),
                 },
@@ -275,7 +278,16 @@ mod tests {
         let value = serde_json::to_value(&profiles).unwrap();
         assert_eq!(value["dictate"]["trigger_mode"], "hold");
         assert_eq!(value["riff"]["trigger_mode"], "toggle");
-        assert_eq!(value["custom"]["trigger_mode"], "toggle");
+        assert_eq!(value["custom"]["trigger_mode"], "double_tap");
+    }
+
+    #[test]
+    fn double_tap_trigger_mode_accepts_legacy_compact_spelling() {
+        let json = r#"{"hotkey":"Cmd+Shift+Space","trigger_mode":"doubletap","action":{"Record":{"polish_template_id":null}}}"#;
+
+        let profile: ShortcutProfile = serde_json::from_str(json).unwrap();
+
+        assert_eq!(profile.trigger_mode, ShortcutTriggerMode::DoubleTap);
     }
 
     #[test]

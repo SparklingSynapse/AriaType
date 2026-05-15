@@ -4,8 +4,14 @@ All notable changes to the desktop application will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- Support deliberate recording finish triggers (4976895)
+- Add voice-writing polish templates (9975217)
+
 ### Bug Fixes
 
+- Adapt cloud polish timeout for long requests (fea6258)
 - Context aware visual terms (ce46436)
 - Add default value for pill_size field (f027349)
 

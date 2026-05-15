@@ -277,6 +277,7 @@
   "hotkey.recording.modeTitle": "録音モード",
   "hotkey.recording.modeHold": "長押し",
   "hotkey.recording.modeToggle": "切り替え",
+  "hotkey.recording.modeDoubleTap": "ダブルタップ",
   "hotkey.registrationFailed": "ショートカットキーは既に使用されています",
   "hotkey.conflictDictate": "ショートカットキーは Dictate プロファイルで使用されています",
   "hotkey.conflictRiff": "ショートカットキーは Riff プロファイルで使用されています",

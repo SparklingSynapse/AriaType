@@ -3,11 +3,13 @@ use crate::shortcut::{
 };
 use crate::state::app_state::AppState;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShortcutRecordingMode {
     Hold,
     Toggle,
+    DoubleTap,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +22,14 @@ pub struct PrimaryShortcutContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimaryShortcutAction {
     Ignore,
+    StartRecording,
+    StopRecording,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoubleTapShortcutAction {
+    Ignore,
+    ArmFirstTap,
     StartRecording,
     StopRecording,
 }
@@ -135,6 +145,36 @@ pub fn primary_shortcut_action(
                 PrimaryShortcutAction::StartRecording
             }
         }
+        ShortcutRecordingMode::DoubleTap => PrimaryShortcutAction::Ignore,
+    }
+}
+
+pub fn double_tap_shortcut_action(
+    context: PrimaryShortcutContext,
+    shortcut_state: ShortcutState,
+    current_profile_id: &str,
+    pending_profile_id: Option<&str>,
+    pending_elapsed: Option<Duration>,
+    max_interval: Duration,
+) -> DoubleTapShortcutAction {
+    if context.capture_active
+        || context.trigger_mode != ShortcutRecordingMode::DoubleTap
+        || shortcut_state != ShortcutState::Pressed
+    {
+        return DoubleTapShortcutAction::Ignore;
+    }
+
+    let second_tap_matches = pending_profile_id == Some(current_profile_id)
+        && pending_elapsed.is_some_and(|elapsed| elapsed <= max_interval);
+
+    if !second_tap_matches {
+        return DoubleTapShortcutAction::ArmFirstTap;
+    }
+
+    if context.is_recording {
+        DoubleTapShortcutAction::StopRecording
+    } else {
+        DoubleTapShortcutAction::StartRecording
     }
 }
 
@@ -174,6 +214,7 @@ impl ShortcutRecordingMode {
         match profile.map(|item| item.trigger_mode) {
             Some(ShortcutTriggerMode::Hold) => ShortcutRecordingMode::Hold,
             Some(ShortcutTriggerMode::Toggle) => ShortcutRecordingMode::Toggle,
+            Some(ShortcutTriggerMode::DoubleTap) => ShortcutRecordingMode::DoubleTap,
             None => ShortcutRecordingMode::Hold,
         }
     }
@@ -183,11 +224,13 @@ impl ShortcutRecordingMode {
 mod tests {
     use super::{
         cancel_hotkey_release_unregister_owner, capture_cancel_hotkey_release_owner,
-        primary_shortcut_action, primary_shortcut_context, should_unregister_cancel_hotkeys,
-        PrimaryShortcutAction, PrimaryShortcutContext, ShortcutRecordingMode,
+        double_tap_shortcut_action, primary_shortcut_action, primary_shortcut_context,
+        should_unregister_cancel_hotkeys, DoubleTapShortcutAction, PrimaryShortcutAction,
+        PrimaryShortcutContext, ShortcutRecordingMode,
     };
     use crate::shortcut::{ShortcutProfile, ShortcutState};
     use crate::state::app_state::AppState;
+    use std::time::Duration;
 
     #[test]
     fn primary_shortcut_ignores_trigger_during_capture() {
@@ -254,6 +297,99 @@ mod tests {
         assert_eq!(
             primary_shortcut_action(recording_context, ShortcutState::Released),
             PrimaryShortcutAction::Ignore
+        );
+    }
+
+    #[test]
+    fn primary_shortcut_double_tap_mode_does_not_trigger_without_second_tap() {
+        let context = PrimaryShortcutContext {
+            capture_active: false,
+            is_recording: false,
+            trigger_mode: ShortcutRecordingMode::DoubleTap,
+        };
+
+        assert_eq!(
+            primary_shortcut_action(context, ShortcutState::Pressed),
+            PrimaryShortcutAction::Ignore
+        );
+        assert_eq!(
+            double_tap_shortcut_action(
+                context,
+                ShortcutState::Pressed,
+                "dictate",
+                None,
+                None,
+                Duration::from_millis(500),
+            ),
+            DoubleTapShortcutAction::ArmFirstTap
+        );
+    }
+
+    #[test]
+    fn double_tap_shortcut_triggers_on_second_matching_press_within_window() {
+        let idle_context = PrimaryShortcutContext {
+            capture_active: false,
+            is_recording: false,
+            trigger_mode: ShortcutRecordingMode::DoubleTap,
+        };
+        let recording_context = PrimaryShortcutContext {
+            is_recording: true,
+            ..idle_context
+        };
+
+        assert_eq!(
+            double_tap_shortcut_action(
+                idle_context,
+                ShortcutState::Pressed,
+                "dictate",
+                Some("dictate"),
+                Some(Duration::from_millis(200)),
+                Duration::from_millis(500),
+            ),
+            DoubleTapShortcutAction::StartRecording
+        );
+        assert_eq!(
+            double_tap_shortcut_action(
+                recording_context,
+                ShortcutState::Pressed,
+                "dictate",
+                Some("dictate"),
+                Some(Duration::from_millis(200)),
+                Duration::from_millis(500),
+            ),
+            DoubleTapShortcutAction::StopRecording
+        );
+    }
+
+    #[test]
+    fn double_tap_shortcut_rearms_on_timeout_or_different_profile() {
+        let context = PrimaryShortcutContext {
+            capture_active: false,
+            is_recording: false,
+            trigger_mode: ShortcutRecordingMode::DoubleTap,
+        };
+
+        assert_eq!(
+            double_tap_shortcut_action(
+                context,
+                ShortcutState::Pressed,
+                "dictate",
+                Some("dictate"),
+                Some(Duration::from_millis(501)),
+                Duration::from_millis(500),
+            ),
+            DoubleTapShortcutAction::ArmFirstTap
+        );
+        assert_eq!(
+            double_tap_shortcut_action(
+                context,
+                ShortcutState::Pressed,
+                "riff",
+                Some("dictate"),
+                Some(Duration::from_millis(200)),
+                Duration::from_millis(500),
+            ),
+            DoubleTapShortcutAction::ArmFirstTap
         );
     }
 

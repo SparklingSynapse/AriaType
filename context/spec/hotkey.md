@@ -28,6 +28,20 @@ Two profiles with default hotkeys:
 - Different modifiers (Cmd vs Opt) distinguish the two modes
 - Both use the same key (`/`) for muscle memory consistency
 
+## Trigger Modes
+
+Each shortcut profile chooses how its hotkey controls a recording session:
+
+| Mode | Start | Finish |
+|------|-------|--------|
+| `hold` | Press the profile hotkey | Release the profile hotkey, or press Enter |
+| `toggle` | Press the profile hotkey | Press the profile hotkey again, or press Enter |
+| `double_tap` | Press the same profile hotkey twice within the double-tap window | Double tap the profile hotkey again, or press Enter |
+
+Enter means **finish the recording and continue normal transcription/finalization**. ESC means **cancel the active recording/transcription and discard the result**. These are separate runtime paths and must not share the same handler.
+
+In hold mode, Enter must also work while the user is still holding the shortcut modifiers, so the runtime registers both `Enter` and `<active modifiers>+Enter` as finish hotkeys for the active session.
+
 ## Valid Hotkey Combinations
 
 | Pattern | Valid | Reason |

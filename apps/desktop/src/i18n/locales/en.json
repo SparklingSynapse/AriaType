@@ -111,6 +111,7 @@
   "hotkey.recording.modeTitle": "Recording Mode",
   "hotkey.recording.modeHold": "Hold",
   "hotkey.recording.modeToggle": "Toggle",
+  "hotkey.recording.modeDoubleTap": "Double Tap",
   "hotkey.registrationFailed": "Hotkey already in use",
   "hotkey.conflictDictate": "Hotkey already used by Dictate profile",
   "hotkey.conflictRiff": "Hotkey already used by Riff profile",

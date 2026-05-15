@@ -136,6 +136,7 @@ struct ShortcutProfilesMap {
 ```rust
 struct ShortcutProfile {
     hotkey: String,
+    trigger_mode: ShortcutTriggerMode, // hold | toggle | double_tap
     action: ShortcutAction,
 }
 ```

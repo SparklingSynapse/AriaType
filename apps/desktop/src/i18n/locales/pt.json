@@ -277,6 +277,7 @@
   "hotkey.recording.modeTitle": "Modo de gravação",
   "hotkey.recording.modeHold": "Segurar",
   "hotkey.recording.modeToggle": "Alternar",
+  "hotkey.recording.modeDoubleTap": "Toque duplo",
   "hotkey.registrationFailed": "Tecla de atalho já em uso",
   "hotkey.conflictDictate": "Tecla de atalho já usada pelo perfil Dictate",
   "hotkey.conflictRiff": "Tecla de atalho já usada pelo perfil Riff",

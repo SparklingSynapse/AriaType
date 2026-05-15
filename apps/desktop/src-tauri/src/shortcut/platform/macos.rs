@@ -899,6 +899,7 @@ mod tests {
         let snapshot = crate::shortcut::matcher::MatcherSnapshot {
             profiles,
             cancel: Vec::new(),
+            end: Vec::new(),
             capture_active: false,
         };
         let mut fn_block_state = FnBlockState::default();
