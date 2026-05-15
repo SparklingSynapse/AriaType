@@ -77,20 +77,28 @@ fn test_all_models_available() {
 fn test_templates_system() {
     // Test that all templates are accessible
     let templates = get_all_templates();
-    assert!(templates.len() >= 4);
+    assert!(templates.len() >= 6);
 
     // Test specific templates
     let filler = get_template_by_id("filler");
     assert!(filler.is_some());
-    assert_eq!(filler.unwrap().name, "Remove Fillers");
+    assert_eq!(filler.unwrap().name, "Clean Dictation");
+
+    let chat = get_template_by_id("chat");
+    assert!(chat.is_some());
+    assert_eq!(chat.unwrap().name, "Chat Reply");
 
     let formal = get_template_by_id("formal");
     assert!(formal.is_some());
-    assert_eq!(formal.unwrap().name, "Formal Style");
+    assert_eq!(formal.unwrap().name, "Professional Message");
 
     let concise = get_template_by_id("concise");
     assert!(concise.is_some());
     assert_eq!(concise.unwrap().name, "Make Concise");
+
+    let document = get_template_by_id("document");
+    assert!(document.is_some());
+    assert_eq!(document.unwrap().name, "Structured Notes");
 
     let agent = get_template_by_id("agent");
     assert!(agent.is_some());

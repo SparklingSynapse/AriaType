@@ -33,6 +33,15 @@ interface TemplateSelectorProps {
   onTemplatesChange: () => void;
 }
 
+const BUILT_IN_TEMPLATE_KEY_MAP: Record<string, string> = {
+  filler: "model.polish.templateFiller",
+  chat: "model.polish.templateChat",
+  formal: "model.polish.templateFormal",
+  concise: "model.polish.templateConcise",
+  document: "model.polish.templateDocument",
+  agent: "model.polish.templateAgent",
+};
+
 export function TemplateSelector({
   selectedTemplate,
   customTemplates,
@@ -80,23 +89,16 @@ export function TemplateSelector({
     click,
     dismiss,
     role,
-]);
+  ]);
 
-const BUILT_IN_TEMPLATE_KEY_MAP: Record<string, string> = {
-  filler: "model.polish.templateFiller",
-  formal: "model.polish.templateFormal",
-  concise: "model.polish.templateConcise",
-  agent: "model.polish.templateAgent",
-};
+  const getTemplateName = (id: string) => {
+    const i18nKey = BUILT_IN_TEMPLATE_KEY_MAP[id];
+    if (i18nKey) return t(i18nKey);
 
-const getTemplateName = (id: string) => {
-  const i18nKey = BUILT_IN_TEMPLATE_KEY_MAP[id];
-  if (i18nKey) return t(i18nKey);
+    const custom = customTemplates.find((t) => t.id === id);
+    if (custom) return custom.name;
 
-  const custom = customTemplates.find((t) => t.id === id);
-  if (custom) return custom.name;
-
-  return id;
+    return id;
   };
 
   const handleDelete = async (template: CustomPolishTemplate, e: React.MouseEvent) => {

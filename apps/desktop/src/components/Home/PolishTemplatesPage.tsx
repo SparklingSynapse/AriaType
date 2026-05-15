@@ -15,8 +15,10 @@ import type { CustomPolishTemplate, PolishTemplate } from "@/lib/tauri";
 
 const BUILT_IN_TEMPLATE_KEY_MAP: Record<string, { name: string; description: string }> = {
   filler: { name: "model.polish.templateFiller", description: "model.polish.templateFillerDesc" },
+  chat: { name: "model.polish.templateChat", description: "model.polish.templateChatDesc" },
   formal: { name: "model.polish.templateFormal", description: "model.polish.templateFormalDesc" },
   concise: { name: "model.polish.templateConcise", description: "model.polish.templateConciseDesc" },
+  document: { name: "model.polish.templateDocument", description: "model.polish.templateDocumentDesc" },
   agent: { name: "model.polish.templateAgent", description: "model.polish.templateAgentDesc" },
 };
 
