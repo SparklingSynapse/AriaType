@@ -7,7 +7,11 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info};
 
-const CLOUD_POLISH_TIMEOUT: Duration = Duration::from_secs(5);
+const CLOUD_POLISH_BASE_TIMEOUT: Duration = Duration::from_secs(5);
+const CLOUD_POLISH_MAX_TIMEOUT: Duration = Duration::from_secs(30);
+const CLOUD_POLISH_BASE_TIMEOUT_BYTES: usize = 1_000;
+const CLOUD_POLISH_TIMEOUT_STEP_BYTES: usize = 1_000;
+const CLOUD_POLISH_TIMEOUT_STEP: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct CloudProviderConfig {
@@ -40,26 +44,41 @@ impl CloudPolishEngine {
         Self {
             config,
             client: Client::builder()
-                .timeout(CLOUD_POLISH_TIMEOUT)
                 .build()
                 .expect("cloud polish reqwest client should build"),
         }
     }
 
-    fn format_request_error(&self, stage: &str, url: &str, error: reqwest::Error) -> String {
+    fn request_timeout(system_prompt: &str, user_message: &str) -> Duration {
+        let request_bytes = system_prompt.len().saturating_add(user_message.len());
+        let extra_bytes = request_bytes.saturating_sub(CLOUD_POLISH_BASE_TIMEOUT_BYTES);
+        let extra_steps = extra_bytes.div_ceil(CLOUD_POLISH_TIMEOUT_STEP_BYTES);
+        let timeout = CLOUD_POLISH_BASE_TIMEOUT
+            + Duration::from_secs(CLOUD_POLISH_TIMEOUT_STEP.as_secs() * extra_steps as u64);
+
+        timeout.min(CLOUD_POLISH_MAX_TIMEOUT)
+    }
+
+    fn format_request_error(
+        &self,
+        stage: &str,
+        url: &str,
+        error: reqwest::Error,
+        timeout: Duration,
+    ) -> String {
         if error.is_timeout() {
             error!(
                 provider = %self.config.provider_type,
                 model = %self.config.model,
                 url = %url,
-                timeout_secs = CLOUD_POLISH_TIMEOUT.as_secs(),
+                timeout_secs = timeout.as_secs(),
                 stage = stage,
                 error = %error,
                 "cloud_polish_request_timeout"
             );
             format!(
                 "Cloud polish request timed out after {}s during {} (provider={}, model={}, url={})",
-                CLOUD_POLISH_TIMEOUT.as_secs(),
+                timeout.as_secs(),
                 stage,
                 self.config.provider_type,
                 self.config.model,
@@ -174,6 +193,7 @@ impl CloudPolishEngine {
         &self,
         system_prompt: &str,
         user_message: &str,
+        timeout: Duration,
     ) -> Result<String, String> {
         let url = self.get_api_url();
         let (header_name, header_value) = self.get_auth_header();
@@ -227,7 +247,7 @@ impl CloudPolishEngine {
         debug!(
             url = %url,
             model = %self.config.model,
-            timeout_secs = CLOUD_POLISH_TIMEOUT.as_secs(),
+            timeout_secs = timeout.as_secs(),
             "cloud_polish_anthropic_request_start"
         );
 
@@ -243,16 +263,17 @@ impl CloudPolishEngine {
             .header("anthropic-version", "2023-06-01")
             .header("Content-Type", "application/json")
             .header("User-Agent", self.get_user_agent())
+            .timeout(timeout)
             .json(&body)
             .send()
             .await
-            .map_err(|e| self.format_request_error("HTTP request", &url, e))?;
+            .map_err(|e| self.format_request_error("HTTP request", &url, e, timeout))?;
 
         let status = response.status();
         let response_text = response
             .text()
             .await
-            .map_err(|e| self.format_request_error("HTTP response read", &url, e))?;
+            .map_err(|e| self.format_request_error("HTTP response read", &url, e, timeout))?;
 
         if !status.is_success() {
             error!(status = %status, body = %response_text, "cloud_polish_api_error");
@@ -287,6 +308,7 @@ impl CloudPolishEngine {
         &self,
         system_prompt: &str,
         user_message: &str,
+        timeout: Duration,
     ) -> Result<String, String> {
         let url = self.get_api_url();
         let (header_name, header_value) = self.get_auth_header();
@@ -314,7 +336,7 @@ impl CloudPolishEngine {
             url = %url,
             model = %self.config.model,
             enable_thinking = self.config.enable_thinking,
-            timeout_secs = CLOUD_POLISH_TIMEOUT.as_secs(),
+            timeout_secs = timeout.as_secs(),
             "cloud_polish_openai_request_start"
         );
 
@@ -329,16 +351,17 @@ impl CloudPolishEngine {
             .header(&header_name, &header_value)
             .header("Content-Type", "application/json")
             .header("User-Agent", self.get_user_agent())
+            .timeout(timeout)
             .json(&body)
             .send()
             .await
-            .map_err(|e| self.format_request_error("HTTP request", &url, e))?;
+            .map_err(|e| self.format_request_error("HTTP request", &url, e, timeout))?;
 
         let status = response.status();
         let response_text = response
             .text()
             .await
-            .map_err(|e| self.format_request_error("HTTP response read", &url, e))?;
+            .map_err(|e| self.format_request_error("HTTP response read", &url, e, timeout))?;
 
         if !status.is_success() {
             error!(status = %status, body = %response_text, "cloud_polish_api_error");
@@ -395,13 +418,14 @@ impl PolishEngine for CloudPolishEngine {
         let input_chars = input_text.len();
 
         let system_prompt = Self::build_system_prompt(&request.system_context);
+        let timeout = Self::request_timeout(&system_prompt, &input_text);
 
         info!(
             provider = %self.config.provider_type,
             model = %self.config.model,
             base_url = %self.config.base_url,
             enable_thinking = self.config.enable_thinking,
-            timeout_secs = CLOUD_POLISH_TIMEOUT.as_secs(),
+            timeout_secs = timeout.as_secs(),
             system_prompt = %system_prompt,
             input_text = %input_text,
             input_len = input_chars,
@@ -409,9 +433,18 @@ impl PolishEngine for CloudPolishEngine {
         );
 
         let result = match self.config.provider_type.as_str() {
-            "anthropic" => self.call_anthropic_api(&system_prompt, &input_text).await?,
-            "openai" => self.call_openai_api(&system_prompt, &input_text).await?,
-            _ => self.call_openai_api(&system_prompt, &input_text).await?,
+            "anthropic" => {
+                self.call_anthropic_api(&system_prompt, &input_text, timeout)
+                    .await?
+            }
+            "openai" => {
+                self.call_openai_api(&system_prompt, &input_text, timeout)
+                    .await?
+            }
+            _ => {
+                self.call_openai_api(&system_prompt, &input_text, timeout)
+                    .await?
+            }
         };
 
         let total_ms = t0.elapsed().as_millis() as u64;
@@ -471,6 +504,24 @@ mod tests {
         assert!(task_index < reference_index);
         assert!(prompt.contains("not user rules"));
         assert!(!prompt.contains("TASK RULES"));
+    }
+
+    #[test]
+    fn test_cloud_polish_timeout_stays_fast_for_short_requests() {
+        let timeout = CloudPolishEngine::request_timeout("short rules", "short text");
+
+        assert_eq!(timeout, CLOUD_POLISH_BASE_TIMEOUT);
+    }
+
+    #[test]
+    fn test_cloud_polish_timeout_expands_for_long_requests() {
+        let system_prompt = "rules".repeat(300);
+        let user_message = "text".repeat(700);
+
+        let timeout = CloudPolishEngine::request_timeout(&system_prompt, &user_message);
+
+        assert!(timeout > CLOUD_POLISH_BASE_TIMEOUT);
+        assert!(timeout <= CLOUD_POLISH_MAX_TIMEOUT);
     }
 
     #[test]

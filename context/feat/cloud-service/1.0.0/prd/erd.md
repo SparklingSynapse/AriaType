@@ -51,7 +51,7 @@ Cloud Service provides cloud-based speech-to-text (STT) and text polishing (Poli
 - Base URL
 - Model name
 - Enable Thinking toggle
-- Runtime behavior: every cloud polish request must use a shared 5-second timeout across providers
+- Runtime behavior: short cloud polish requests fail fast after 5 seconds; long requests may use an adaptive bounded timeout up to 30 seconds across providers
 
 ## i18n Keys
 
@@ -81,7 +81,7 @@ Added to all 10 supported locales: en, zh, de, es, fr, it, ja, ko, pt, ru
 4. **i18n**: All tab labels have translations in all 10 locales
 5. **Build**: Frontend builds successfully
 6. **Tests**: All existing tests pass (312 tests)
-7. **Timeout Safety**: Cloud Polish requests fail fast after 5 seconds instead of hanging indefinitely
+7. **Timeout Safety**: Short Cloud Polish requests fail fast after 5 seconds; long requests have a bounded adaptive timeout and never hang indefinitely
 
 ## Test Coverage
 
