@@ -32,6 +32,7 @@
     "test:e2e": "pnpm --filter @ariatype/desktop run test:e2e"
   },
   "simple-git-hooks": {
+    "commit-msg": "node scripts/check-commit-msg.mjs \"$1\"",
     "pre-commit": "./scripts/pre-commit-hook.sh",
     "post-commit": "./scripts/post-commit-hook.sh"
   },

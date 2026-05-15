@@ -36,6 +36,21 @@ docs: add v0.3 release notes
 ci: add macOS binary pre-signing for smoother install
 ```
 
+### Local Enforcement
+
+`simple-git-hooks` runs `scripts/check-commit-msg.mjs` as the
+`commit-msg` hook. The hook validates the Conventional Commit header,
+English-only ASCII text, body wrapping, allowed scopes, and contiguous
+Git trailer blocks.
+
+Historical one-line commits remain valid:
+
+```
+chore: release v0.5.2
+fix(desktop): context aware visual terms
+chore(website): update CNAME files and rebuild static assets
+```
+
 ---
 
 ## 2. Type Taxonomy
@@ -218,6 +233,26 @@ refactor(desktop): faster model loading on startup
 BREAKING CHANGE: Custom model paths in settings are now
 resolved relative to the app directory, not the home directory.
 Users with custom paths may need to update their config.
+```
+
+### Structured Trailers
+
+Automation and agent-authored commits may add native Git trailers for
+decision context. Keep trailers as one contiguous block at the end of
+the message, with no blank lines between trailer lines.
+
+```
+feat(desktop): add voice-writing polish templates
+
+Polish templates now cover common dictation outcomes while preserving
+the existing polish pipeline boundary.
+
+Constraint: Template scope stays within the existing polish pipeline
+Rejected: Mirror Typeless actions directly | selected text is separate
+Confidence: high
+Scope-risk: moderate
+Tested: cargo test templates
+Not-tested: Full desktop e2e suite
 ```
 
 ---
