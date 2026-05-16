@@ -112,10 +112,46 @@ pub struct AppSettings {
     /// Controls the visual scale of the pill indicator via CSS font-size scaling.
     #[serde(default = "default_pill_size")]
     pub pill_size: u8,
+    /// Pill window background color as a #RRGGBB hex value.
+    #[serde(default = "default_pill_background_color")]
+    pub pill_background_color: String,
+    /// Pill window background opacity from 0.2 to 1.0.
+    #[serde(default = "default_pill_background_opacity")]
+    pub pill_background_opacity: f32,
 }
 
 fn default_pill_size() -> u8 {
     2
+}
+
+fn default_pill_background_color() -> String {
+    "#1d1d1d".to_string()
+}
+
+fn default_pill_background_opacity() -> f32 {
+    1.0
+}
+
+fn normalize_pill_background_color(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let bytes = trimmed.as_bytes();
+    if bytes.len() != 7 || bytes.first() != Some(&b'#') {
+        return None;
+    }
+
+    if bytes[1..].iter().all(u8::is_ascii_hexdigit) {
+        Some(trimmed.to_ascii_lowercase())
+    } else {
+        None
+    }
+}
+
+fn normalize_pill_background_opacity(value: f64) -> Option<f32> {
+    if !value.is_finite() {
+        return None;
+    }
+
+    Some(value.clamp(0.2, 1.0) as f32)
 }
 
 impl Default for AppSettings {
@@ -156,6 +192,8 @@ impl Default for AppSettings {
             polish_custom_templates: Vec::new(),
             window_context_enabled: true,
             pill_size: 2,
+            pill_background_color: default_pill_background_color(),
+            pill_background_opacity: default_pill_background_opacity(),
         }
     }
 }
@@ -887,6 +925,20 @@ pub fn update_settings(
                     let size = v as u8;
                     if (1..=5).contains(&size) {
                         settings.pill_size = size;
+                    }
+                }
+            }
+            "pill_background_color" => {
+                if let Some(v) = value.as_str() {
+                    if let Some(color) = normalize_pill_background_color(v) {
+                        settings.pill_background_color = color;
+                    }
+                }
+            }
+            "pill_background_opacity" => {
+                if let Some(v) = value.as_f64() {
+                    if let Some(opacity) = normalize_pill_background_opacity(v) {
+                        settings.pill_background_opacity = opacity;
                     }
                 }
             }

@@ -46,7 +46,7 @@ impl MockWebSocket {
         }
     }
 
-    pub fn with_response(mut self, response: impl Into<String>) -> Self {
+    pub fn with_response(self, response: impl Into<String>) -> Self {
         self.responses
             .lock()
             .unwrap()
@@ -54,7 +54,7 @@ impl MockWebSocket {
         self
     }
 
-    pub fn with_responses(mut self, responses: Vec<String>) -> Self {
+    pub fn with_responses(self, responses: Vec<String>) -> Self {
         let mut queue = self.responses.lock().unwrap();
         for r in responses {
             queue.push_back(Message::Text(r.into()));
@@ -63,7 +63,7 @@ impl MockWebSocket {
         self
     }
 
-    pub fn with_json_response<T: serde::Serialize>(mut self, data: &T) -> Self {
+    pub fn with_json_response<T: serde::Serialize>(self, data: &T) -> Self {
         let json = serde_json::to_string(data).unwrap();
         self.responses
             .lock()
@@ -72,7 +72,7 @@ impl MockWebSocket {
         self
     }
 
-    pub fn with_error(mut self, error: MockWebSocketError) -> Self {
+    pub fn with_error(self, error: MockWebSocketError) -> Self {
         self.errors.lock().unwrap().push_back(error);
         self
     }
@@ -183,14 +183,11 @@ impl Default for MockWebSocketBuilder {
 impl Sink<Message> for MockWebSocket {
     type Error = MockWebSocketError;
 
-    fn poll_ready(
-        mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(mut self: Pin<&mut Self>, msg: Message) -> Result<(), Self::Error> {
+    fn start_send(self: Pin<&mut Self>, msg: Message) -> Result<(), Self::Error> {
         if *self.is_closed.lock().unwrap() {
             return Err(MockWebSocketError::Closed);
         }
@@ -204,20 +201,14 @@ impl Sink<Message> for MockWebSocket {
         Ok(())
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if *self.is_closed.lock().unwrap() {
             return Poll::Ready(Err(MockWebSocketError::Closed));
         }
         Poll::Ready(Ok(()))
     }
 
-    fn poll_close(
-        mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         *self.is_closed.lock().unwrap() = true;
         Poll::Ready(Ok(()))
     }
@@ -226,7 +217,7 @@ impl Sink<Message> for MockWebSocket {
 impl Stream for MockWebSocket {
     type Item = Result<Message, MockWebSocketError>;
 
-    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if *self.is_closed.lock().unwrap() {
             return Poll::Ready(None);
         }
@@ -353,7 +344,7 @@ impl MockWebSocketServer {
         }
     }
 
-    pub fn with_response(mut self, response: impl Into<String>) -> Self {
+    pub fn with_response(self, response: impl Into<String>) -> Self {
         self.responses.lock().unwrap().push_back(response.into());
         self
     }

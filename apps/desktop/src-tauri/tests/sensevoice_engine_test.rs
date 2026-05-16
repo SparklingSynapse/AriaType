@@ -7,30 +7,6 @@ use ariatype_lib::stt_engine::{traits::TranscriptionRequest, EngineType, Unified
 use hound::{WavSpec, WavWriter};
 use std::io::Cursor;
 
-fn create_test_wav(sample_rate: u32, channels: u16, duration_secs: f32) -> Vec<u8> {
-    let samples_per_channel = (sample_rate as f32 * duration_secs) as usize;
-    let total_samples = samples_per_channel * channels as usize;
-
-    let spec = WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut cursor = Cursor::new(Vec::new());
-    {
-        let mut writer = WavWriter::new(&mut cursor, spec).unwrap();
-        for i in 0..total_samples {
-            let t = i as f32 / sample_rate as f32;
-            let sample = (16000.0 * (2.0 * std::f32::consts::PI * 440.0 * t).sin()) as i16;
-            writer.write_sample(sample).unwrap();
-        }
-        writer.finalize().unwrap();
-    }
-    cursor.into_inner()
-}
-
 fn create_speech_like_wav(sample_rate: u32, channels: u16, duration_secs: f32) -> Vec<u8> {
     let samples_per_channel = (sample_rate as f32 * duration_secs) as usize;
     let total_samples = samples_per_channel * channels as usize;

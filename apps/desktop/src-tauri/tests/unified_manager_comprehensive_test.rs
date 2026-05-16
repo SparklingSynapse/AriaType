@@ -464,7 +464,7 @@ fn test_multiple_managers_same_directory() {
 #[test]
 fn test_stt_engine_type_switching() {
     let test_dir = create_test_dir("engine_switching");
-    let manager = UnifiedEngineManager::new(test_dir.clone());
+    let _manager = UnifiedEngineManager::new(test_dir.clone());
 
     assert_eq!(
         UnifiedEngineManager::get_engine_by_model_name("whisper-base"),

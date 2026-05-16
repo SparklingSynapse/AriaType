@@ -6,7 +6,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
-- Support deliberate recording finish triggers (4976895)
+- Support deliberate recording finish triggers (a80c22c)
 - Add voice-writing polish templates (9975217)
 
 ### Bug Fixes

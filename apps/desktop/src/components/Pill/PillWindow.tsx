@@ -20,12 +20,52 @@ const PILL_SIZE_SCALE: Record<number, number> = {
   5: 1.375,  // 22px / 16px
 };
 
+const DEFAULT_PILL_BACKGROUND_COLOR = "#1d1d1d";
+const DEFAULT_PILL_BACKGROUND_OPACITY = 1;
+
+function normalizePillBackgroundColor(color: string | undefined): string {
+  if (!color || !/^#[0-9a-f]{6}$/i.test(color)) {
+    return DEFAULT_PILL_BACKGROUND_COLOR;
+  }
+
+  return color.toLowerCase();
+}
+
+function isLightHexColor(color: string): boolean {
+  const normalized = normalizePillBackgroundColor(color);
+  const red = Number.parseInt(normalized.slice(1, 3), 16);
+  const green = Number.parseInt(normalized.slice(3, 5), 16);
+  const blue = Number.parseInt(normalized.slice(5, 7), 16);
+  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+
+  return luminance > 0.62;
+}
+
+function normalizePillBackgroundOpacity(opacity: number | undefined): number {
+  if (typeof opacity !== "number" || !Number.isFinite(opacity)) {
+    return DEFAULT_PILL_BACKGROUND_OPACITY;
+  }
+
+  return Math.min(1, Math.max(0.2, opacity));
+}
+
+function hexToRgba(color: string, opacity: number): string {
+  const normalized = normalizePillBackgroundColor(color);
+  const red = Number.parseInt(normalized.slice(1, 3), 16);
+  const green = Number.parseInt(normalized.slice(3, 5), 16);
+  const blue = Number.parseInt(normalized.slice(5, 7), 16);
+
+  return `rgba(${red}, ${green}, ${blue}, ${normalizePillBackgroundOpacity(opacity)})`;
+}
+
 export function PillWindow() {
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
   const [hasAudioActivity, setHasAudioActivity] = useState(false);
   const [indicatorMode, setIndicatorMode] = useState("always");
   const [pillSize, setPillSize] = useState(2);
+  const [pillBackgroundColor, setPillBackgroundColor] = useState(DEFAULT_PILL_BACKGROUND_COLOR);
+  const [pillBackgroundOpacity, setPillBackgroundOpacity] = useState(DEFAULT_PILL_BACKGROUND_OPACITY);
   const latestTaskId = useRef<number>(0);
 
   // Apply font-size to document root for rem-based scaling
@@ -41,12 +81,16 @@ export function PillWindow() {
     settingsCommands.getSettings().then((s) => {
       setIndicatorMode(s.pill_indicator_mode ?? "always");
       setPillSize(s.pill_size ?? 2);
+      setPillBackgroundColor(normalizePillBackgroundColor(s.pill_background_color));
+      setPillBackgroundOpacity(normalizePillBackgroundOpacity(s.pill_background_opacity));
     });
 
     let unlisten: (() => void) | undefined;
     events.onSettingsChanged((s: AppSettings) => {
       setIndicatorMode(s.pill_indicator_mode ?? "always");
       setPillSize(s.pill_size ?? 2);
+      setPillBackgroundColor(normalizePillBackgroundColor(s.pill_background_color));
+      setPillBackgroundOpacity(normalizePillBackgroundOpacity(s.pill_background_opacity));
     }).then((fn) => { unlisten = fn; });
 
     return () => { unlisten?.(); };
@@ -121,6 +165,9 @@ export function PillWindow() {
   }, [indicatorMode]);
 
   const beamActive = status === "transcribing" || status === "processing" || status === "polishing";
+  const isLightBackground = isLightHexColor(pillBackgroundColor);
+  const idleDotColor = isLightBackground ? "rgba(39,39,42,0.72)" : "rgba(255,255,255,0.7)";
+  const pillBackground = hexToRgba(pillBackgroundColor, pillBackgroundOpacity);
 
   return (
     <div
@@ -152,6 +199,7 @@ export function PillWindow() {
               <div
                 className="relative flex items-center justify-center rounded-full bg-[#1d1d1d] shadow-[inset_0_0_0_1px_#2c2f3685,inset_0_0_50px_#ffffff05]"
                 style={{
+                  backgroundColor: pillBackground,
                   paddingLeft: "0.75rem",
                   paddingRight: "0.75rem",
                   paddingTop: "0.3125rem",
@@ -159,8 +207,13 @@ export function PillWindow() {
                   WebkitAppRegion: "no-drag",
                 } as React.CSSProperties}
               >
-                <AudioDots status={status} audioLevel={audioLevel} hasAudioActivity={hasAudioActivity} />
-                <SettingsButton />
+                <AudioDots
+                  status={status}
+                  audioLevel={audioLevel}
+                  hasAudioActivity={hasAudioActivity}
+                  idleColor={idleDotColor}
+                />
+                <SettingsButton isLightBackground={isLightBackground} />
               </div>
             </BorderBeam>
             {/* TODO: Re-enable tooltip for future use */}

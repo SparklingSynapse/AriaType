@@ -37,37 +37,6 @@ mod tests {
         cursor.into_inner()
     }
 
-    fn resample_to_16khz_mono(
-        samples_i16: &[i16],
-        input_sample_rate: u32,
-        input_channels: u16,
-    ) -> Vec<i16> {
-        let mut audio_f32: Vec<f32> = samples_i16.iter().map(|&s| s as f32 / 32768.0).collect();
-
-        if input_channels == 2 {
-            let mono: Vec<f32> = audio_f32
-                .chunks(2)
-                .map(|stereo| (stereo[0] + stereo.get(1).copied().unwrap_or(0.0)) / 2.0)
-                .collect();
-            audio_f32 = mono;
-        }
-
-        if input_sample_rate != 16000 {
-            let resampled =
-                ariatype_lib::audio::resampler::resample_to_16khz(&audio_f32, input_sample_rate)
-                    .unwrap();
-            resampled
-                .iter()
-                .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)
-                .collect()
-        } else {
-            audio_f32
-                .iter()
-                .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)
-                .collect()
-        }
-    }
-
     #[test]
     fn test_streaming_client_creation() {
         let config = CloudSttConfig {
@@ -352,6 +321,11 @@ mod tests {
             if received_results == 0 {
                 eprintln!("[Integration Test] No results received");
                 // Don't panic here since the test might just be slow or the service might not return partial results immediately
+            } else if final_result_received {
+                println!(
+                    "[Integration Test] Received {} partial results including the final result",
+                    received_results
+                );
             } else {
                 println!("[Integration Test] Received {} partial results", received_results);
             }

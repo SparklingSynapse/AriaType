@@ -95,12 +95,6 @@ fn write_temp_wav(data: &[u8]) -> PathBuf {
     path
 }
 
-fn cleanup_temp_files(paths: &[PathBuf]) {
-    for path in paths {
-        let _ = std::fs::remove_file(path);
-    }
-}
-
 // ==================== WAV Format Tests ====================
 
 #[test]
@@ -351,11 +345,6 @@ mod mock_stt {
             }
         }
 
-        pub fn with_latency(mut self, latency_ms: u64) -> Self {
-            self.latency_ms = latency_ms;
-            self
-        }
-
         pub fn with_failure(mut self) -> Self {
             self.should_fail = true;
             self
@@ -399,11 +388,6 @@ mod mock_polish {
                 latency_ms: 50,
                 should_fail: false,
             }
-        }
-
-        pub fn with_latency(mut self, latency_ms: u64) -> Self {
-            self.latency_ms = latency_ms;
-            self
         }
 
         pub fn with_failure(mut self) -> Self {

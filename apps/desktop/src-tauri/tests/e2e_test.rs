@@ -81,8 +81,6 @@ mod edge_case_tests {
 
     #[test]
     fn test_e2e_audio_resampling() {
-        use std::io::Cursor;
-
         // Create test audio at 44.1kHz
         let samples: Vec<f32> = (0..44100)
             .map(|i| {
@@ -124,11 +122,6 @@ mod mock_stt {
                 latency_ms: 100,
                 should_fail: false,
             }
-        }
-
-        pub fn with_latency(mut self, latency_ms: u64) -> Self {
-            self.latency_ms = latency_ms;
-            self
         }
 
         pub fn with_failure(mut self) -> Self {
@@ -174,11 +167,6 @@ mod mock_polish {
                 latency_ms: 50,
                 should_fail: false,
             }
-        }
-
-        pub fn with_latency(mut self, latency_ms: u64) -> Self {
-            self.latency_ms = latency_ms;
-            self
         }
 
         pub fn with_failure(mut self) -> Self {

@@ -1,5 +1,19 @@
 import { useEffect, useState } from "react";
 import {
+  autoUpdate,
+  flip,
+  FloatingFocusManager,
+  FloatingPortal,
+  offset,
+  shift,
+  useClick,
+  useDismiss,
+  useFloating,
+  useInteractions,
+  useRole,
+} from "@floating-ui/react";
+import { HexColorInput, HexColorPicker } from "react-colorful";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -27,6 +41,35 @@ function getLanguageLabel(code: string): string {
   return (langCodes as Record<string, string>)[code] || code;
 }
 
+const DEFAULT_PILL_BACKGROUND_COLOR = "#1d1d1d";
+const DEFAULT_PILL_BACKGROUND_OPACITY = 1;
+
+const PILL_BACKGROUND_COLOR_PRESETS = [
+  { value: "#1d1d1d", label: "dark" },
+  { value: "#26324a", label: "slate" },
+  { value: "#2f3a32", label: "forest" },
+  { value: "#472b39", label: "plum" },
+  { value: "#4a3728", label: "copper" },
+] as const;
+
+type PillBackgroundColorLabel = (typeof PILL_BACKGROUND_COLOR_PRESETS)[number]["label"];
+
+function normalizePillBackgroundColor(color: string | undefined): string {
+  if (!color || !/^#[0-9a-f]{6}$/i.test(color)) {
+    return DEFAULT_PILL_BACKGROUND_COLOR;
+  }
+
+  return color.toLowerCase();
+}
+
+function normalizePillBackgroundOpacity(opacity: number | undefined): number {
+  if (typeof opacity !== "number" || !Number.isFinite(opacity)) {
+    return DEFAULT_PILL_BACKGROUND_OPACITY;
+  }
+
+  return Math.min(1, Math.max(0.2, opacity));
+}
+
 export function GeneralSettings() {
   const { t, i18n } = useTranslation();
   const { settings, updateSetting } = useSettingsContext();
@@ -34,6 +77,28 @@ export function GeneralSettings() {
   const [isMacOS, setIsMacOS] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "transcription">("general");
   const [availableSubdomains, setAvailableSubdomains] = useState<string[]>([]);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+
+  const { refs: colorPickerRefs, floatingStyles: colorPickerFloatingStyles, context: colorPickerContext } = useFloating({
+    open: colorPickerOpen,
+    onOpenChange: setColorPickerOpen,
+    placement: "bottom-start",
+    whileElementsMounted: autoUpdate,
+    middleware: [
+      offset(8),
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+    ],
+  });
+
+  const colorPickerClick = useClick(colorPickerContext);
+  const colorPickerDismiss = useDismiss(colorPickerContext);
+  const colorPickerRole = useRole(colorPickerContext, { role: "dialog" });
+  const { getReferenceProps: getColorPickerReferenceProps, getFloatingProps: getColorPickerFloatingProps } = useInteractions([
+    colorPickerClick,
+    colorPickerDismiss,
+    colorPickerRole,
+  ]);
 
   // Helper functions with static i18n keys (for scanner detection)
   const getPillSizeLabel = (size: number): string => {
@@ -44,6 +109,16 @@ export function GeneralSettings() {
       case 4: return t("general.display.pillSize.large");
       case 5: return t("general.display.pillSize.xlarge");
       default: return t("general.display.pillSize.default");
+    }
+  };
+
+  const getPillBackgroundColorLabel = (label: PillBackgroundColorLabel): string => {
+    switch (label) {
+      case "dark": return t("general.display.pillBackgroundColor.dark");
+      case "slate": return t("general.display.pillBackgroundColor.slate");
+      case "forest": return t("general.display.pillBackgroundColor.forest");
+      case "plum": return t("general.display.pillBackgroundColor.plum");
+      case "copper": return t("general.display.pillBackgroundColor.copper");
     }
   };
 
@@ -113,6 +188,18 @@ export function GeneralSettings() {
   const handlePillSizeChange = async (value: number) => {
     analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "pill_size", value: String(value) });
     await updateSetting("pill_size", value);
+  };
+
+  const handlePillBackgroundColorChange = async (value: string) => {
+    const color = normalizePillBackgroundColor(value);
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "pill_background_color", value: color });
+    await updateSetting("pill_background_color", color);
+  };
+
+  const handlePillBackgroundOpacityChange = async (value: number) => {
+    const opacity = normalizePillBackgroundOpacity(value);
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "pill_background_opacity", value: String(opacity) });
+    await updateSetting("pill_background_opacity", opacity);
   };
 
   const handleAppLanguageChange = async (value: string) => {
@@ -194,6 +281,10 @@ export function GeneralSettings() {
   const handleGlossaryChange = async (value: string) => {
     await updateSetting("stt_engine_user_glossary", value);
   };
+
+  const pillBackgroundColor = normalizePillBackgroundColor(settings.pill_background_color);
+  const pillBackgroundOpacity = normalizePillBackgroundOpacity(settings.pill_background_opacity);
+  const pillBackgroundOpacityPercent = `${Math.round(pillBackgroundOpacity * 100)}%`;
 
   return (
     <SettingsPageLayout
@@ -335,6 +426,92 @@ export function GeneralSettings() {
                   />
                   <span className="text-xs text-muted-foreground">
                     {getPillSizeLabel(settings.pill_size ?? 2)}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>{t("general.display.pillBackgroundColor")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("general.display.pillBackgroundColorDesc")}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {PILL_BACKGROUND_COLOR_PRESETS.map((preset) => {
+                    const isSelected = pillBackgroundColor === preset.value;
+                    const label = getPillBackgroundColorLabel(preset.label);
+
+                    return (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        aria-label={label}
+                        title={label}
+                        onClick={() => handlePillBackgroundColorChange(preset.value)}
+                        className={`h-7 w-7 rounded-full border transition-all ${
+                          isSelected
+                            ? "border-foreground ring-2 ring-ring ring-offset-2 ring-offset-background"
+                            : "border-border hover:border-foreground/50"
+                        }`}
+                        style={{ backgroundColor: preset.value }}
+                      />
+                    );
+                  })}
+                  <button
+                    ref={colorPickerRefs.setReference}
+                    type="button"
+                    aria-label={t("general.display.pillBackgroundColor.custom")}
+                    title={t("general.display.pillBackgroundColor.custom")}
+                    className="relative block h-7 w-7 cursor-pointer overflow-hidden rounded-full border border-border transition-all hover:border-foreground/50 data-[state=open]:border-foreground data-[state=open]:ring-2 data-[state=open]:ring-ring data-[state=open]:ring-offset-2 data-[state=open]:ring-offset-background"
+                    style={{ backgroundColor: pillBackgroundColor }}
+                    data-state={colorPickerOpen ? "open" : "closed"}
+                    {...getColorPickerReferenceProps()}
+                  >
+                    <span className="absolute inset-1 rounded-full border border-background/80" />
+                  </button>
+                  {colorPickerOpen && (
+                    <FloatingPortal>
+                      <FloatingFocusManager context={colorPickerContext} modal={false}>
+                        <div
+                          ref={colorPickerRefs.setFloating}
+                          style={colorPickerFloatingStyles}
+                          className="z-[9999] w-56 rounded-2xl border border-border bg-card p-3 shadow-lg outline-none"
+                          {...getColorPickerFloatingProps()}
+                        >
+                          <HexColorPicker
+                            color={pillBackgroundColor}
+                            onChange={handlePillBackgroundColorChange}
+                            className="!h-36 !w-full"
+                          />
+                          <HexColorInput
+                            prefixed
+                            color={pillBackgroundColor}
+                            onChange={handlePillBackgroundColorChange}
+                            className="mt-3 h-9 w-full rounded-2xl border border-border bg-background px-3 py-2 text-sm font-mono text-foreground outline-none transition-colors focus-visible:border-primary"
+                          />
+                        </div>
+                      </FloatingFocusManager>
+                    </FloatingPortal>
+                  )}
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {pillBackgroundColor.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>{t("general.display.pillBackgroundOpacity")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("general.display.pillBackgroundOpacityDesc")}
+                </p>
+                <div className="flex items-center gap-3">
+                  <Slider
+                    min={0.2}
+                    max={1}
+                    step={0.05}
+                    value={pillBackgroundOpacity}
+                    onChange={(e) => handlePillBackgroundOpacityChange(Number(e.target.value))}
+                    className="w-24"
+                  />
+                  <span className="w-10 text-xs text-muted-foreground">
+                    {pillBackgroundOpacityPercent}
                   </span>
                 </div>
               </div>

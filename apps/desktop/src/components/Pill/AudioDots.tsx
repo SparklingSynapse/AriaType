@@ -5,6 +5,7 @@ interface AudioDotsProps {
   status: RecordingStatus;
   audioLevel: number;
   hasAudioActivity?: boolean;
+  idleColor?: string;
 }
 
 // Keep in sync with AUDIO_ACTIVITY_OFF_THRESHOLD in audio.rs
@@ -119,7 +120,7 @@ function dotTransition(i: number, isRecording: boolean) {
   }
 }
 
-export function AudioDots({ status, audioLevel, hasAudioActivity }: AudioDotsProps) {
+export function AudioDots({ status, audioLevel, hasAudioActivity, idleColor = "rgba(255,255,255,0.7)" }: AudioDotsProps) {
   const isRecording = status === "recording";
   const isSttRunning = status === "transcribing" || status === "processing";
   const isPolishing = status === "polishing";
@@ -167,8 +168,8 @@ export function AudioDots({ status, audioLevel, hasAudioActivity }: AudioDotsPro
                     : isRecording
                       ? hasAudio
                         ? "rgb(3, 227, 52)"
-                        : "rgba(255,255,255,0.7)"
-                      : "rgba(255,255,255,0.7)",
+                        : idleColor
+                      : idleColor,
               }}
               transition={
                 showAnimatedState

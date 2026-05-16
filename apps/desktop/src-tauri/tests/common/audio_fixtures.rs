@@ -6,7 +6,6 @@
 use hound::{WavReader, WavSpec, WavWriter};
 use std::io::Cursor;
 use std::path::PathBuf;
-use tempfile::tempdir;
 use uuid::Uuid;
 
 /// Create a sine wave WAV file as raw bytes
@@ -50,7 +49,7 @@ pub fn create_test_wav(sample_rate: u32, channels: u16, duration_secs: f32) -> V
 /// * `Vec<u8>` containing the complete WAV file data
 pub fn create_speech_like_wav(sample_rate: u32, channels: u16, duration_secs: f32) -> Vec<u8> {
     use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use std::hash::Hasher;
 
     let num_samples = (sample_rate as f32 * duration_secs) as usize;
     let mut samples = Vec::with_capacity(num_samples);
@@ -228,7 +227,7 @@ mod tests {
     #[test]
     fn test_cleanup_temp_files_multiple() {
         let paths: Vec<PathBuf> = (0..3)
-            .map(|i| {
+            .map(|_| {
                 let wav = create_test_wav(16000, 1, 0.1);
                 write_temp_wav(&wav)
             })

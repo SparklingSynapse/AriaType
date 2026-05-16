@@ -1,4 +1,6 @@
 //! Shared test utilities for AriaType tests
+#![allow(dead_code, unused_imports)]
+
 pub mod audio_fixtures;
 pub mod mock_polish;
 pub mod mock_server;

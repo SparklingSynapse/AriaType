@@ -154,6 +154,8 @@ export interface AppSettings {
   shortcut_profiles: ShortcutProfilesMap;
   window_context_enabled: boolean;
   pill_size: number;
+  pill_background_color: string;
+  pill_background_opacity: number;
 }
 
 export interface ModelInfo {
