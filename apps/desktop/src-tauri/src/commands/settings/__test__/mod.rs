@@ -1,6 +1,7 @@
 use super::{
-    migrate_to_profiles_map_for_test, normalize_pill_background_color,
-    normalize_pill_background_opacity, AppSettings,
+    classify_cloud_check_error, migrate_to_profiles_map_for_test, normalize_pill_background_color,
+    normalize_pill_background_opacity, validate_cloud_polish_config_for_check,
+    validate_cloud_stt_config_for_check, AppSettings, CloudProviderConfig, CloudSttConfig,
 };
 use serde_json::json;
 
@@ -11,6 +12,73 @@ fn test_is_streaming_stt_active_accepts_aliyun_stream_provider_id() {
     settings.active_cloud_stt_provider = "aliyun-stream".to_string();
 
     assert!(settings.is_streaming_stt_active());
+}
+
+#[test]
+fn cloud_stt_check_validation_requires_schema_fields() {
+    let mut config = CloudSttConfig {
+        provider_type: "volcengine-streaming".to_string(),
+        api_key: "token".to_string(),
+        app_id: String::new(),
+        base_url: String::new(),
+        model: String::new(),
+        language: String::new(),
+        enabled: true,
+    };
+
+    let err = validate_cloud_stt_config_for_check(&config).unwrap_err();
+    assert_eq!(err.kind, "missing_required");
+    assert!(err.message.contains("App ID"));
+
+    config.app_id = "app-id".to_string();
+    assert!(validate_cloud_stt_config_for_check(&config).is_ok());
+}
+
+#[test]
+fn cloud_polish_check_validation_requires_model() {
+    let config = CloudProviderConfig {
+        provider_type: "openai".to_string(),
+        api_key: "sk-test".to_string(),
+        base_url: String::new(),
+        model: String::new(),
+        enable_thinking: false,
+        enabled: true,
+    };
+
+    let err = validate_cloud_polish_config_for_check(&config).unwrap_err();
+    assert_eq!(err.kind, "missing_required");
+    assert!(err.message.contains("Model"));
+}
+
+#[test]
+fn cloud_check_validation_rejects_invalid_base_url() {
+    let config = CloudProviderConfig {
+        provider_type: "anthropic".to_string(),
+        api_key: "sk-test".to_string(),
+        base_url: "not a url".to_string(),
+        model: "claude-sonnet-4-20250514".to_string(),
+        enable_thinking: false,
+        enabled: true,
+    };
+
+    let err = validate_cloud_polish_config_for_check(&config).unwrap_err();
+    assert_eq!(err.kind, "invalid_url");
+}
+
+#[test]
+fn cloud_check_error_classifier_maps_auth_and_timeout() {
+    assert_eq!(
+        classify_cloud_check_error("API error (401 Unauthorized): invalid_api_key"),
+        "auth_failed"
+    );
+    assert_eq!(
+        classify_cloud_check_error("connection check timed out after 10s"),
+        "timeout"
+    );
+    assert_eq!(
+        classify_cloud_check_error("API error (404): model not found"),
+        "model_failed"
+    );
 }
 
 #[test]

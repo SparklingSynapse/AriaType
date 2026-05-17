@@ -40,18 +40,22 @@ Cloud Service provides cloud-based speech-to-text (STT) and text polishing (Poli
 - Provider selection (volcengine-streaming, volcengine-flash, openai, openai-realtime, deepgram, custom)
 - App ID (for Volcengine providers)
 - API Key / Access Token
+- Secret fields expose a right-side reveal/hide toggle and remain hidden by default
 - Base URL
 - Model name
 - Language
+- Check button for the active provider. The backend performs a lightweight real connection check using the saved active configuration, without sending user audio.
 
 ### CloudPolishSection
 - Enable/disable Cloud Polish toggle
 - Provider selection (anthropic, openai, custom)
 - API Key
+- Secret fields expose a right-side reveal/hide toggle and remain hidden by default
 - Base URL
 - Model name
 - Enable Thinking toggle
-- Runtime behavior: short cloud polish requests fail fast after 5 seconds; long requests may use an adaptive bounded timeout up to 30 seconds across providers
+- Runtime behavior: Cloud Polish requests use an adaptive bounded timeout that starts at 5 seconds for tiny requests and scales up to 30 seconds as prompt/input size grows across providers
+- Check button for the active provider. The backend performs a minimal real model request using the saved active configuration, without exposing API keys through frontend IPC arguments.
 
 ## i18n Keys
 
@@ -81,7 +85,9 @@ Added to all 10 supported locales: en, zh, de, es, fr, it, ja, ko, pt, ru
 4. **i18n**: All tab labels have translations in all 10 locales
 5. **Build**: Frontend builds successfully
 6. **Tests**: All existing tests pass (312 tests)
-7. **Timeout Safety**: Short Cloud Polish requests fail fast after 5 seconds; long requests have a bounded adaptive timeout and never hang indefinitely
+7. **Timeout Safety**: Cloud Polish requests use a bounded adaptive timeout from 5 to 30 seconds and never hang indefinitely
+8. **Configuration Check**: Enabled Cloud STT and Cloud Polish sections expose a small manual Check action that reports success, missing fields, invalid URL, auth failure, model failure, network failure, timeout, or unsupported provider without persisting stale validation state
+9. **Secret Reveal**: API Key / Access Token style fields are hidden by default and can be temporarily revealed from a right-side icon button
 
 ## Test Coverage
 

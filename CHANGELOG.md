@@ -6,6 +6,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
+- Improve cloud setup and polish output (95b90fb)
 - Support deliberate recording finish triggers (a80c22c)
 - Add voice-writing polish templates (9975217)
 

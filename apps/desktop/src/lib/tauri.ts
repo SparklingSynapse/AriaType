@@ -99,6 +99,25 @@ export interface CloudProviderSchemas {
   polish: ProviderSchema[];
 }
 
+export type CloudConnectionCheckKind =
+  | "ok"
+  | "disabled"
+  | "missing_required"
+  | "invalid_url"
+  | "unsupported_provider"
+  | "auth_failed"
+  | "model_failed"
+  | "network_failed"
+  | "timeout"
+  | "provider_error";
+
+export interface CloudConnectionCheckResult {
+  ok: boolean;
+  kind: CloudConnectionCheckKind;
+  message: string;
+  duration_ms: number;
+}
+
 export type ShortcutTriggerMode = "hold" | "toggle" | "double_tap";
 
 export interface ShortcutProfile {
@@ -219,6 +238,10 @@ export const settingsCommands = {
     invokeWithLogging<string[]>("get_available_subdomains", { domain }),
   getCloudProviderSchemas: () =>
     invokeWithLogging<CloudProviderSchemas>("get_cloud_provider_schemas"),
+  checkActiveCloudSttConfig: () =>
+    invokeWithLogging<CloudConnectionCheckResult>("check_active_cloud_stt_config"),
+  checkActiveCloudPolishConfig: () =>
+    invokeWithLogging<CloudConnectionCheckResult>("check_active_cloud_polish_config"),
 };
 
 export const hotkeyCommands = {

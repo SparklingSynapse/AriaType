@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{info, warn};
 
@@ -34,6 +35,14 @@ pub struct CloudSttConfig {
     pub base_url: String,
     pub model: String,
     pub language: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CloudConnectionCheckResult {
+    pub ok: bool,
+    pub kind: String,
+    pub message: String,
+    pub duration_ms: u64,
 }
 
 /// User-defined custom polish template
@@ -130,6 +139,190 @@ fn default_pill_background_color() -> String {
 
 fn default_pill_background_opacity() -> f32 {
     1.0
+}
+
+const CLOUD_CONFIG_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Debug)]
+struct CloudConfigValidationError {
+    kind: &'static str,
+    message: String,
+}
+
+impl CloudConnectionCheckResult {
+    fn success(message: impl Into<String>, duration_ms: u64) -> Self {
+        Self {
+            ok: true,
+            kind: "ok".to_string(),
+            message: message.into(),
+            duration_ms,
+        }
+    }
+
+    fn failure(kind: impl Into<String>, message: impl Into<String>, duration_ms: u64) -> Self {
+        Self {
+            ok: false,
+            kind: kind.into(),
+            message: message.into(),
+            duration_ms,
+        }
+    }
+}
+
+fn elapsed_ms(started_at: Instant) -> u64 {
+    started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn validate_cloud_url(url: &str) -> bool {
+    url.trim().is_empty() || reqwest::Url::parse(url.trim()).is_ok()
+}
+
+fn stt_config_field_value<'a>(config: &'a CloudSttConfig, key: &str) -> Option<&'a str> {
+    match key {
+        "api_key" => Some(&config.api_key),
+        "app_id" => Some(&config.app_id),
+        "base_url" => Some(&config.base_url),
+        "model" => Some(&config.model),
+        "language" => Some(&config.language),
+        _ => None,
+    }
+}
+
+fn polish_config_field_value<'a>(config: &'a CloudProviderConfig, key: &str) -> Option<&'a str> {
+    match key {
+        "api_key" => Some(&config.api_key),
+        "base_url" => Some(&config.base_url),
+        "model" => Some(&config.model),
+        _ => None,
+    }
+}
+
+fn validate_cloud_stt_config_for_check(
+    config: &CloudSttConfig,
+) -> Result<(), CloudConfigValidationError> {
+    let Some(schema) = crate::provider_schema::STT_SCHEMAS
+        .iter()
+        .find(|schema| schema.id == config.provider_type)
+    else {
+        return Err(CloudConfigValidationError {
+            kind: "unsupported_provider",
+            message: format!("Unsupported cloud STT provider: {}", config.provider_type),
+        });
+    };
+
+    for field in schema.fields {
+        if field.required {
+            let value = stt_config_field_value(config, field.key).unwrap_or_default();
+            if value.trim().is_empty() {
+                return Err(CloudConfigValidationError {
+                    kind: "missing_required",
+                    message: format!("Missing required field: {}", field.name),
+                });
+            }
+        }
+    }
+
+    if !validate_cloud_url(&config.base_url) {
+        return Err(CloudConfigValidationError {
+            kind: "invalid_url",
+            message: "Invalid Base URL format".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_cloud_polish_config_for_check(
+    config: &CloudProviderConfig,
+) -> Result<(), CloudConfigValidationError> {
+    let Some(schema) = crate::provider_schema::POLISH_SCHEMAS
+        .iter()
+        .find(|schema| schema.id == config.provider_type)
+    else {
+        return Err(CloudConfigValidationError {
+            kind: "unsupported_provider",
+            message: format!(
+                "Unsupported cloud polish provider: {}",
+                config.provider_type
+            ),
+        });
+    };
+
+    for field in schema.fields {
+        if field.required {
+            let value = polish_config_field_value(config, field.key).unwrap_or_default();
+            if value.trim().is_empty() {
+                return Err(CloudConfigValidationError {
+                    kind: "missing_required",
+                    message: format!("Missing required field: {}", field.name),
+                });
+            }
+        }
+    }
+
+    if !validate_cloud_url(&config.base_url) {
+        return Err(CloudConfigValidationError {
+            kind: "invalid_url",
+            message: "Invalid Base URL format".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+fn classify_cloud_check_error(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+
+    if lower.contains("timed out") || lower.contains("timeout") {
+        return "timeout";
+    }
+
+    if lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("unauthorized")
+        || lower.contains("forbidden")
+        || lower.contains("invalid_api_key")
+        || lower.contains("authentication")
+        || lower.contains("api key")
+        || lower.contains("access token")
+    {
+        return "auth_failed";
+    }
+
+    if lower.contains("model") {
+        return "model_failed";
+    }
+
+    if lower.contains("invalid url") {
+        return "invalid_url";
+    }
+
+    if lower.contains("unsupported") {
+        return "unsupported_provider";
+    }
+
+    if lower.contains("dns")
+        || lower.contains("network")
+        || lower.contains("connection")
+        || lower.contains("connect")
+        || lower.contains("lookup")
+    {
+        return "network_failed";
+    }
+
+    "provider_error"
+}
+
+fn cloud_check_user_message(kind: &str) -> &'static str {
+    match kind {
+        "auth_failed" => "Authentication failed. Check credentials and provider permissions.",
+        "invalid_url" => "The endpoint URL is invalid.",
+        "model_failed" => "The provider rejected the configured model.",
+        "network_failed" => "Could not reach the provider endpoint.",
+        "timeout" => "Connection check timed out.",
+        "unsupported_provider" => "This provider is not supported by the checker.",
+        _ => "The provider rejected the connection check.",
+    }
 }
 
 fn normalize_pill_background_color(value: &str) -> Option<String> {
@@ -1081,6 +1274,175 @@ pub fn get_available_subdomains(domain: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn get_cloud_provider_schemas() -> crate::provider_schema::CloudProviderSchemas {
     crate::provider_schema::get_schemas()
+}
+
+#[tauri::command]
+pub async fn check_active_cloud_stt_config(
+    state: State<'_, AppState>,
+) -> Result<CloudConnectionCheckResult, String> {
+    let started_at = Instant::now();
+    let (enabled, config, language) = {
+        let settings = state.settings.lock();
+        (
+            settings.cloud_stt_enabled,
+            settings.get_active_cloud_stt_config(),
+            settings.stt_engine_language.clone(),
+        )
+    };
+
+    if !enabled {
+        return Ok(CloudConnectionCheckResult::failure(
+            "disabled",
+            "Cloud STT is disabled.",
+            elapsed_ms(started_at),
+        ));
+    }
+
+    if let Err(err) = validate_cloud_stt_config_for_check(&config) {
+        return Ok(CloudConnectionCheckResult::failure(
+            err.kind,
+            err.message,
+            elapsed_ms(started_at),
+        ));
+    }
+
+    let mut client = match crate::stt_engine::cloud::StreamingSttClient::new(
+        config.clone(),
+        Some(language.as_str()),
+        crate::stt_engine::traits::SttContext::default(),
+    ) {
+        Ok(client) => client,
+        Err(error) => {
+            let kind = classify_cloud_check_error(&error);
+            return Ok(CloudConnectionCheckResult::failure(
+                kind,
+                cloud_check_user_message(kind),
+                elapsed_ms(started_at),
+            ));
+        }
+    };
+
+    let result = tokio::time::timeout(CLOUD_CONFIG_CHECK_TIMEOUT, client.connect()).await;
+    let check_result = match result {
+        Ok(Ok(())) => {
+            client.close().await;
+            info!(
+                provider = %config.provider_type,
+                duration_ms = elapsed_ms(started_at),
+                "cloud_stt_config_check_ok"
+            );
+            CloudConnectionCheckResult::success(
+                "Connection OK. Endpoint and credentials are usable.",
+                elapsed_ms(started_at),
+            )
+        }
+        Ok(Err(error)) => {
+            client.close().await;
+            let kind = classify_cloud_check_error(&error);
+            warn!(
+                provider = %config.provider_type,
+                kind,
+                error = %error,
+                "cloud_stt_config_check_failed"
+            );
+            CloudConnectionCheckResult::failure(
+                kind,
+                cloud_check_user_message(kind),
+                elapsed_ms(started_at),
+            )
+        }
+        Err(_) => {
+            client.close().await;
+            warn!(
+                provider = %config.provider_type,
+                timeout_secs = CLOUD_CONFIG_CHECK_TIMEOUT.as_secs(),
+                "cloud_stt_config_check_timeout"
+            );
+            CloudConnectionCheckResult::failure(
+                "timeout",
+                cloud_check_user_message("timeout"),
+                elapsed_ms(started_at),
+            )
+        }
+    };
+
+    Ok(check_result)
+}
+
+#[tauri::command]
+pub async fn check_active_cloud_polish_config(
+    state: State<'_, AppState>,
+) -> Result<CloudConnectionCheckResult, String> {
+    let started_at = Instant::now();
+    let (enabled, provider_type, mut config) = {
+        let settings = state.settings.lock();
+        let provider_type = settings.active_cloud_polish_provider.clone();
+        let config = settings
+            .cloud_polish_configs
+            .get(&provider_type)
+            .cloned()
+            .unwrap_or_default();
+        (settings.cloud_polish_enabled, provider_type, config)
+    };
+
+    config.enabled = enabled;
+    config.provider_type = provider_type.clone();
+
+    if !enabled {
+        return Ok(CloudConnectionCheckResult::failure(
+            "disabled",
+            "Cloud Polish is disabled.",
+            elapsed_ms(started_at),
+        ));
+    }
+
+    if let Err(err) = validate_cloud_polish_config_for_check(&config) {
+        return Ok(CloudConnectionCheckResult::failure(
+            err.kind,
+            err.message,
+            elapsed_ms(started_at),
+        ));
+    }
+
+    let engine = crate::polish_engine::cloud::CloudPolishEngine::new(
+        crate::polish_engine::cloud::CloudProviderConfig {
+            provider_type: config.provider_type.clone(),
+            api_key: config.api_key.clone(),
+            base_url: config.base_url.clone(),
+            model: config.model.clone(),
+            enable_thinking: config.enable_thinking,
+        },
+    );
+
+    match engine.check_connection().await {
+        Ok(()) => {
+            info!(
+                provider = %config.provider_type,
+                model = %config.model,
+                duration_ms = elapsed_ms(started_at),
+                "cloud_polish_config_check_ok"
+            );
+            Ok(CloudConnectionCheckResult::success(
+                "Connection OK. Endpoint, credentials, and model are usable.",
+                elapsed_ms(started_at),
+            ))
+        }
+        Err(error) => {
+            let kind = classify_cloud_check_error(&error);
+            warn!(
+                provider = %config.provider_type,
+                model = %config.model,
+                kind,
+                error = %error,
+                "cloud_polish_config_check_failed"
+            );
+            Ok(CloudConnectionCheckResult::failure(
+                kind,
+                cloud_check_user_message(kind),
+                elapsed_ms(started_at),
+            ))
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]

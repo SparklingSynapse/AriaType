@@ -71,6 +71,14 @@ impl StreamingSttClient {
         }
     }
 
+    pub async fn close(&self) {
+        match self {
+            Self::Volcengine(c) => c.close().await,
+            Self::Aliyun(c) => c.close().await,
+            Self::ElevenLabs(c) => c.close().await,
+        }
+    }
+
     pub fn provider_name(&self) -> &'static str {
         match self {
             Self::Volcengine(_) => "Volcengine",

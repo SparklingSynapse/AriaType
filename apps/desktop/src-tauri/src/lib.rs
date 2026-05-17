@@ -219,6 +219,8 @@ pub fn run() {
             settings::get_glossary_content,
             settings::get_available_subdomains,
             settings::get_cloud_provider_schemas,
+            settings::check_active_cloud_stt_config,
+            settings::check_active_cloud_polish_config,
             system::get_audio_devices,
             system::get_log_content,
             system::open_log_folder,

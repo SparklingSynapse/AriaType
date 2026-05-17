@@ -1,6 +1,7 @@
 use ariatype_lib::polish_engine::{
     get_all_polish_models, get_all_templates, get_template_by_id, PolishEngineType, PolishRequest,
-    PolishResult, UnifiedPolishManager, POLISH_TEMPLATES,
+    PolishResult, UnifiedPolishManager, GEMMA_DEFAULT_PROMPT, LFM_DEFAULT_PROMPT, POLISH_TEMPLATES,
+    QWEN_DEFAULT_PROMPT,
 };
 
 /// Integration tests for polish_engine module
@@ -200,6 +201,36 @@ fn test_model_info_completeness() {
             model.size_display.contains("MB") || model.size_display.contains("GB"),
             "Size display should contain MB or GB: {}",
             model.size_display
+        );
+    }
+}
+
+#[test]
+fn test_default_prompts_require_stt_correction_and_plain_text() {
+    for (name, prompt) in [
+        ("qwen", QWEN_DEFAULT_PROMPT),
+        ("lfm", LFM_DEFAULT_PROMPT),
+        ("gemma", GEMMA_DEFAULT_PROMPT),
+    ] {
+        assert!(
+            prompt.contains("First correct STT errors"),
+            "{name} default prompt must make STT correction a baseline behavior",
+        );
+        assert!(
+            prompt.contains("ordinary plain text"),
+            "{name} default prompt must forbid rich formatting by default",
+        );
+        assert!(
+            prompt.contains("Do not use Markdown syntax"),
+            "{name} default prompt must forbid Markdown syntax",
+        );
+        assert!(
+            prompt.contains("Do not ask the user to provide text"),
+            "{name} default prompt must preserve short command-like text",
+        );
+        assert!(
+            prompt.contains("\"继续\" → \"继续\""),
+            "{name} default prompt must include a regression example for short continuation text",
         );
     }
 }

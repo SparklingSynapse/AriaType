@@ -12,7 +12,14 @@ import { Switch } from "@/components/ui/switch";
 import { WarningCircle, ArrowSquareOut } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useSettingsContext } from "@/contexts/SettingsContext";
-import { settingsCommands, CloudProviderConfig, CloudProviderSchemas } from "@/lib/tauri";
+import { settingsCommands } from "@/lib/tauri";
+import type {
+  CloudConnectionCheckResult,
+  CloudProviderConfig,
+  CloudProviderSchemas,
+} from "@/lib/tauri";
+import { CloudConnectionCheckRow } from "./CloudConnectionCheckRow";
+import { CloudProviderFieldInput } from "./CloudProviderFieldInput";
 import polishSvg from "@/assets/illustrations/cloud/polish.png";
 
 function getDefaultConfig(provider: string): CloudProviderConfig {
@@ -31,6 +38,8 @@ export function CloudPolishSection() {
   const { settings, updateSetting } = useSettingsContext();
   const [schemas, setSchemas] = useState<CloudProviderSchemas | null>(null);
   const [polishErrors, setPolishErrors] = useState<Record<string, string>>({});
+  const [checkResult, setCheckResult] = useState<CloudConnectionCheckResult | null>(null);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     settingsCommands.getCloudProviderSchemas().then(setSchemas).catch(console.error);
@@ -59,12 +68,34 @@ export function CloudPolishSection() {
     await updateSetting("cloud_polish_configs", configs);
   }, [settings?.cloud_polish_configs, updateSetting]);
 
+  const collectValidationErrors = () => {
+    const errors: Record<string, string> = {};
+    if (activeSchema) {
+      for (const field of activeSchema.fields) {
+        if (field.required) {
+          const value = configRecord[field.key] ?? "";
+          if (!value.trim()) {
+            errors[field.key] = t("cloud.validation.fieldRequired", { fieldName: field.name });
+          }
+        }
+      }
+    }
+    if (configRecord.base_url && !validateUrl(configRecord.base_url)) {
+      errors.base_url = t("cloud.validation.invalidUrl", "Invalid URL format");
+    }
+    return errors;
+  };
+
+  const hasValidationErrors = (errors: Record<string, string>) =>
+    Object.values(errors).some((error) => error.trim().length > 0);
+
   const handleFieldChange = async (key: string, value: string) => {
+    setCheckResult(null);
     if (key === "base_url") {
       if (!validateUrl(value)) {
-        setPolishErrors((prev) => ({ ...prev, baseUrl: t("cloud.validation.invalidUrl", "Invalid URL format") }));
+        setPolishErrors((prev) => ({ ...prev, base_url: t("cloud.validation.invalidUrl", "Invalid URL format") }));
       } else {
-        setPolishErrors((prev) => ({ ...prev, baseUrl: "" }));
+        setPolishErrors((prev) => ({ ...prev, base_url: "" }));
       }
     } else if (value && isEnabled) {
       const field = activeSchema?.fields.find((f) => f.key === key);
@@ -76,24 +107,14 @@ export function CloudPolishSection() {
   };
 
   const handleSwitchChange = async (key: string, checked: boolean) => {
+    setCheckResult(null);
     await updateProviderConfig(activeProviderId, { [key]: checked });
   };
 
   const handleEnabledChange = async (enabled: boolean) => {
+    setCheckResult(null);
     if (enabled && activeSchema) {
-      const errors: Record<string, string> = {};
-      for (const field of activeSchema.fields) {
-        if (field.required) {
-          const value = configRecord[field.key] ?? "";
-          if (!value.trim()) {
-            errors[field.key] = t("cloud.validation.fieldRequired", { fieldName: field.name });
-          }
-        }
-      }
-      if (configRecord.base_url && !validateUrl(configRecord.base_url)) {
-        errors.baseUrl = t("cloud.validation.invalidUrl", "Invalid URL format");
-      }
-      setPolishErrors(errors);
+      setPolishErrors(collectValidationErrors());
     } else {
       setPolishErrors({});
     }
@@ -103,6 +124,37 @@ export function CloudPolishSection() {
   const handleProviderChange = async (newProviderId: string) => {
     await updateSetting("active_cloud_polish_provider", newProviderId);
     setPolishErrors({});
+    setCheckResult(null);
+  };
+
+  const handleCheck = async () => {
+    const errors = collectValidationErrors();
+    setPolishErrors(errors);
+
+    if (hasValidationErrors(errors)) {
+      setCheckResult({
+        ok: false,
+        kind: errors.base_url ? "invalid_url" : "missing_required",
+        message: "",
+        duration_ms: 0,
+      });
+      return;
+    }
+
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      setCheckResult(await settingsCommands.checkActiveCloudPolishConfig());
+    } catch (error) {
+      setCheckResult({
+        ok: false,
+        kind: "provider_error",
+        message: String(error),
+        duration_ms: 0,
+      });
+    } finally {
+      setChecking(false);
+    }
   };
 
   if (!settings || !schemas) return null;
@@ -165,12 +217,12 @@ export function CloudPolishSection() {
                 <Label htmlFor={`cloud-polish-${field.key}`} required={field.required}>
                   {field.name}
                 </Label>
-                <input
+                <CloudProviderFieldInput
                   id={`cloud-polish-${field.key}`}
-                  type={field.secret ? "password" : "text"}
-                  className={`flex h-10 w-full rounded-2xl border bg-background px-4 py-2 text-sm transition-all ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${polishErrors[field.key] ? "border-destructive focus-visible:ring-1 focus-visible:ring-destructive" : "border-border focus-visible:border-primary"}`}
+                  secret={field.secret}
+                  invalid={Boolean(polishErrors[field.key])}
                   value={configRecord[field.key] ?? ""}
-                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                  onChange={(value) => handleFieldChange(field.key, value)}
                   placeholder={field.example || undefined}
                 />
                 {polishErrors[field.key] && (
@@ -181,6 +233,12 @@ export function CloudPolishSection() {
                 )}
               </div>
             ))}
+
+            <CloudConnectionCheckRow
+              result={checkResult}
+              checking={checking}
+              onCheck={handleCheck}
+            />
 
             <div className="flex items-center justify-between space-x-4 pt-4 border-t border-border">
               <div>

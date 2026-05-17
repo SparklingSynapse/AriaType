@@ -17,7 +17,7 @@ fn model_exists(model_name: &str) -> bool {
 /// Validates that each template performs its specific task correctly:
 /// - Formal: makes text more formal
 /// - Concise: makes text shorter
-/// - Agent: adds markdown structure
+/// - Agent: adds plain-text instruction structure
 #[tokio::test]
 #[ignore] // Requires model file and takes time
 async fn test_template_specific_behavior() {

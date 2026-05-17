@@ -12,7 +12,14 @@ import { Switch } from "@/components/ui/switch";
 import { WarningCircle, ArrowSquareOut } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useSettingsContext } from "@/contexts/SettingsContext";
-import { settingsCommands, CloudSttConfig, CloudProviderSchemas } from "@/lib/tauri";
+import { settingsCommands } from "@/lib/tauri";
+import type {
+  CloudConnectionCheckResult,
+  CloudProviderSchemas,
+  CloudSttConfig,
+} from "@/lib/tauri";
+import { CloudConnectionCheckRow } from "./CloudConnectionCheckRow";
+import { CloudProviderFieldInput } from "./CloudProviderFieldInput";
 import sttSvg from "@/assets/illustrations/cloud/stt.png";
 
 function getDefaultConfig(provider: string): CloudSttConfig {
@@ -32,6 +39,8 @@ export function CloudSttSection() {
   const { settings, updateSetting } = useSettingsContext();
   const [schemas, setSchemas] = useState<CloudProviderSchemas | null>(null);
   const [sttErrors, setSttErrors] = useState<Record<string, string>>({});
+  const [checkResult, setCheckResult] = useState<CloudConnectionCheckResult | null>(null);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     settingsCommands.getCloudProviderSchemas().then(setSchemas).catch(console.error);
@@ -60,12 +69,34 @@ export function CloudSttSection() {
     await updateSetting("cloud_stt_configs", configs);
   }, [settings?.cloud_stt_configs, updateSetting]);
 
+  const collectValidationErrors = () => {
+    const errors: Record<string, string> = {};
+    if (activeSchema) {
+      for (const field of activeSchema.fields) {
+        if (field.required) {
+          const value = configRecord[field.key] ?? "";
+          if (!value.trim()) {
+            errors[field.key] = t("cloud.validation.fieldRequired", { fieldName: field.name });
+          }
+        }
+      }
+    }
+    if (configRecord.base_url && !validateUrl(configRecord.base_url)) {
+      errors.base_url = t("cloud.validation.invalidUrl", "Invalid URL format");
+    }
+    return errors;
+  };
+
+  const hasValidationErrors = (errors: Record<string, string>) =>
+    Object.values(errors).some((error) => error.trim().length > 0);
+
   const handleFieldChange = async (key: string, value: string) => {
+    setCheckResult(null);
     if (key === "base_url") {
       if (!validateUrl(value)) {
-        setSttErrors((prev) => ({ ...prev, baseUrl: t("cloud.validation.invalidUrl", "Invalid URL format") }));
+        setSttErrors((prev) => ({ ...prev, base_url: t("cloud.validation.invalidUrl", "Invalid URL format") }));
       } else {
-        setSttErrors((prev) => ({ ...prev, baseUrl: "" }));
+        setSttErrors((prev) => ({ ...prev, base_url: "" }));
       }
     } else if (value && isEnabled) {
       // Required field changed - clear its error if filled
@@ -78,20 +109,9 @@ export function CloudSttSection() {
   };
 
   const handleEnabledChange = async (enabled: boolean) => {
+    setCheckResult(null);
     if (enabled && activeSchema) {
-      const errors: Record<string, string> = {};
-      for (const field of activeSchema.fields) {
-        if (field.required) {
-          const value = configRecord[field.key] ?? "";
-          if (!value.trim()) {
-            errors[field.key] = t("cloud.validation.fieldRequired", { fieldName: field.name });
-          }
-        }
-      }
-      if (configRecord.base_url && !validateUrl(configRecord.base_url)) {
-        errors.baseUrl = t("cloud.validation.invalidUrl", "Invalid URL format");
-      }
-      setSttErrors(errors);
+      setSttErrors(collectValidationErrors());
     } else {
       setSttErrors({});
     }
@@ -101,6 +121,37 @@ export function CloudSttSection() {
   const handleProviderChange = async (newProviderId: string) => {
     await updateSetting("active_cloud_stt_provider", newProviderId);
     setSttErrors({});
+    setCheckResult(null);
+  };
+
+  const handleCheck = async () => {
+    const errors = collectValidationErrors();
+    setSttErrors(errors);
+
+    if (hasValidationErrors(errors)) {
+      setCheckResult({
+        ok: false,
+        kind: errors.base_url ? "invalid_url" : "missing_required",
+        message: "",
+        duration_ms: 0,
+      });
+      return;
+    }
+
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      setCheckResult(await settingsCommands.checkActiveCloudSttConfig());
+    } catch (error) {
+      setCheckResult({
+        ok: false,
+        kind: "provider_error",
+        message: String(error),
+        duration_ms: 0,
+      });
+    } finally {
+      setChecking(false);
+    }
   };
 
   if (!settings || !schemas) return null;
@@ -160,12 +211,12 @@ export function CloudSttSection() {
                 <Label htmlFor={`cloud-stt-${field.key}`} required={field.required}>
                   {field.name}
                 </Label>
-                <input
+                <CloudProviderFieldInput
                   id={`cloud-stt-${field.key}`}
-                  type={field.secret ? "password" : "text"}
-                  className={`flex h-10 w-full rounded-2xl border bg-background px-4 py-2 text-sm transition-all ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${sttErrors[field.key] ? "border-destructive focus-visible:ring-1 focus-visible:ring-destructive" : "border-border focus-visible:border-primary"}`}
+                  secret={field.secret}
+                  invalid={Boolean(sttErrors[field.key])}
                   value={configRecord[field.key] ?? ""}
-                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                  onChange={(value) => handleFieldChange(field.key, value)}
                   placeholder={field.example || undefined}
                 />
                 {sttErrors[field.key] && (
@@ -176,6 +227,12 @@ export function CloudSttSection() {
                 )}
               </div>
             ))}
+
+            <CloudConnectionCheckRow
+              result={checkResult}
+              checking={checking}
+              onCheck={handleCheck}
+            />
           </div>
         )}
       </CardContent>
