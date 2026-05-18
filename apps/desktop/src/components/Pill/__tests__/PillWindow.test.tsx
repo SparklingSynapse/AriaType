@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PillWindow } from "../PillWindow";
-import type { AppSettings, PillTooltipEvent } from "@/lib/tauri";
+import type { AppSettings, PillTooltipEvent, RecordingStateEvent } from "@/lib/tauri";
 
 type Listener<T> = (event: T) => void;
 
@@ -10,9 +10,11 @@ const {
   hidePillMock,
   onPillTooltipMock,
   onSettingsChangedMock,
+  listenMock,
   showPillMock,
 } = vi.hoisted(() => {
   const tooltipListeners = new Set<Listener<PillTooltipEvent>>();
+  const recordingStateListeners = new Set<Listener<{ payload: RecordingStateEvent }>>();
 
   return {
     getSettingsMock: vi.fn(),
@@ -22,6 +24,14 @@ const {
       return () => tooltipListeners.delete(callback);
     }),
     onSettingsChangedMock: vi.fn(async () => () => undefined),
+    listenMock: vi.fn(async (eventName: string, callback: Listener<{ payload: RecordingStateEvent }>) => {
+      if (eventName !== "recording-state-changed") {
+        return () => undefined;
+      }
+
+      recordingStateListeners.add(callback);
+      return () => recordingStateListeners.delete(callback);
+    }),
     showPillMock: vi.fn(),
     emitPillTooltip: (event: PillTooltipEvent) => {
       tooltipListeners.forEach((callback) => callback(event));
@@ -33,6 +43,9 @@ const mocks = vi.hoisted(() => ({
   emitPillTooltip: undefined as
     | undefined
     | ((event: PillTooltipEvent) => void),
+  emitRecordingState: undefined as
+    | undefined
+    | ((event: RecordingStateEvent) => void),
 }));
 
 vi.mock("@/lib/tauri", () => ({
@@ -50,7 +63,7 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async () => () => undefined),
+  listen: listenMock,
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -95,12 +108,19 @@ describe("PillWindow backend tooltip", () => {
     onPillTooltipMock.mockClear();
     onSettingsChangedMock.mockClear();
     showPillMock.mockReset();
+    listenMock.mockClear();
     hidePillMock.mockResolvedValue(undefined);
     showPillMock.mockResolvedValue(undefined);
     getSettingsMock.mockResolvedValue(settings());
     mocks.emitPillTooltip = (event: PillTooltipEvent) => {
       const calls = onPillTooltipMock.mock.calls as Array<[Listener<PillTooltipEvent>]>;
       calls.forEach(([callback]) => callback(event));
+    };
+    mocks.emitRecordingState = (event: RecordingStateEvent) => {
+      const calls = listenMock.mock.calls as Array<[string, Listener<{ payload: RecordingStateEvent }>]>;
+      calls
+        .filter(([eventName]) => eventName === "recording-state-changed")
+        .forEach(([, callback]) => callback({ payload: event }));
     };
   });
 
@@ -117,6 +137,13 @@ describe("PillWindow backend tooltip", () => {
     expect(onPillTooltipMock).toHaveBeenCalled();
 
     act(() => {
+      mocks.emitRecordingState?.({
+        status: "recording",
+        task_id: 2,
+      });
+    });
+
+    act(() => {
       mocks.emitPillTooltip?.({
         message: "ESC 取消，Enter 确认",
         duration_ms: 3200,
@@ -125,12 +152,13 @@ describe("PillWindow backend tooltip", () => {
     });
 
     expect(showPillMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("audio-dots")).toBeInTheDocument();
     const tooltip = screen.getByText("ESC 取消，Enter 确认");
     expect(tooltip).toBeInTheDocument();
     expect(tooltip).toHaveClass("max-w-[calc(100vw-1rem)]");
   });
 
-  it("hides backend-pushed tooltip messages after the backend duration", async () => {
+  it("renders idle backend tooltip messages without rendering the pill body", async () => {
     render(<PillWindow />);
 
     await act(async () => {
@@ -148,6 +176,7 @@ describe("PillWindow backend tooltip", () => {
     expect(showPillMock).toHaveBeenCalledTimes(1);
     const tooltip = screen.getByText("已记录纠错词：搜题 -> sootie");
     expect(tooltip).toBeInTheDocument();
+    expect(screen.queryByTestId("audio-dots")).not.toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(50);

@@ -2,7 +2,7 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## Unreleased
+## v0.6.0 (2026-05-19)
 
 ### Features
 

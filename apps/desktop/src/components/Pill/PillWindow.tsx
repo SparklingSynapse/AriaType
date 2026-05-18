@@ -181,7 +181,9 @@ export function PillWindow() {
 
   // For "when_recording" mode: pill animates in/out and hides the OS window after exit.
   // For "always" mode: pill content is always rendered, no show/hide animation.
-  const showContent = indicatorMode === "always" || isActive || (indicatorMode !== "never" && tooltip !== null);
+  const showPillBody = indicatorMode === "always" || isActive;
+  const showTooltip = indicatorMode !== "never" && tooltip !== null;
+  const showContent = showPillBody || showTooltip;
 
   const handleDrag = useCallback(async () => {
     try {
@@ -220,46 +222,48 @@ export function PillWindow() {
             transition={{ duration: 0.16, ease: "easeOut" }}
             className="flex flex-col items-center"
           >
-            <BorderBeam
-              active={beamActive}
-              size="sm"
-              borderRadius={9999}
-              theme="dark"
-              colorVariant="ocean"
-              strength={0.5}
-              brightness={2}
-              duration={1}
-              className="shadow-[0_0_10px_rgba(0,0,0,0.3),0_4px_12px_rgba(0,0,0,0.3)]"
-            >
-              <div
-                className="relative flex items-center justify-center rounded-full bg-[#1d1d1d] shadow-[inset_0_0_0_1px_#2c2f3685,inset_0_0_50px_#ffffff05]"
-                style={{
-                  backgroundColor: pillBackground,
-                  paddingLeft: "0.75rem",
-                  paddingRight: "0.75rem",
-                  paddingTop: "0.3125rem",
-                  paddingBottom: "0.3125rem",
-                  WebkitAppRegion: "no-drag",
-                } as React.CSSProperties}
+            {showPillBody && (
+              <BorderBeam
+                active={beamActive}
+                size="sm"
+                borderRadius={9999}
+                theme="dark"
+                colorVariant="ocean"
+                strength={0.5}
+                brightness={2}
+                duration={1}
+                className="shadow-[0_0_10px_rgba(0,0,0,0.3),0_4px_12px_rgba(0,0,0,0.3)]"
               >
-                <AudioDots
-                  status={status}
-                  audioLevel={audioLevel}
-                  hasAudioActivity={hasAudioActivity}
-                  idleColor={idleDotColor}
-                />
-                <SettingsButton isLightBackground={isLightBackground} />
-              </div>
-            </BorderBeam>
+                <div
+                  className="relative flex items-center justify-center rounded-full bg-[#1d1d1d] shadow-[inset_0_0_0_1px_#2c2f3685,inset_0_0_50px_#ffffff05]"
+                  style={{
+                    backgroundColor: pillBackground,
+                    paddingLeft: "0.75rem",
+                    paddingRight: "0.75rem",
+                    paddingTop: "0.3125rem",
+                    paddingBottom: "0.3125rem",
+                    WebkitAppRegion: "no-drag",
+                  } as React.CSSProperties}
+                >
+                  <AudioDots
+                    status={status}
+                    audioLevel={audioLevel}
+                    hasAudioActivity={hasAudioActivity}
+                    idleColor={idleDotColor}
+                  />
+                  <SettingsButton isLightBackground={isLightBackground} />
+                </div>
+              </BorderBeam>
+            )}
             <AnimatePresence mode="wait">
-              {tooltip && (
+              {showTooltip && (
                 <motion.div
                   key={`${tooltip.task_id ?? "global"}:${tooltip.message}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.15, ease: "easeOut" }}
-                  className="pointer-events-none mt-2 max-w-[calc(100vw-1rem)] truncate rounded-full bg-black/60 px-2.5 py-0.5 text-[9.5px] font-medium text-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-white/10 backdrop-blur-md"
+                  className={`pointer-events-none ${showPillBody ? "mt-2" : "mt-0"} max-w-[calc(100vw-1rem)] truncate rounded-full bg-black/60 px-2.5 py-0.5 text-[9.5px] font-medium text-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-white/10 backdrop-blur-md`}
                 >
                   {tooltip.message}
                 </motion.div>
