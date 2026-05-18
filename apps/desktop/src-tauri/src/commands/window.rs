@@ -306,15 +306,38 @@ pub async fn hide_main_window(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn show_pill_window(app: AppHandle) -> Result<(), String> {
-    use tracing::info;
+    use tracing::{error, info};
+
     info!("show_pill_window_requested");
-    if let Some(window) = app.get_webview_window("pill") {
-        show_pill_without_focus(&window)?;
-        info!("pill_window_shown");
-    } else {
-        info!("pill_window_not_found");
-    }
-    Ok(())
+
+    let app_for_main_thread = app.clone();
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+
+    app.run_on_main_thread(move || {
+        info!("show_pill_window_main_thread");
+        let result = if let Some(window) = app_for_main_thread.get_webview_window("pill") {
+            match show_pill_without_focus(&window) {
+                Ok(()) => {
+                    info!("pill_window_shown");
+                    Ok(())
+                }
+                Err(err) => {
+                    error!(error = %err, "pill_window_show_failed");
+                    Err(err)
+                }
+            }
+        } else {
+            info!("pill_window_not_found");
+            Ok(())
+        };
+
+        let _ = result_tx.send(result);
+    })
+    .map_err(|err| err.to_string())?;
+
+    result_rx
+        .await
+        .map_err(|_| "show_pill_window main thread task was canceled".to_string())?
 }
 
 #[tauri::command]
