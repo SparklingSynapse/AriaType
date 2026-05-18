@@ -38,10 +38,20 @@ ci: add macOS binary pre-signing for smoother install
 
 ### Local Enforcement
 
-`simple-git-hooks` runs `scripts/check-commit-msg.mjs` as the
-`commit-msg` hook. The hook validates the Conventional Commit header,
-English-only ASCII text, body wrapping, allowed scopes, and contiguous
-Git trailer blocks.
+`simple-git-hooks` runs `commitlint` and then
+`scripts/check-commit-msg.mjs` as the `commit-msg` hook.
+
+`commitlint.config.cjs` validates the standard Conventional Commit
+shape, allowed types and scopes, header length, body spacing, and body
+wrapping. `scripts/check-commit-msg.mjs` enforces AriaType-specific
+rules that commitlint does not cover, including English-only ASCII text,
+staged-file scope checks, and contiguous Git trailer blocks.
+
+For local checks, pipe a message into commitlint:
+
+```bash
+printf 'chore: add commitlint checks\n' | pnpm lint:commit
+```
 
 Historical one-line commits remain valid:
 

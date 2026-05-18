@@ -18,6 +18,7 @@ use tracing_subscriber::{
 
 pub mod audio;
 pub mod commands;
+pub mod correction_learning;
 pub mod events;
 pub mod history;
 pub mod permissions;
@@ -221,6 +222,8 @@ pub fn run() {
             settings::get_cloud_provider_schemas,
             settings::check_active_cloud_stt_config,
             settings::check_active_cloud_polish_config,
+            correction_learning::commands::clear_correction_memory,
+            correction_learning::commands::open_correction_memory_directory,
             system::get_audio_devices,
             system::get_log_content,
             system::open_log_folder,
@@ -497,7 +500,10 @@ pub fn run() {
             .always_on_top(true)
             .skip_taskbar(true)
             .visible_on_all_workspaces(true)
-            .inner_size(140.0, 80.0)
+            .inner_size(
+                commands::window::PILL_WINDOW_W_LOGICAL,
+                commands::window::PILL_WINDOW_H_LOGICAL,
+            )
             .focused(false)
             .visible(false) // Start hidden; show after panel/collection-behavior setup
             .build()

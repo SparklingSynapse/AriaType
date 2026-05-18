@@ -127,6 +127,9 @@ pub struct AppSettings {
     /// Pill window background opacity from 0.2 to 1.0.
     #[serde(default = "default_pill_background_opacity")]
     pub pill_background_opacity: f32,
+    /// Learn bounded wrong -> corrected mappings from post-delivery edits.
+    #[serde(default = "default_correction_memory_enabled")]
+    pub correction_memory_enabled: bool,
 }
 
 fn default_pill_size() -> u8 {
@@ -139,6 +142,10 @@ fn default_pill_background_color() -> String {
 
 fn default_pill_background_opacity() -> f32 {
     1.0
+}
+
+fn default_correction_memory_enabled() -> bool {
+    true
 }
 
 const CLOUD_CONFIG_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -387,6 +394,7 @@ impl Default for AppSettings {
             pill_size: 2,
             pill_background_color: default_pill_background_color(),
             pill_background_opacity: default_pill_background_opacity(),
+            correction_memory_enabled: default_correction_memory_enabled(),
         }
     }
 }
@@ -1133,6 +1141,11 @@ pub fn update_settings(
                     if let Some(opacity) = normalize_pill_background_opacity(v) {
                         settings.pill_background_opacity = opacity;
                     }
+                }
+            }
+            "correction_memory_enabled" => {
+                if let Some(v) = value.as_bool() {
+                    settings.correction_memory_enabled = v;
                 }
             }
             _ => return Err(format!("Unknown setting key: {}", key)),

@@ -13,6 +13,100 @@ struct LocalPolishContext {
     log_context: &'static str,
 }
 
+fn contains_any(text: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| text.contains(needle))
+}
+
+fn has_question_mark(text: &str) -> bool {
+    text.contains('?') || text.contains('？')
+}
+
+fn is_question_like_text(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    has_question_mark(text)
+        || contains_any(
+            &lower,
+            &[
+                "吗",
+                "是不是",
+                "是否",
+                "哪些",
+                "哪个",
+                "哪里",
+                "哪儿",
+                "为什么",
+                "怎么",
+                "如何",
+                "有没有",
+                "能不能",
+                "可不可以",
+                "what",
+                "why",
+                "how",
+                "should",
+                "could",
+                "would",
+            ],
+        )
+}
+
+fn is_answer_like_text(text: &str) -> bool {
+    let lower = text
+        .trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ',' | '，' | '.' | '。'))
+        .to_lowercase();
+
+    lower.starts_with("我觉得")
+        || lower.starts_with("我认为")
+        || lower.starts_with("是的")
+        || lower.starts_with("不是")
+        || lower.starts_with("可以")
+        || lower.starts_with("不可以")
+        || lower.starts_with("不能")
+        || lower.starts_with("还不")
+        || lower.starts_with("还没")
+        || lower.starts_with("需要")
+        || lower.starts_with("不需要")
+        || contains_any(
+            &lower,
+            &[
+                "不够完整",
+                "还没到",
+                "还不是",
+                "不是所有",
+                "not ready",
+                "is ready",
+                "is not ready",
+                "i think",
+                "i believe",
+            ],
+        )
+}
+
+fn should_reject_question_answer_polish(input: &str, output: &str) -> bool {
+    is_question_like_text(input) && !has_question_mark(output) && is_answer_like_text(output)
+}
+
+fn accept_polish_result(
+    task_id: u64,
+    accumulated_text: String,
+    result_text: String,
+    polish_ms: u64,
+    context: &'static str,
+) -> (String, u64) {
+    if should_reject_question_answer_polish(&accumulated_text, &result_text) {
+        warn!(
+            task_id,
+            context,
+            input_chars = accumulated_text.len(),
+            output_chars = result_text.len(),
+            "polish_rejected_answered_question-using_raw"
+        );
+        (accumulated_text, 0)
+    } else {
+        (result_text, polish_ms)
+    }
+}
+
 async fn run_local_polish(
     event_target: &ProcessingEventTarget<'_>,
     state: &AppState,
@@ -72,7 +166,13 @@ async fn run_local_polish(
                             context = log_context,
                             "polish_completed-local"
                         );
-                        (result.text, result.total_ms)
+                        accept_polish_result(
+                            task_id,
+                            accumulated_text,
+                            result.text,
+                            result.total_ms,
+                            log_context,
+                        )
                     }
                     Ok(_) => {
                         warn!(
@@ -217,7 +317,13 @@ pub(super) async fn maybe_polish_transcription_text(
                                     polish_ms = result.total_ms,
                                     "polish_completed-cloud"
                                 );
-                                (result.text, result.total_ms)
+                                accept_polish_result(
+                                    task_id,
+                                    accumulated_text,
+                                    result.text,
+                                    result.total_ms,
+                                    "cloud",
+                                )
                             }
                             Ok(_) => {
                                 warn!(task_id, provider = %provider_type, "polish_empty_result-cloud_using_raw");
@@ -247,5 +353,36 @@ pub(super) async fn maybe_polish_transcription_text(
             )
             .await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_reject_question_answer_polish;
+
+    #[test]
+    fn rejects_polish_output_that_answers_a_dictated_question() {
+        let input =
+            "哎，你觉得这个功能现在完整了吗？咱们达到可以发布0.1版本的时候了吗？所有东西都就绪了吗？";
+        let output =
+            "我觉得这个功能现在还不够完整，还没到可以发布 0.1 版本的时候，还不是所有东西都就绪了。";
+
+        assert!(should_reject_question_answer_polish(input, output));
+    }
+
+    #[test]
+    fn accepts_polish_output_that_preserves_a_question() {
+        let input = "看一下最终的结果，我们当前是不是可以发布0.1版本了？还差哪些东西？";
+        let output = "看一下最终的结果，我们当前是不是可以发布 0.1 版本了？还差哪些东西？";
+
+        assert!(!should_reject_question_answer_polish(input, output));
+    }
+
+    #[test]
+    fn accepts_non_question_polish_output() {
+        let input = "嗯，我觉得这个功能现在已经完整了";
+        let output = "我觉得这个功能现在已经完整了。";
+
+        assert!(!should_reject_question_answer_polish(input, output));
     }
 }

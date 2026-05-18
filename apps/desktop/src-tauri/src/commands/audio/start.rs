@@ -2,12 +2,15 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State};
 use tracing::{debug, info, instrument};
 
-use crate::events::{emit_recording_state, RecordingStatus};
+use crate::events::{emit_pill_tooltip, emit_recording_state, RecordingStatus};
 use crate::services::recording_lifecycle::{prepare_recording_start, RecordingStartGuard};
-use crate::shortcut::ShortcutProfile;
+use crate::shortcut::{ShortcutProfile, ShortcutTriggerMode};
 use crate::state::app_state::AppState;
 
 use super::capture::start_unified_recording;
+
+const RECORDING_CONFIRM_TOOLTIP: &str = "ESC 取消，Enter 确认";
+const RECORDING_CONFIRM_TOOLTIP_DURATION_MS: u64 = 3_200;
 
 #[tauri::command]
 #[instrument(skip(app, state), ret, err)]
@@ -105,6 +108,14 @@ pub(crate) fn start_recording_sync_internal(
         "recording_started"
     );
     emit_recording_state(app, RecordingStatus::Recording, prepared.task_id);
+    if should_show_recording_confirm_tooltip(profile) {
+        emit_pill_tooltip(
+            app,
+            RECORDING_CONFIRM_TOOLTIP,
+            RECORDING_CONFIRM_TOOLTIP_DURATION_MS,
+            Some(prepared.task_id),
+        );
+    }
 
     if register_cancel_hotkey {
         if let Some(shortcut_manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
@@ -113,4 +124,39 @@ pub(crate) fn start_recording_sync_internal(
     }
 
     Ok(())
+}
+
+fn should_show_recording_confirm_tooltip(profile: Option<&ShortcutProfile>) -> bool {
+    matches!(
+        profile.map(|profile| profile.trigger_mode),
+        Some(ShortcutTriggerMode::Toggle | ShortcutTriggerMode::DoubleTap)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_show_recording_confirm_tooltip;
+    use crate::shortcut::{ShortcutAction, ShortcutProfile, ShortcutTriggerMode};
+
+    fn profile(trigger_mode: ShortcutTriggerMode) -> ShortcutProfile {
+        ShortcutProfile {
+            hotkey: "Cmd+Slash".to_string(),
+            trigger_mode,
+            action: ShortcutAction::Record {
+                polish_template_id: None,
+            },
+        }
+    }
+
+    #[test]
+    fn recording_confirm_tooltip_is_only_for_toggle_and_double_tap_profiles() {
+        let hold = profile(ShortcutTriggerMode::Hold);
+        let toggle = profile(ShortcutTriggerMode::Toggle);
+        let double_tap = profile(ShortcutTriggerMode::DoubleTap);
+
+        assert!(!should_show_recording_confirm_tooltip(None));
+        assert!(!should_show_recording_confirm_tooltip(Some(&hold)));
+        assert!(should_show_recording_confirm_tooltip(Some(&toggle)));
+        assert!(should_show_recording_confirm_tooltip(Some(&double_tap)));
+    }
 }

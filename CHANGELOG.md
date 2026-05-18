@@ -6,7 +6,8 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
-- Improve cloud setup and polish output (95b90fb)
+- Verify cloud setup and keep polish output plain text (73a5fb3)
+- Customize pill appearance (6a47ab4)
 - Support deliberate recording finish triggers (a80c22c)
 - Add voice-writing polish templates (9975217)
 

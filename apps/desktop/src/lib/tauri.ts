@@ -42,6 +42,18 @@ export interface TranscriptionCompleteEvent {
   task_id: number;
 }
 
+export interface CorrectionLearnedEvent {
+  wrong: string;
+  corrected: string;
+  frequency: number;
+}
+
+export interface PillTooltipEvent {
+  message: string;
+  duration_ms: number;
+  task_id?: number | null;
+}
+
 export interface RetryStateEvent {
   entry_id: string;
   status: string;
@@ -175,6 +187,7 @@ export interface AppSettings {
   pill_size: number;
   pill_background_color: string;
   pill_background_opacity: number;
+  correction_memory_enabled: boolean;
 }
 
 export interface ModelInfo {
@@ -242,6 +255,10 @@ export const settingsCommands = {
     invokeWithLogging<CloudConnectionCheckResult>("check_active_cloud_stt_config"),
   checkActiveCloudPolishConfig: () =>
     invokeWithLogging<CloudConnectionCheckResult>("check_active_cloud_polish_config"),
+  clearCorrectionMemory: () =>
+    invokeWithLogging<void>("clear_correction_memory"),
+  openCorrectionMemoryDirectory: () =>
+    invokeWithLogging<void>("open_correction_memory_directory"),
 };
 
 export const hotkeyCommands = {
@@ -439,6 +456,28 @@ export const events = {
     return listen<TranscriptionCompleteEvent>("transcription-complete", (event) => {
       const { task_id, text } = event.payload;
       logger.info("event_received-transcription_complete", { task_id, text_len: text.length });
+      callback(event.payload);
+    });
+  },
+  onCorrectionLearned: (callback: (event: CorrectionLearnedEvent) => void) => {
+    return listen<CorrectionLearnedEvent>("correction-learned", (event) => {
+      const { frequency, wrong, corrected } = event.payload;
+      logger.info("event_received-correction_learned", {
+        frequency,
+        wrong_len: wrong.length,
+        corrected_len: corrected.length,
+      });
+      callback(event.payload);
+    });
+  },
+  onPillTooltip: (callback: (event: PillTooltipEvent) => void) => {
+    return listen<PillTooltipEvent>("pill-tooltip", (event) => {
+      const { message, duration_ms, task_id } = event.payload;
+      logger.info("event_received-pill_tooltip", {
+        message_len: message.length,
+        duration_ms,
+        task_id,
+      });
       callback(event.payload);
     });
   },

@@ -2,9 +2,32 @@ use crate::state::app_state::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-const PILL_W_LOGICAL: f64 = 160.0;
-const PILL_H_LOGICAL: f64 = 120.0;
+pub(crate) const PILL_WINDOW_W_LOGICAL: f64 = 240.0;
+pub(crate) const PILL_WINDOW_H_LOGICAL: f64 = 140.0;
 const MARGIN_LOGICAL: f64 = 4.0;
+
+fn show_pill_without_focus(window: &tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::base::id;
+        use objc::{msg_send, sel, sel_impl};
+
+        if let Ok(ns_window) = window.ns_window() {
+            unsafe {
+                let ns_window = ns_window as id;
+                let _: () = msg_send![ns_window, orderFront: cocoa::base::nil];
+            }
+            Ok(())
+        } else {
+            window.show().map_err(|e| e.to_string())
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.show().map_err(|e| e.to_string())
+    }
+}
 
 /// Update pill window visibility based on indicator mode and recording state.
 /// This is the single source of truth for pill visibility logic.
@@ -236,8 +259,8 @@ pub fn position_pill_window(app: &AppHandle, preset: &str) {
     let screen = monitor.size();
     let origin = monitor.position();
 
-    let pill_w = (PILL_W_LOGICAL * scale) as i32;
-    let pill_h = (PILL_H_LOGICAL * scale) as i32;
+    let pill_w = (PILL_WINDOW_W_LOGICAL * scale) as i32;
+    let pill_h = (PILL_WINDOW_H_LOGICAL * scale) as i32;
     let margin = (MARGIN_LOGICAL * scale) as i32;
 
     let sw = screen.width as i32;
@@ -286,7 +309,7 @@ pub async fn show_pill_window(app: AppHandle) -> Result<(), String> {
     use tracing::info;
     info!("show_pill_window_requested");
     if let Some(window) = app.get_webview_window("pill") {
-        window.show().map_err(|e| e.to_string())?;
+        show_pill_without_focus(&window)?;
         info!("pill_window_shown");
     } else {
         info!("pill_window_not_found");

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getIdentifier } from "@tauri-apps/api/app";
 import {
   autoUpdate,
   flip,
@@ -20,6 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -28,6 +30,7 @@ import { systemCommands, settingsCommands } from "@/lib/tauri";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
+import { showErrorToast } from "@/lib/toast";
 import { useTranslation } from "react-i18next";
 import { supportedLanguages } from "@/i18n";
 import type { PillIndicatorMode, PresetPosition } from "@/types";
@@ -75,9 +78,14 @@ export function GeneralSettings() {
   const { settings, updateSetting } = useSettingsContext();
   const [audioDevices, setAudioDevices] = useState<string[]>(["default"]);
   const [isMacOS, setIsMacOS] = useState(false);
+  const [isInHouseBuild, setIsInHouseBuild] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "transcription">("general");
   const [availableSubdomains, setAvailableSubdomains] = useState<string[]>([]);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [isClearingCorrectionMemory, setIsClearingCorrectionMemory] = useState(false);
+  const [isOpeningCorrectionMemoryDirectory, setIsOpeningCorrectionMemoryDirectory] = useState(false);
+  const [correctionMemoryCleared, setCorrectionMemoryCleared] = useState(false);
+  const correctionMemoryClearedTimer = useRef<number | undefined>(undefined);
 
   const { refs: colorPickerRefs, floatingStyles: colorPickerFloatingStyles, context: colorPickerContext } = useFloating({
     open: colorPickerOpen,
@@ -147,6 +155,19 @@ export function GeneralSettings() {
     systemCommands.getPlatform().then((platform) => {
       setIsMacOS(platform === "macos");
     }).catch((err: unknown) => logger.error("failed_to_get_platform", { error: String(err) }));
+    getIdentifier()
+      .then((identifier) => {
+        setIsInHouseBuild(identifier.endsWith(".inhouse"));
+      })
+      .catch((err: unknown) => logger.error("failed_to_get_app_identifier", { error: String(err) }));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (correctionMemoryClearedTimer.current !== undefined) {
+        window.clearTimeout(correctionMemoryClearedTimer.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -249,6 +270,45 @@ export function GeneralSettings() {
   const handleWindowContextChange = async (checked: boolean) => {
     analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "window_context_enabled", value: String(checked) });
     await updateSetting("window_context_enabled", checked);
+  };
+
+  const handleCorrectionMemoryChange = async (checked: boolean) => {
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "correction_memory_enabled", value: String(checked) });
+    await updateSetting("correction_memory_enabled", checked);
+  };
+
+  const handleClearCorrectionMemory = async () => {
+    setIsClearingCorrectionMemory(true);
+    try {
+      await settingsCommands.clearCorrectionMemory();
+      analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "correction_memory_cleared" });
+      setCorrectionMemoryCleared(true);
+      if (correctionMemoryClearedTimer.current !== undefined) {
+        window.clearTimeout(correctionMemoryClearedTimer.current);
+      }
+      correctionMemoryClearedTimer.current = window.setTimeout(() => {
+        setCorrectionMemoryCleared(false);
+        correctionMemoryClearedTimer.current = undefined;
+      }, 2500);
+    } catch (err) {
+      logger.error("failed_to_clear_correction_memory", { error: String(err) });
+      showErrorToast(t("general.privacy.correctionMemoryClearError"));
+    } finally {
+      setIsClearingCorrectionMemory(false);
+    }
+  };
+
+  const handleOpenCorrectionMemoryDirectory = async () => {
+    setIsOpeningCorrectionMemoryDirectory(true);
+    try {
+      await settingsCommands.openCorrectionMemoryDirectory();
+      analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "correction_memory_directory_opened" });
+    } catch (err) {
+      logger.error("failed_to_open_correction_memory_directory", { error: String(err) });
+      showErrorToast(t("general.privacy.correctionMemoryOpenError"));
+    } finally {
+      setIsOpeningCorrectionMemoryDirectory(false);
+    }
   };
 
   const handleSttLanguageChange = async (value: string) => {
@@ -551,6 +611,59 @@ export function GeneralSettings() {
                   onCheckedChange={handleAnalyticsChange}
                 />
               </div>
+              <div className="flex items-center justify-between space-x-4">
+                <div>
+                  <Label htmlFor="correction-memory-toggle">
+                    {t("general.privacy.correctionMemory")}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t("general.privacy.correctionMemoryDesc")}
+                  </p>
+                </div>
+                <Switch
+                  id="correction-memory-toggle"
+                  checked={settings.correction_memory_enabled ?? true}
+                  onCheckedChange={handleCorrectionMemoryChange}
+                />
+              </div>
+              <div className="flex items-center justify-between space-x-4">
+                <div>
+                  <Label>{t("general.privacy.correctionMemoryClear")}</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t("general.privacy.correctionMemoryClearDesc")}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isClearingCorrectionMemory}
+                  onClick={handleClearCorrectionMemory}
+                >
+                  {correctionMemoryCleared
+                    ? t("general.privacy.correctionMemoryCleared")
+                    : t("general.privacy.correctionMemoryClearAction")}
+                </Button>
+              </div>
+              {isInHouseBuild && (
+                <div className="flex items-center justify-between space-x-4">
+                  <div>
+                    <Label>{t("general.privacy.correctionMemoryOpen")}</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {t("general.privacy.correctionMemoryOpenDesc")}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isOpeningCorrectionMemoryDirectory}
+                    onClick={handleOpenCorrectionMemoryDirectory}
+                  >
+                    {t("general.privacy.correctionMemoryOpenAction")}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </>

@@ -308,19 +308,23 @@ pub(super) fn start_unified_recording(
         };
 
         let consumer: Box<dyn RecordingConsumer> = if cloud_stt_enabled {
-            let stt_initial_prompt_for_log = stt_context.initial_prompt.clone().unwrap_or_default();
-            let stt_initial_prompt_chars = stt_initial_prompt_for_log.chars().count();
-            let (domain, subdomain, glossary) = (
+            let stt_initial_prompt_chars = stt_context
+                .initial_prompt
+                .as_deref()
+                .map(|value| value.chars().count())
+                .unwrap_or(0);
+            let glossary_chars = stt_context
+                .glossary
+                .as_deref()
+                .map(|value| value.chars().count())
+                .unwrap_or(0);
+            let (domain, subdomain) = (
                 stt_context
                     .domain
                     .clone()
                     .unwrap_or_else(|| "none".to_owned()),
                 stt_context
                     .subdomain
-                    .clone()
-                    .unwrap_or_else(|| "none".to_owned()),
-                stt_context
-                    .glossary
                     .clone()
                     .unwrap_or_else(|| "none".to_owned()),
             );
@@ -339,10 +343,10 @@ pub(super) fn start_unified_recording(
                 provider = %provider_name,
                 domain,
                 subdomain,
-                glossary,
+                has_glossary = glossary_chars > 0,
+                glossary_chars,
                 has_initial_prompt = stt_initial_prompt_chars > 0,
                 initial_prompt_chars = stt_initial_prompt_chars,
-                initial_prompt = %stt_initial_prompt_for_log,
                 "streaming_client_created"
             );
 
@@ -457,19 +461,31 @@ pub(super) fn start_unified_recording(
             match text_result {
                 Ok(text) => {
                     let raw_text = text.clone();
+                    let correction_memory_enabled = {
+                        let state = app_clone.state::<AppState>();
+                        let settings = state.settings.lock();
+                        settings.correction_memory_enabled
+                    };
+                    let corrected_text = if correction_memory_enabled {
+                        crate::correction_learning::storage::apply_shared_corrections_best_effort(
+                            &text,
+                        )
+                    } else {
+                        text.clone()
+                    };
                     let state = app_clone.state::<AppState>();
                     if state.is_cancellation_requested(task_id) {
                         discard_canceled_result(&state, task_id, audio_path.as_ref());
                         return;
                     }
-                    let (final_text, polish_time_ms) = if text.is_empty() {
+                    let (final_text, polish_time_ms) = if corrected_text.is_empty() {
                         (String::new(), 0)
                     } else {
                         maybe_polish_transcription_text(
                             &ProcessingEventTarget::Recording(&app_clone),
                             &state,
                             task_id,
-                            text,
+                            corrected_text,
                             resolved_polish_template_id_clone.clone(),
                         )
                         .await

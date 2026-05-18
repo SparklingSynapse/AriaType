@@ -21,12 +21,26 @@ impl AppPaths {
         })
     }
 
+    pub fn shared_data_dir() -> PathBuf {
+        dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("AriaType")
+    }
+
     pub fn models_dir() -> PathBuf {
         Self::data_dir().join("models")
     }
 
     pub fn recordings_dir() -> PathBuf {
         Self::data_dir().join("recordings")
+    }
+
+    pub fn correction_learning_dir() -> PathBuf {
+        Self::shared_data_dir().join("correction-learning")
+    }
+
+    pub fn correction_learning_file() -> PathBuf {
+        Self::correction_learning_dir().join("corrections.json")
     }
 
     pub fn cache_dir() -> PathBuf {
@@ -72,6 +86,9 @@ impl AppPaths {
         }
         if let Err(e) = std::fs::create_dir_all(Self::recordings_dir()) {
             tracing::warn!(error = %e, "recordings_directory_creation_failed");
+        }
+        if let Err(e) = std::fs::create_dir_all(Self::correction_learning_dir()) {
+            tracing::warn!(error = %e, "correction_learning_directory_creation_failed");
         }
         if let Err(e) = std::fs::create_dir_all(Self::cache_dir()) {
             tracing::warn!(error = %e, "cache_directory_creation_failed");
@@ -128,6 +145,13 @@ mod tests {
         let recordings = AppPaths::recordings_dir();
         assert!(recordings.ends_with("recordings"));
         assert!(recordings.starts_with(&data));
+
+        let correction_file = AppPaths::correction_learning_file();
+        assert!(correction_file.ends_with("corrections.json"));
+        assert!(correction_file
+            .parent()
+            .unwrap()
+            .ends_with("correction-learning"));
 
         let temp = AppPaths::temp_dir();
         assert!(temp.ends_with("temp"));

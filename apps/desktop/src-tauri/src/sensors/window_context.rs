@@ -16,6 +16,7 @@ const RESIZE_IMAGE_BEFORE_OCR: bool = false;
 const RESIZE_SKIP_MARGIN: u32 = 128;
 const MIN_FOCUSED_WINDOW_WIDTH: u32 = 240;
 const MIN_FOCUSED_WINDOW_HEIGHT: u32 = 120;
+const DEBUG_SAVE_OCR_SCREENSHOTS_ENV: &str = "ARIATYPE_DEBUG_SAVE_OCR_SCREENSHOTS";
 
 struct CapturedWindowImage {
     image: image::DynamicImage,
@@ -86,6 +87,19 @@ fn ocr_screenshot_path() -> std::path::PathBuf {
     AppPaths::log_dir().join(filename)
 }
 
+fn debug_save_ocr_screenshots_enabled() -> bool {
+    std::env::var(DEBUG_SAVE_OCR_SCREENSHOTS_ENV)
+        .map(|value| is_truthy_env_value(&value))
+        .unwrap_or(false)
+}
+
+fn is_truthy_env_value(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
 fn save_ocr_screenshot_to_path(image: &image::DynamicImage, path: &std::path::Path) -> bool {
     if let Some(parent) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
@@ -103,7 +117,12 @@ fn save_ocr_screenshot_to_path(image: &image::DynamicImage, path: &std::path::Pa
     }
 }
 
-fn schedule_ocr_screenshot_save(image: Arc<image::DynamicImage>) -> std::path::PathBuf {
+fn schedule_ocr_screenshot_save(image: Arc<image::DynamicImage>) -> Option<std::path::PathBuf> {
+    if !debug_save_ocr_screenshots_enabled() {
+        debug!("window_context_screenshot_save_disabled");
+        return None;
+    }
+
     let path = ocr_screenshot_path();
     let path_for_task = path.clone();
 
@@ -118,7 +137,7 @@ fn schedule_ocr_screenshot_save(image: Arc<image::DynamicImage>) -> std::path::P
         }
     }));
 
-    path
+    Some(path)
 }
 
 pub async fn capture_window_context() -> Option<WindowContextBundle> {
@@ -156,7 +175,7 @@ pub async fn capture_window_context() -> Option<WindowContextBundle> {
     let save_started = std::time::Instant::now();
     let screenshot_path = schedule_ocr_screenshot_save(Arc::clone(&image));
     let save_ms = save_started.elapsed().as_millis();
-    let screenshot_path_for_log = screenshot_path.display().to_string();
+    let screenshot_saved = screenshot_path.is_some();
 
     info!(
         capture_ms,
@@ -170,7 +189,7 @@ pub async fn capture_window_context() -> Option<WindowContextBundle> {
         source_height = source_image_height,
         width = image_width,
         height = image_height,
-        screenshot_path = %screenshot_path_for_log,
+        screenshot_saved,
         "window_context_ocr_input_ready"
     );
 
@@ -225,13 +244,13 @@ pub async fn capture_window_context() -> Option<WindowContextBundle> {
             info!(
                 chars = bundle.filtered_text.len(),
                 source = bundle.source.as_str(),
-                screenshot_path = %screenshot_path_for_log,
+                screenshot_saved,
                 ocr_confidence_avg = ?bundle.ocr_confidence.map(|confidence| confidence.average),
                 ocr_confidence_max = ?bundle.ocr_confidence.map(|confidence| confidence.max),
                 ocr_observations = ?bundle.ocr_confidence.map(|confidence| confidence.observations),
                 ocr_provider_raw_confidence = ?bundle.ocr_confidence.and_then(|confidence| confidence.provider_raw),
-                raw_ocr_text = %bundle.raw_ocr_text,
-                filtered_text = %bundle.filtered_text,
+                raw_ocr_chars = bundle.raw_ocr_text.chars().count(),
+                filtered_text_chars = bundle.filtered_text.chars().count(),
                 "window_context_captured"
             );
             Some(bundle)
@@ -440,6 +459,17 @@ mod tests {
             .file_stem()
             .and_then(|stem| stem.to_str())
             .is_some_and(|stem| stem.len() >= "2026-05-11-12-57-35-000".len()));
+    }
+
+    #[test]
+    fn debug_screenshot_env_accepts_only_explicit_truthy_values() {
+        assert!(is_truthy_env_value("1"));
+        assert!(is_truthy_env_value("true"));
+        assert!(is_truthy_env_value("YES"));
+        assert!(is_truthy_env_value(" on "));
+        assert!(!is_truthy_env_value(""));
+        assert!(!is_truthy_env_value("0"));
+        assert!(!is_truthy_env_value("false"));
     }
 
     fn create_test_image(width: u32, height: u32) -> DynamicImage {

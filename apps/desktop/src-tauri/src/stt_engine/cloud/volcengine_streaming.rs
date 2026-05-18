@@ -431,12 +431,16 @@ impl VolcengineStreamingClient {
             provider = "volcengine",
             has_corpus_context = !context_json.is_empty(),
             corpus_context_chars = context_json.chars().count(),
-            corpus_context = %context_json,
             "client_request_context"
         );
 
         let req_str = req_json.to_string();
-        debug!(provider = "volcengine", request = %req_str, "client_request_payload");
+        debug!(
+            provider = "volcengine",
+            request_bytes = req_str.len(),
+            has_corpus_context = !context_json.is_empty(),
+            "client_request_payload_prepared"
+        );
         let req_bytes = req_str.as_bytes();
 
         let header = build_header(

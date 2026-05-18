@@ -70,6 +70,14 @@ pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result:
             emit_recording_state(app, RecordingStatus::Idle, task_id);
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             crate::text_injector::insert_text(&text);
+            let correction_memory_enabled = {
+                let state = app.state::<AppState>();
+                let settings = state.settings.lock();
+                settings.correction_memory_enabled
+            };
+            if correction_memory_enabled {
+                crate::correction_learning::observe_post_delivery_edit(app.clone(), text);
+            }
         }
         FinalizeResult::TransitionToIdle => {
             emit_recording_state(app, RecordingStatus::Idle, task_id);

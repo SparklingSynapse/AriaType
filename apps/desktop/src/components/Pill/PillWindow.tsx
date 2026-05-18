@@ -8,7 +8,7 @@ import { SettingsButton } from "./SettingsButton";
 import type { RecordingStatus } from "@/types";
 import { logger } from "@/lib/logger";
 import { settingsCommands, windowCommands, events, type AppSettings } from "@/lib/tauri";
-import type { RecordingStateEvent } from "@/lib/tauri";
+import type { PillTooltipEvent, RecordingStateEvent } from "@/lib/tauri";
 
 // Font-size scaling factor for pill size (1-5 levels)
 // Applied to document root so Tailwind rem units scale proportionally
@@ -58,6 +58,10 @@ function hexToRgba(color: string, opacity: number): string {
   return `rgba(${red}, ${green}, ${blue}, ${normalizePillBackgroundOpacity(opacity)})`;
 }
 
+function shouldRequestNativeShowForTooltip(event: PillTooltipEvent): boolean {
+  return event.task_id === null || event.task_id === undefined;
+}
+
 export function PillWindow() {
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
@@ -66,7 +70,10 @@ export function PillWindow() {
   const [pillSize, setPillSize] = useState(2);
   const [pillBackgroundColor, setPillBackgroundColor] = useState(DEFAULT_PILL_BACKGROUND_COLOR);
   const [pillBackgroundOpacity, setPillBackgroundOpacity] = useState(DEFAULT_PILL_BACKGROUND_OPACITY);
+  const [tooltip, setTooltip] = useState<PillTooltipEvent | null>(null);
   const latestTaskId = useRef<number>(0);
+  const tooltipTimer = useRef<number | undefined>(undefined);
+  const indicatorModeRef = useRef(indicatorMode);
 
   // Apply font-size to document root for rem-based scaling
   useEffect(() => {
@@ -79,7 +86,9 @@ export function PillWindow() {
 
   useEffect(() => {
     settingsCommands.getSettings().then((s) => {
-      setIndicatorMode(s.pill_indicator_mode ?? "always");
+      const nextIndicatorMode = s.pill_indicator_mode ?? "always";
+      indicatorModeRef.current = nextIndicatorMode;
+      setIndicatorMode(nextIndicatorMode);
       setPillSize(s.pill_size ?? 2);
       setPillBackgroundColor(normalizePillBackgroundColor(s.pill_background_color));
       setPillBackgroundOpacity(normalizePillBackgroundOpacity(s.pill_background_opacity));
@@ -87,7 +96,9 @@ export function PillWindow() {
 
     let unlisten: (() => void) | undefined;
     events.onSettingsChanged((s: AppSettings) => {
-      setIndicatorMode(s.pill_indicator_mode ?? "always");
+      const nextIndicatorMode = s.pill_indicator_mode ?? "always";
+      indicatorModeRef.current = nextIndicatorMode;
+      setIndicatorMode(nextIndicatorMode);
       setPillSize(s.pill_size ?? 2);
       setPillBackgroundColor(normalizePillBackgroundColor(s.pill_background_color));
       setPillBackgroundOpacity(normalizePillBackgroundOpacity(s.pill_background_opacity));
@@ -100,6 +111,7 @@ export function PillWindow() {
     let unlistenStatus: UnlistenFn | undefined;
     let unlistenLevel: UnlistenFn | undefined;
     let unlistenActivity: UnlistenFn | undefined;
+    let unlistenTooltip: UnlistenFn | undefined;
 
     const setupListeners = async () => {
       unlistenStatus = await listen<RecordingStateEvent>(
@@ -131,6 +143,25 @@ export function PillWindow() {
           setHasAudioActivity(event.payload);
         }
       );
+
+      unlistenTooltip = await events.onPillTooltip((event) => {
+        if (typeof event.task_id === "number" && event.task_id < latestTaskId.current) {
+          return;
+        }
+        setTooltip(event);
+        if (indicatorModeRef.current === "when_recording" && shouldRequestNativeShowForTooltip(event)) {
+          void windowCommands.showPill().catch((error) => {
+            logger.error("failed_to_show_pill_for_tooltip", { error: String(error) });
+          });
+        }
+        if (tooltipTimer.current !== undefined) {
+          window.clearTimeout(tooltipTimer.current);
+        }
+        tooltipTimer.current = window.setTimeout(() => {
+          setTooltip(null);
+          tooltipTimer.current = undefined;
+        }, Math.max(0, event.duration_ms));
+      });
     };
 
     setupListeners();
@@ -139,6 +170,10 @@ export function PillWindow() {
       unlistenStatus?.();
       unlistenLevel?.();
       unlistenActivity?.();
+      unlistenTooltip?.();
+      if (tooltipTimer.current !== undefined) {
+        window.clearTimeout(tooltipTimer.current);
+      }
     };
   }, []);
 
@@ -146,7 +181,7 @@ export function PillWindow() {
 
   // For "when_recording" mode: pill animates in/out and hides the OS window after exit.
   // For "always" mode: pill content is always rendered, no show/hide animation.
-  const showContent = indicatorMode === "always" ? true : isActive;
+  const showContent = indicatorMode === "always" || isActive || (indicatorMode !== "never" && tooltip !== null);
 
   const handleDrag = useCallback(async () => {
     try {
@@ -216,21 +251,20 @@ export function PillWindow() {
                 <SettingsButton isLightBackground={isLightBackground} />
               </div>
             </BorderBeam>
-            {/* TODO: Re-enable tooltip for future use */}
-            {/* <AnimatePresence mode="wait">
-              {statusTooltipKey && (
+            <AnimatePresence mode="wait">
+              {tooltip && (
                 <motion.div
-                  key={statusTooltipKey}
+                  key={`${tooltip.task_id ?? "global"}:${tooltip.message}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.15, ease: "easeOut" }}
-                  className="pointer-events-none mt-2 rounded-full bg-black/60 px-2 py-0.5 text-[9.5px] font-medium text-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-white/10 backdrop-blur-md whitespace-nowrap"
+                  className="pointer-events-none mt-2 max-w-[calc(100vw-1rem)] truncate rounded-full bg-black/60 px-2.5 py-0.5 text-[9.5px] font-medium text-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-white/10 backdrop-blur-md"
                 >
-                  {t(statusTooltipKey)}
+                  {tooltip.message}
                 </motion.div>
               )}
-            </AnimatePresence> */}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>

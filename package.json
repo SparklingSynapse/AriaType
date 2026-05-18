@@ -6,6 +6,7 @@
   "description": "AriaType - Voice to Text Application Monorepo",
   "scripts": {
     "check:i18n": "node scripts/check-i18n.mjs",
+    "lint:commit": "commitlint",
     "check:md-links": "node scripts/check-md-links.mjs",
     "changelog": "node scripts/generate-changelog.mjs",
     "version:patch": "pnpm --filter @ariatype/desktop version:patch",
@@ -32,11 +33,13 @@
     "test:e2e": "pnpm --filter @ariatype/desktop run test:e2e"
   },
   "simple-git-hooks": {
-    "commit-msg": "node scripts/check-commit-msg.mjs \"$1\"",
+    "commit-msg": "pnpm exec commitlint --edit \"$1\" && node scripts/check-commit-msg.mjs \"$1\"",
     "pre-commit": "./scripts/pre-commit-hook.sh",
     "post-commit": "./scripts/post-commit-hook.sh"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
     "simple-git-hooks": "^2.13.1",
     "typescript": "^5.7.3"
   },

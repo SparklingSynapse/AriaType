@@ -133,6 +133,13 @@ fn missing_pill_background_color_uses_default() {
 }
 
 #[test]
+fn correction_memory_defaults_enabled() {
+    let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
+
+    assert!(settings.correction_memory_enabled);
+}
+
+#[test]
 fn normalize_pill_background_color_accepts_only_hex_rgb_values() {
     assert_eq!(
         normalize_pill_background_color(" #AABBCC "),

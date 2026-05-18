@@ -7,6 +7,13 @@ pub struct RecordingStateEvent {
     pub task_id: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PillTooltipEvent {
+    pub message: String,
+    pub duration_ms: u64,
+    pub task_id: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordingStatus {
     Recording,
@@ -39,6 +46,30 @@ pub fn emit_recording_state(app: &AppHandle, status: RecordingStatus, task_id: u
     let _ = app.emit(
         EventName::RECORDING_STATE_CHANGED,
         recording_state_event(status, task_id),
+    );
+}
+
+pub fn pill_tooltip_event(
+    message: impl Into<String>,
+    duration_ms: u64,
+    task_id: Option<u64>,
+) -> PillTooltipEvent {
+    PillTooltipEvent {
+        message: message.into(),
+        duration_ms,
+        task_id,
+    }
+}
+
+pub fn emit_pill_tooltip(
+    app: &AppHandle,
+    message: impl Into<String>,
+    duration_ms: u64,
+    task_id: Option<u64>,
+) {
+    let _ = app.emit(
+        EventName::PILL_TOOLTIP,
+        pill_tooltip_event(message, duration_ms, task_id),
     );
 }
 
@@ -214,6 +245,7 @@ pub struct SettingsChangedEvent {
     pub stt_engine_work_domain: String,
     pub stt_engine_work_domain_prompt: String,
     pub stt_engine_user_glossary: String,
+    pub correction_memory_enabled: bool,
 }
 
 #[allow(non_snake_case)]
@@ -223,6 +255,8 @@ pub mod EventName {
     pub const AUDIO_LEVEL: &str = "audio-level";
     pub const AUDIO_ACTIVITY: &str = "audio-activity";
     pub const TRANSCRIPTION_COMPLETE: &str = "transcription-complete";
+    pub const CORRECTION_LEARNED: &str = "correction-learned";
+    pub const PILL_TOOLTIP: &str = "pill-tooltip";
     pub const RETRY_COMPLETE: &str = "retry-complete";
     pub const TRANSCRIPTION_PARTIAL: &str = "transcription-partial";
     pub const TRANSCRIPTION_ERROR: &str = "transcription-error";
@@ -248,7 +282,9 @@ pub mod EventName {
 
 #[cfg(test)]
 mod tests {
-    use super::{recording_state_event, retry_state_event, RecordingStatus, RetryStatus};
+    use super::{
+        pill_tooltip_event, recording_state_event, retry_state_event, RecordingStatus, RetryStatus,
+    };
 
     #[test]
     fn recording_status_as_str_matches_frontend_contract() {
@@ -265,6 +301,15 @@ mod tests {
 
         assert_eq!(event.status, "polishing");
         assert_eq!(event.task_id, 42);
+    }
+
+    #[test]
+    fn pill_tooltip_event_carries_backend_message_and_task_context() {
+        let event = pill_tooltip_event("ESC 取消，Enter 确认", 3200, Some(42));
+
+        assert_eq!(event.message, "ESC 取消，Enter 确认");
+        assert_eq!(event.duration_ms, 3200);
+        assert_eq!(event.task_id, Some(42));
     }
 
     #[test]
