@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v0.6.1 (2026-05-19)
+
+### Bug Fixes
+
+- Keep idle tooltips from showing pill body (ad32ae3)
+
 ## v0.6.0 (2026-05-19)
 
 ### Features
