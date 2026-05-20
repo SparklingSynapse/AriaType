@@ -1,7 +1,7 @@
 use super::types::CorrectionPair;
 use similar::{ChangeTag, TextDiff};
 
-const MAX_CORRECTION_CHARS: usize = 80;
+const MAX_CORRECTION_CHARS: usize = 40;
 
 pub fn extract_correction_pair(before: &str, after: &str) -> Option<CorrectionPair> {
     let before = normalize_text_snapshot(before);
@@ -102,6 +102,10 @@ fn normalize_pair(wrong: String, corrected: String) -> Option<CorrectionPair> {
         || corrected.contains('\n')
         || wrong.chars().count() > MAX_CORRECTION_CHARS
         || corrected.chars().count() > MAX_CORRECTION_CHARS
+        || is_single_cjk_term(&wrong)
+        || is_single_cjk_term(&corrected)
+        || contains_sentence_boundary_punctuation(&wrong)
+        || contains_sentence_boundary_punctuation(&corrected)
         || !has_word_like_char(&wrong)
         || !has_word_like_char(&corrected)
     {
@@ -120,6 +124,30 @@ fn normalize_term(text: String) -> String {
 
 fn has_word_like_char(text: &str) -> bool {
     text.chars().any(|c| c.is_alphanumeric() || is_cjk(c))
+}
+
+fn is_single_cjk_term(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    chars.next().is_none() && is_cjk(first)
+}
+
+fn contains_sentence_boundary_punctuation(text: &str) -> bool {
+    let chars = text.chars().collect::<Vec<_>>();
+    chars.iter().enumerate().any(|(index, c)| {
+        if *c == '.' {
+            let previous = index.checked_sub(1).and_then(|i| chars.get(i)).copied();
+            let next = chars.get(index + 1).copied();
+            return !matches!(
+                (previous, next),
+                (Some(left), Some(right)) if left.is_ascii_alphanumeric() && right.is_ascii_alphanumeric()
+            );
+        }
+
+        is_sentence_boundary_punctuation(*c)
+    })
 }
 
 fn is_sentence_boundary_punctuation(c: char) -> bool {
@@ -202,8 +230,12 @@ fn expand_ascii_word_replacement(
     before_end: &mut usize,
     after_end: &mut usize,
 ) {
-    if !has_ascii_word_change(before, *before_start, *before_end)
-        || !has_ascii_word_change(after, *after_start, *after_end)
+    if *before_start == *before_end || *after_start == *after_end {
+        return;
+    }
+
+    if !has_ascii_word_change_or_context(before, *before_start, *before_end)
+        || !has_ascii_word_change_or_context(after, *after_start, *after_end)
     {
         return;
     }
@@ -233,6 +265,16 @@ fn is_ascii_word_char(c: char) -> bool {
 
 fn has_ascii_word_change(chars: &[char], start: usize, end: usize) -> bool {
     start < end && chars[start..end].iter().copied().any(is_ascii_word_char)
+}
+
+fn has_ascii_word_change_or_context(chars: &[char], start: usize, end: usize) -> bool {
+    has_ascii_word_change(chars, start, end)
+        || start
+            .checked_sub(1)
+            .and_then(|index| chars.get(index))
+            .copied()
+            .is_some_and(is_ascii_word_char)
+        || chars.get(end).copied().is_some_and(is_ascii_word_char)
 }
 
 fn is_cjk(c: char) -> bool {
@@ -299,6 +341,28 @@ mod tests {
     #[test]
     fn ignores_unicode_punctuation_only_edits() {
         assert!(extract_correction_pair("你好，", "你好。").is_none());
+    }
+
+    #[test]
+    fn ignores_sentence_to_ui_label_edits() {
+        assert!(extract_correction_pair(
+            "运行一下这个recipe，看看效果",
+            "Ask for follow-up changes"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn ignores_single_cjk_character_replacements() {
+        assert!(extract_correction_pair("我", "而不").is_none());
+    }
+
+    #[test]
+    fn accepts_technical_terms_with_internal_punctuation() {
+        let pair = extract_correction_pair("请使用 Node js 运行", "请使用 Node.js 运行").unwrap();
+
+        assert_eq!(pair.wrong, "Node js");
+        assert_eq!(pair.corrected, "Node.js");
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -56,6 +57,10 @@ impl CorrectionStore {
     }
 
     pub fn upsert_pair(&self, pair: CorrectionPair) -> Result<Option<CorrectionMapping>, String> {
+        if !is_word_level_correction_pair(&pair.wrong, &pair.corrected) {
+            return Ok(None);
+        }
+
         self.with_store_lock(|| {
             let now_ms = chrono::Utc::now().timestamp_millis();
             let mut file = self.load_or_empty_unlocked(now_ms)?;
@@ -133,8 +138,13 @@ impl CorrectionStore {
 
         let content = std::fs::read_to_string(&self.path)
             .map_err(|e| format!("failed to read correction learning file: {e}"))?;
-        serde_json::from_str::<CorrectionLearningFile>(&content)
-            .map_err(|e| format!("failed to parse correction learning file: {e}"))
+        let file = serde_json::from_str::<CorrectionLearningFile>(&content)
+            .map_err(|e| format!("failed to parse correction learning file: {e}"))?;
+        let (file, sanitized) = sanitize_loaded_file(file);
+        if sanitized {
+            self.save_unlocked(&file)?;
+        }
+        Ok(file)
     }
 
     fn save_unlocked(&self, file: &CorrectionLearningFile) -> Result<(), String> {
@@ -221,6 +231,15 @@ fn remove_stale_lock_if_needed(lock_path: &Path) {
     }
 }
 
+fn sanitize_loaded_file(mut file: CorrectionLearningFile) -> (CorrectionLearningFile, bool) {
+    let original_len = file.corrections.len();
+    file.corrections.retain(|mapping| {
+        mapping.frequency > 0 && is_word_level_correction_pair(&mapping.wrong, &mapping.corrected)
+    });
+    let sanitized = file.corrections.len() != original_len;
+    (file, sanitized)
+}
+
 fn replace_file(tmp_path: &Path, target_path: &Path) -> Result<(), String> {
     match std::fs::rename(tmp_path, target_path) {
         Ok(()) => Ok(()),
@@ -243,6 +262,7 @@ pub fn apply_corrections_to_text(
     let mut result = text.to_string();
     let mut applied = Vec::new();
     let mut mappings = mappings.to_vec();
+    let conflicted_wrong_terms = conflicted_wrong_terms(&mappings);
     mappings.sort_by(|left, right| {
         right
             .wrong
@@ -256,6 +276,8 @@ pub fn apply_corrections_to_text(
         .iter()
         .filter(|mapping| mapping.frequency >= AUTO_APPLY_MIN_FREQUENCY)
         .filter(|mapping| is_word_level_correction_pair(&mapping.wrong, &mapping.corrected))
+        .filter(|mapping| !conflicted_wrong_terms.contains(mapping.wrong.as_str()))
+        .filter(|mapping| is_safe_auto_apply_mapping(&mapping.wrong, &mapping.corrected))
         .take(MAX_APPLIED_CORRECTIONS)
     {
         let next = replace_mapping(&result, &mapping.wrong, &mapping.corrected);
@@ -272,6 +294,33 @@ pub fn apply_corrections_to_text(
         text: result,
         applied,
     }
+}
+
+fn conflicted_wrong_terms(mappings: &[CorrectionMapping]) -> HashSet<String> {
+    let mut corrected_by_wrong: HashMap<&str, HashSet<&str>> = HashMap::new();
+    for mapping in mappings {
+        corrected_by_wrong
+            .entry(mapping.wrong.as_str())
+            .or_default()
+            .insert(mapping.corrected.as_str());
+    }
+
+    corrected_by_wrong
+        .into_iter()
+        .filter_map(|(wrong, corrected)| (corrected.len() > 1).then(|| wrong.to_string()))
+        .collect()
+}
+
+fn is_safe_auto_apply_mapping(wrong: &str, corrected: &str) -> bool {
+    if is_all_cjk(wrong) && is_all_cjk(corrected) && wrong.chars().count() < 3 {
+        return false;
+    }
+
+    true
+}
+
+fn is_all_cjk(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(is_cjk)
 }
 
 fn replace_mapping(text: &str, wrong: &str, corrected: &str) -> String {
@@ -316,6 +365,17 @@ fn has_word_boundaries(text: &str, start: usize, end: usize) -> bool {
 
 fn is_ascii_word_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')
+}
+
+fn is_cjk(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x3400..=0x4DBF
+            | 0x4E00..=0x9FFF
+            | 0xF900..=0xFAFF
+            | 0x3040..=0x30FF
+            | 0xAC00..=0xD7AF
+    )
 }
 
 pub fn apply_shared_corrections_best_effort(text: &str) -> String {
@@ -405,10 +465,43 @@ mod tests {
     }
 
     #[test]
-    fn applies_cjk_correction_mapping() {
-        let result = apply_corrections_to_text("这个分析错误需要修复", &[mapping("分析", "分词")]);
+    fn applies_long_cjk_correction_mapping() {
+        let result = apply_corrections_to_text(
+            "请打开浦东机场航站楼",
+            &[mapping("浦东机场", "浦东国际机场")],
+        );
 
-        assert_eq!(result.text, "这个分词错误需要修复");
+        assert_eq!(result.text, "请打开浦东国际机场航站楼");
+    }
+
+    #[test]
+    fn does_not_apply_single_cjk_character_mapping() {
+        let result = apply_corrections_to_text("我想看看结果", &[mapping("我", "而不")]);
+
+        assert_eq!(result.text, "我想看看结果");
+        assert!(result.applied.is_empty());
+    }
+
+    #[test]
+    fn does_not_apply_short_cjk_mapping_inside_longer_terms() {
+        let result = apply_corrections_to_text("数据分析师", &[mapping("分析", "分词")]);
+
+        assert_eq!(result.text, "数据分析师");
+        assert!(result.applied.is_empty());
+    }
+
+    #[test]
+    fn does_not_apply_conflicting_mappings_for_same_wrong_term() {
+        let result = apply_corrections_to_text(
+            "Air Tap",
+            &[
+                mapping("Air Tap", "AriaType"),
+                mapping("Air Tap", "AiraType"),
+            ],
+        );
+
+        assert_eq!(result.text, "Air Tap");
+        assert!(result.applied.is_empty());
     }
 
     #[test]
@@ -466,30 +559,77 @@ mod tests {
     }
 
     #[test]
+    fn load_filters_polluted_correction_mappings() {
+        let dir = TempDir::new().unwrap();
+        let store = CorrectionStore::new(dir.path().join("corrections.json"));
+        let file = CorrectionLearningFile {
+            version: CORRECTION_LEARNING_FILE_VERSION,
+            updated_at_ms: 1,
+            corrections: vec![
+                mapping("Error type", "AriaType"),
+                mapping("我", "而不"),
+                mapping("运行一下这个recipe，看看效果", "Ask for follow-up changes"),
+            ],
+        };
+        std::fs::write(store.path(), serde_json::to_string(&file).unwrap()).unwrap();
+
+        let loaded = store.load_or_empty(0).unwrap();
+
+        assert_eq!(loaded.corrections.len(), 1);
+        assert_eq!(loaded.corrections[0].wrong, "Error type");
+        assert_eq!(loaded.corrections[0].corrected, "AriaType");
+    }
+
+    #[test]
+    fn load_persists_filtered_correction_mappings() {
+        let dir = TempDir::new().unwrap();
+        let store = CorrectionStore::new(dir.path().join("corrections.json"));
+        let file = CorrectionLearningFile {
+            version: CORRECTION_LEARNING_FILE_VERSION,
+            updated_at_ms: 1,
+            corrections: vec![
+                mapping("Error type", "AriaType"),
+                mapping("我", "而不"),
+                mapping("运行一下这个recipe，看看效果", "Ask for follow-up changes"),
+            ],
+        };
+        std::fs::write(store.path(), serde_json::to_string(&file).unwrap()).unwrap();
+
+        let loaded = store.load_or_empty(0).unwrap();
+        let persisted = serde_json::from_str::<CorrectionLearningFile>(
+            &std::fs::read_to_string(store.path()).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(loaded.corrections, persisted.corrections);
+        assert_eq!(persisted.corrections.len(), 1);
+    }
+
+    #[test]
     fn learns_from_user_edits_then_applies_after_repeat_observation() {
         let dir = TempDir::new().unwrap();
         let store = CorrectionStore::new(dir.path().join("corrections.json"));
 
         let first = store
-            .learn_from_edit("这个分析错误需要修复", "这个分词错误需要修复")
+            .learn_from_edit("请打开上海浦东航站楼", "请打开北京朝阳航站楼")
             .unwrap()
             .unwrap();
-        assert_eq!(first.wrong, "分析");
-        assert_eq!(first.corrected, "分词");
+        assert_eq!(first.wrong, "上海浦东");
+        assert_eq!(first.corrected, "北京朝阳");
         assert_eq!(first.frequency, 1);
 
-        let first_apply = store.apply_to_text("这个分析错误需要复查").unwrap();
-        assert_eq!(first_apply.text, "这个分析错误需要复查");
+        let first_apply = store.apply_to_text("请导航到上海浦东").unwrap();
+        assert_eq!(first_apply.text, "请导航到上海浦东");
         assert!(first_apply.applied.is_empty());
 
         let second = store
-            .learn_from_edit("这个分析错误需要修复", "这个分词错误需要修复")
+            .learn_from_edit("请打开上海浦东航站楼", "请打开北京朝阳航站楼")
             .unwrap()
             .unwrap();
         assert_eq!(second.frequency, 2);
 
-        let second_apply = store.apply_to_text("这个分析错误需要复查").unwrap();
-        assert_eq!(second_apply.text, "这个分词错误需要复查");
+        let second_apply = store.apply_to_text("请导航到上海浦东").unwrap();
+        assert_eq!(second_apply.text, "请导航到北京朝阳");
         assert_eq!(second_apply.applied.len(), 1);
     }
 }

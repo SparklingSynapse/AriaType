@@ -38,6 +38,8 @@ const QWEN_OMNI_REALTIME_MODEL: &str = "qwen3-asr-flash-realtime";
 const LEGACY_QWEN_OMNI_REALTIME_MODEL: &str = "qwen3.5-omni-plus-realtime";
 const SESSION_READY_TIMEOUT: Duration = Duration::from_secs(2);
 const FINAL_RESULT_TIMEOUT: Duration = Duration::from_secs(10);
+const CONNECT_MAX_ATTEMPTS: usize = 2;
+const CONNECT_RETRY_DELAY: Duration = Duration::from_millis(300);
 
 pub const RECOMMENDED_CHUNK_SAMPLES: usize = 1600;
 
@@ -103,46 +105,63 @@ impl AliyunStreamClient {
 
         let url = format!("{}?model={}", endpoint, model);
 
-        info!(provider = "aliyun-stream", url = %url, "websocket_connecting");
+        let mut connection = None;
 
-        let mut request =
-            tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(&url)
+        for attempt in 1..=CONNECT_MAX_ATTEMPTS {
+            info!(
+                provider = "aliyun-stream",
+                url = %url,
+                attempt,
+                max_attempts = CONNECT_MAX_ATTEMPTS,
+                "websocket_connecting"
+            );
+
+            let mut request =
+                tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+                    &url,
+                )
                 .map_err(|e| format!("Invalid URL: {}", e))?;
 
-        let headers = request.headers_mut();
-        headers.insert(
-            "Authorization",
-            format!("Bearer {}", self.config.api_key).parse().unwrap(),
-        );
-        headers.insert("OpenAI-Beta", "realtime=v1".parse().unwrap());
+            let headers = request.headers_mut();
+            headers.insert(
+                "Authorization",
+                format!("Bearer {}", self.config.api_key).parse().unwrap(),
+            );
+            headers.insert("OpenAI-Beta", "realtime=v1".parse().unwrap());
 
-        let result = connect_async_tls_with_config(request, None, false, None).await;
+            match connect_async_tls_with_config(request, None, false, None).await {
+                Ok(stream) => {
+                    if attempt > 1 {
+                        info!(
+                            provider = "aliyun-stream",
+                            attempt,
+                            max_attempts = CONNECT_MAX_ATTEMPTS,
+                            "websocket_connect_retry_succeeded"
+                        );
+                    }
+                    connection = Some(stream);
+                    break;
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
 
-        let (ws_stream, _response) = match result {
-            Ok(stream) => stream,
-            Err(e) => {
-                let error_str = e.to_string();
-
-                if error_str.contains("401")
-                    || error_str.contains("Unauthorized")
-                    || error_str.contains("invalid_api_key")
-                {
-                    error!(provider = "aliyun-stream", http.status_code = 401, error = %error_str, "websocket_connect_failed");
-                    return Err(format!(
-                        "Aliyun Realtime API authentication failed (401 Unauthorized).\n\
+                    if is_aliyun_realtime_auth_error(&error_str) {
+                        error!(provider = "aliyun-stream", http.status_code = 401, attempt, max_attempts = CONNECT_MAX_ATTEMPTS, error = %error_str, "websocket_connect_failed");
+                        return Err(format!(
+                            "Aliyun Realtime API authentication failed (401 Unauthorized).\n\
                         \n\
                         Please verify your API key in Settings > Cloud STT.\n\
                         Get your API key from: https://bailian.console.aliyun.com/\n\
                         \n\
                         Technical details: {}",
-                        error_str
-                    ));
-                }
+                            error_str
+                        ));
+                    }
 
-                if error_str.contains("403") || error_str.contains("Forbidden") {
-                    error!(provider = "aliyun-stream", http.status_code = 403, error = %error_str, "websocket_connect_failed");
-                    return Err(format!(
-                        "Aliyun Realtime API access forbidden (403).\n\
+                    if is_aliyun_realtime_forbidden_error(&error_str) {
+                        error!(provider = "aliyun-stream", http.status_code = 403, attempt, max_attempts = CONNECT_MAX_ATTEMPTS, error = %error_str, "websocket_connect_failed");
+                        return Err(format!(
+                            "Aliyun Realtime API access forbidden (403).\n\
                         \n\
                         Possible causes:\n\
                         1. Your API key doesn't have access to the Realtime API\n\
@@ -152,17 +171,38 @@ impl AliyunStreamClient {
                         Contact AliYun support or check your API key permissions.\n\
                         \n\
                         Technical details: {}",
+                            error_str
+                        ));
+                    }
+
+                    if attempt < CONNECT_MAX_ATTEMPTS
+                        && !is_non_retryable_realtime_connect_error(&error_str)
+                    {
+                        warn!(
+                            provider = "aliyun-stream",
+                            attempt,
+                            max_attempts = CONNECT_MAX_ATTEMPTS,
+                            retry_delay_ms = CONNECT_RETRY_DELAY.as_millis() as u64,
+                            error = %error_str,
+                            "websocket_connect_retrying"
+                        );
+                        tokio::time::sleep(CONNECT_RETRY_DELAY).await;
+                        continue;
+                    }
+
+                    error!(provider = "aliyun-stream", attempt, max_attempts = CONNECT_MAX_ATTEMPTS, error = %error_str, "websocket_connect_failed");
+                    return Err(format!(
+                        "Failed to connect to Aliyun Realtime API: {}",
                         error_str
                     ));
                 }
-
-                error!(provider = "aliyun-stream", error = %error_str, "websocket_connect_failed");
-                return Err(format!(
-                    "Failed to connect to Aliyun Realtime API: {}",
-                    error_str
-                ));
             }
-        };
+        }
+
+        let (ws_stream, _response) = connection.ok_or_else(|| {
+            "Failed to connect to Aliyun Realtime API: connection attempt did not complete"
+                .to_string()
+        })?;
 
         info!(
             provider = "aliyun-stream",
@@ -738,6 +778,32 @@ fn resolve_realtime_model(model: &str) -> &str {
     }
 }
 
+fn is_aliyun_realtime_auth_error(error: &str) -> bool {
+    error.contains("401") || error.contains("Unauthorized") || error.contains("invalid_api_key")
+}
+
+fn is_aliyun_realtime_forbidden_error(error: &str) -> bool {
+    error.contains("403") || error.contains("Forbidden")
+}
+
+fn is_non_retryable_realtime_connect_error(error: &str) -> bool {
+    is_aliyun_realtime_auth_error(error)
+        || is_aliyun_realtime_forbidden_error(error)
+        || mentions_http_status(error, "400")
+        || mentions_http_status(error, "404")
+        || mentions_http_status(error, "422")
+}
+
+fn mentions_http_status(error: &str, status: &str) -> bool {
+    [
+        format!("HTTP error: {}", status),
+        format!("HTTP {}", status),
+        format!("status code {}", status),
+    ]
+    .iter()
+    .any(|pattern| error.contains(pattern))
+}
+
 pub async fn transcribe_aliyun_stream(
     config: &CloudSttConfig,
     audio_path: &std::path::Path,
@@ -1030,6 +1096,114 @@ mod tests {
             resolve_realtime_model("custom-qwen-model"),
             "custom-qwen-model"
         );
+    }
+
+    #[test]
+    fn test_realtime_connect_retry_classification_keeps_client_errors_terminal() {
+        assert!(is_non_retryable_realtime_connect_error(
+            "HTTP error: 401 Unauthorized"
+        ));
+        assert!(is_non_retryable_realtime_connect_error(
+            "HTTP error: 403 Forbidden"
+        ));
+        assert!(is_non_retryable_realtime_connect_error(
+            "HTTP error: 404 Not Found"
+        ));
+        assert!(!is_non_retryable_realtime_connect_error(
+            "TLS error: native-tls error: connection closed via error"
+        ));
+        assert!(!is_non_retryable_realtime_connect_error(
+            "TLS error: native-tls error: I/O error"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_connect_retries_once_after_transient_handshake_failure() {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio::net::TcpListener;
+        use tokio_tungstenite::accept_async;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mock_url = format!("ws://127.0.0.1:{}/", port);
+
+        let server = tokio::spawn(async move {
+            let (first_stream, _) = listener.accept().await.unwrap();
+            drop(first_stream);
+
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws_stream = accept_async(stream).await.unwrap();
+
+            ws_stream
+                .send(Message::Text(
+                    serde_json::json!({
+                        "event_id": "event_created",
+                        "type": "session.created",
+                        "session": {
+                            "id": "sess_001",
+                            "object": "realtime.session",
+                            "model": QWEN_OMNI_REALTIME_MODEL,
+                            "modalities": ["text"],
+                            "input_audio_format": "pcm",
+                            "input_audio_transcription": null,
+                            "turn_detection": null
+                        }
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .unwrap();
+
+            let message = ws_stream.next().await.unwrap().unwrap();
+            let text = message.into_text().unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(
+                parsed.get("type").and_then(|v| v.as_str()),
+                Some("session.update")
+            );
+
+            ws_stream
+                .send(Message::Text(
+                    serde_json::json!({
+                        "event_id": "event_updated",
+                        "type": "session.updated",
+                        "session": {
+                            "id": "sess_001",
+                            "object": "realtime.session",
+                            "model": QWEN_OMNI_REALTIME_MODEL,
+                            "modalities": ["text"],
+                            "input_audio_format": "pcm",
+                            "input_audio_transcription": {"language": "zh"},
+                            "turn_detection": null
+                        }
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .unwrap();
+        });
+
+        let config = CloudSttConfig {
+            enabled: true,
+            provider_type: "aliyun-stream".to_string(),
+            api_key: "test-key".to_string(),
+            app_id: "".to_string(),
+            base_url: mock_url,
+            model: "".to_string(),
+            language: "zh".to_string(),
+        };
+
+        let mut client = AliyunStreamClient::new(config, Some("zh-CN"), SttContext::default());
+        tokio::time::timeout(Duration::from_secs(5), client.connect())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(client.get_audio_sender().await.is_some());
+        client.close().await;
+
+        server.await.unwrap();
     }
 
     #[tokio::test]

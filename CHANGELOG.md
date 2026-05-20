@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## Unreleased
+
+### Bug Fixes
+
+- Keep recording feedback and shortcut state trustworthy (e12df70)
+
 ## v0.6.1 (2026-05-19)
 
 ### Bug Fixes

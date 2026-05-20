@@ -184,4 +184,23 @@ describe("PillWindow backend tooltip", () => {
 
     expect(tooltip).not.toBeVisible();
   });
+
+  it("renders a fallback error tooltip when recording state enters error", async () => {
+    render(<PillWindow />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      mocks.emitRecordingState?.({
+        status: "error",
+        task_id: 9,
+      });
+    });
+
+    expect(showPillMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("audio-dots")).toBeInTheDocument();
+    expect(screen.getByText("Transcription failed. Please try again.")).toBeInTheDocument();
+  });
 });

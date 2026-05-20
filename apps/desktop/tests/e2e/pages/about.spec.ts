@@ -22,6 +22,6 @@ test('About page renders', async ({ tauriPage }) => {
     tauriPage,
     'About-page-renders.png',
     0.1,
-    { captureMode: 'native', stabilizationMs: 1500 },
+    { captureMode: 'native-with-fallback', stabilizationMs: 1500 },
   );
 });

@@ -4,6 +4,8 @@ use super::models::{HistoryFilter, NewTranscriptionEntry, TranscriptionEntry};
 use super::store::{EntryUpdates, HistoryStore};
 use crate::state::app_state::AppState;
 
+const MIN_FAILED_RECORDING_DURATION_MS: i64 = 500;
+
 #[tauri::command]
 pub fn get_transcription_history(
     state: State<'_, AppState>,
@@ -185,6 +187,25 @@ pub fn save_to_history(
 /// Save a failed recording entry to history.
 /// Only saves if recording duration >= 500ms to avoid noise from accidental short recordings.
 pub fn save_failed_history(state: &AppState, audio_path: Option<String>, error: &str) {
+    save_failed_history_with_duration_gate(state, audio_path, error, true);
+}
+
+/// Save a failed recording entry even when the failure happens before enough audio is captured.
+/// This is used for infrastructure failures such as cloud websocket connection errors.
+pub fn save_infrastructure_failed_history(
+    state: &AppState,
+    audio_path: Option<String>,
+    error: &str,
+) {
+    save_failed_history_with_duration_gate(state, audio_path, error, false);
+}
+
+fn save_failed_history_with_duration_gate(
+    state: &AppState,
+    audio_path: Option<String>,
+    error: &str,
+    enforce_min_duration: bool,
+) {
     let recording_duration_ms = {
         let start = state
             .recording_start_time
@@ -204,14 +225,12 @@ pub fn save_failed_history(state: &AppState, audio_path: Option<String>, error: 
 
     // Skip saving if recording was too short (< 500ms)
     // This prevents noise from accidental brief recordings
-    if let Some(duration) = recording_duration_ms {
-        if duration < 500 {
-            tracing::info!(
-                duration_ms = duration,
-                "recording_to_short-skipping_history_save"
-            );
-            return;
-        }
+    if should_skip_failed_history_for_duration(recording_duration_ms, enforce_min_duration) {
+        tracing::info!(
+            duration_ms = recording_duration_ms,
+            "recording_to_short-skipping_history_save"
+        );
+        return;
     }
 
     let (stt_engine, stt_model, language, is_cloud) = {
@@ -262,5 +281,28 @@ pub fn save_failed_history(state: &AppState, audio_path: Option<String>, error: 
     let store = state.history_store.lock();
     if let Err(e) = save_history_entry(&store, entry) {
         tracing::warn!(error = %e, "failed_to_save_failed_history");
+    }
+}
+
+fn should_skip_failed_history_for_duration(
+    recording_duration_ms: Option<i64>,
+    enforce_min_duration: bool,
+) -> bool {
+    enforce_min_duration
+        && recording_duration_ms
+            .map(|duration| duration < MIN_FAILED_RECORDING_DURATION_MS)
+            .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_skip_failed_history_for_duration;
+
+    #[test]
+    fn failed_history_duration_gate_skips_only_user_recording_failures() {
+        assert!(should_skip_failed_history_for_duration(Some(120), true));
+        assert!(!should_skip_failed_history_for_duration(Some(120), false));
+        assert!(!should_skip_failed_history_for_duration(Some(800), true));
+        assert!(!should_skip_failed_history_for_duration(None, true));
     }
 }

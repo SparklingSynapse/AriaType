@@ -87,6 +87,7 @@ fn should_reject_question_answer_polish(input: &str, output: &str) -> bool {
 }
 
 fn accept_polish_result(
+    event_target: &ProcessingEventTarget<'_>,
     task_id: u64,
     accumulated_text: String,
     result_text: String,
@@ -94,6 +95,7 @@ fn accept_polish_result(
     context: &'static str,
 ) -> (String, u64) {
     if should_reject_question_answer_polish(&accumulated_text, &result_text) {
+        event_target.emit_polish_policy_tooltip(task_id);
         warn!(
             task_id,
             context,
@@ -123,6 +125,7 @@ async fn run_local_polish(
     } = context;
 
     if model_id.is_empty() {
+        event_target.emit_polish_error_tooltip(task_id);
         warn!(
             task_id,
             context = log_context,
@@ -167,6 +170,7 @@ async fn run_local_polish(
                             "polish_completed-local"
                         );
                         accept_polish_result(
+                            event_target,
                             task_id,
                             accumulated_text,
                             result.text,
@@ -175,6 +179,7 @@ async fn run_local_polish(
                         )
                     }
                     Ok(_) => {
+                        event_target.emit_polish_error_tooltip(task_id);
                         warn!(
                             task_id,
                             context = log_context,
@@ -183,11 +188,13 @@ async fn run_local_polish(
                         (accumulated_text, 0)
                     }
                     Err(e) => {
+                        event_target.emit_polish_error_tooltip(task_id);
                         warn!(task_id, error = %e, context = log_context, "polish_failed-local_using_raw");
                         (accumulated_text, 0)
                     }
                 }
             } else {
+                event_target.emit_polish_error_tooltip(task_id);
                 warn!(
                     task_id,
                     context = log_context,
@@ -197,6 +204,7 @@ async fn run_local_polish(
             }
         }
         None => {
+            event_target.emit_polish_error_tooltip(task_id);
             warn!(task_id, model_id = %model_id, context = log_context, "polish_model_unknown-engine_undetermined");
             (accumulated_text, 0)
         }
@@ -318,6 +326,7 @@ pub(super) async fn maybe_polish_transcription_text(
                                     "polish_completed-cloud"
                                 );
                                 accept_polish_result(
+                                    event_target,
                                     task_id,
                                     accumulated_text,
                                     result.text,
@@ -326,10 +335,12 @@ pub(super) async fn maybe_polish_transcription_text(
                                 )
                             }
                             Ok(_) => {
+                                event_target.emit_polish_error_tooltip(task_id);
                                 warn!(task_id, provider = %provider_type, "polish_empty_result-cloud_using_raw");
                                 (accumulated_text, 0)
                             }
                             Err(e) => {
+                                event_target.emit_polish_error_tooltip(task_id);
                                 warn!(task_id, provider = %provider_type, error = %e, "polish_failed-cloud_using_raw");
                                 (accumulated_text, 0)
                             }

@@ -333,6 +333,12 @@ pub(super) fn start_unified_recording(
                 Ok(c) => c,
                 Err(e) => {
                     error!(task_id, error = %e, "streaming_client_create_failed");
+                    let state_inner = app_clone.state::<AppState>();
+                    crate::history::commands::save_infrastructure_failed_history(
+                        &state_inner,
+                        None,
+                        &e,
+                    );
                     emit_recording_error_then_idle(&app_clone, task_id).await;
                     return;
                 }
@@ -371,6 +377,12 @@ pub(super) fn start_unified_recording(
                 }
                 Err(e) => {
                     error!(task_id, provider = %provider_name, error = %e, "streaming_consumer_connect_failed");
+                    let state_inner = app_clone.state::<AppState>();
+                    crate::history::commands::save_infrastructure_failed_history(
+                        &state_inner,
+                        None,
+                        &e,
+                    );
                     emit_recording_error_then_idle(&app_clone, task_id).await;
                     return;
                 }

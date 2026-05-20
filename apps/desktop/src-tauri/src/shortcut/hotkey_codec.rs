@@ -33,6 +33,12 @@ pub struct HotkeyPattern {
     key: Option<String>,
 }
 
+impl HotkeyPattern {
+    pub(crate) fn key_token(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PressedInput {
     Modifier(String),
