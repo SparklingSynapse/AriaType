@@ -77,7 +77,7 @@ test('Desktop first-run journey', async ({ tauriPage }) => {
       tauriPage,
       `Desktop-first-run-journey-step-${index + 1}-${stepId}.png`,
       0.1,
-      { captureMode: 'native', stabilizationMs: journeySnapshotStabilizationMs },
+      { captureMode: 'native-with-fallback', stabilizationMs: journeySnapshotStabilizationMs },
     );
 
     if (stepId !== 'done') {
@@ -95,7 +95,7 @@ test('Desktop first-run journey', async ({ tauriPage }) => {
     tauriPage,
     'Desktop-first-run-journey-step-7-dashboard.png',
     0.1,
-    { captureMode: 'native', stabilizationMs: journeySnapshotStabilizationMs },
+    { captureMode: 'native-with-fallback', stabilizationMs: journeySnapshotStabilizationMs },
   );
 });
 
@@ -116,7 +116,7 @@ test('Desktop post-onboarding navigation journey', async ({ tauriPage }) => {
     tauriPage,
     'Desktop-first-run-journey-step-8-settings.png',
     0.1,
-    { captureMode: 'native', stabilizationMs: journeySnapshotStabilizationMs },
+    { captureMode: 'native-with-fallback', stabilizationMs: journeySnapshotStabilizationMs },
   );
 
   await navigateViaSidebar(tauriPage, 'History');
@@ -129,6 +129,6 @@ test('Desktop post-onboarding navigation journey', async ({ tauriPage }) => {
     tauriPage,
     'Desktop-first-run-journey-step-9-history.png',
     0.1,
-    { captureMode: 'native', stabilizationMs: journeySnapshotStabilizationMs },
+    { captureMode: 'native-with-fallback', stabilizationMs: journeySnapshotStabilizationMs },
   );
 });

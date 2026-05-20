@@ -13,6 +13,7 @@ const BASELINE_POLL_INTERVAL_MS: u64 = 250;
 const OBSERVE_POLL_INTERVAL_MS: u64 = 1_500;
 const OBSERVE_MAX_DURATION_MS: u64 = 45_000;
 const REQUIRED_STABLE_READS: u8 = 2;
+const MAX_UNAVAILABLE_READS: u8 = 3;
 const DIRECT_EDIT_MIN_COMMON_CONTEXT_CHARS: usize = 6;
 const CORRECTION_TOOLTIP_DURATION_MS: u64 = 3_200;
 
@@ -46,14 +47,20 @@ async fn observe_post_delivery_edit_inner(app: AppHandle, delivered_text: String
         tokio::time::Instant::now() + tokio::time::Duration::from_millis(OBSERVE_MAX_DURATION_MS);
     let mut last_candidate: Option<String> = None;
     let mut stable_reads: u8 = 0;
+    let mut unavailable_reads: u8 = 0;
 
     while tokio::time::Instant::now() < deadline {
         tokio::time::sleep(tokio::time::Duration::from_millis(OBSERVE_POLL_INTERVAL_MS)).await;
 
         let Some(current) = read_focused_editable_text().await else {
-            info!("correction_learning_observer_stopped-focused_text_unavailable");
-            return;
+            unavailable_reads = unavailable_reads.saturating_add(1);
+            if unavailable_reads >= MAX_UNAVAILABLE_READS {
+                info!("correction_learning_observer_stopped-focused_text_unavailable");
+                return;
+            }
+            continue;
         };
+        unavailable_reads = 0;
 
         if current == baseline {
             last_candidate = None;
@@ -70,6 +77,15 @@ async fn observe_post_delivery_edit_inner(app: AppHandle, delivered_text: String
 
         if stable_reads < REQUIRED_STABLE_READS {
             continue;
+        }
+
+        if !should_learn_stable_edit(&baseline, &current) {
+            info!(
+                baseline_chars = baseline.chars().count(),
+                current_chars = current.chars().count(),
+                "correction_learning_observer_stopped-non_direct_edit"
+            );
+            return;
         }
 
         learn_and_emit(&app, &baseline, &current, "stable_edit");
@@ -176,6 +192,10 @@ fn looks_like_direct_edit(delivered_text: &str, snapshot: &str) -> bool {
     common_context >= DIRECT_EDIT_MIN_COMMON_CONTEXT_CHARS || common_context * 2 >= min_len
 }
 
+fn should_learn_stable_edit(baseline: &str, current: &str) -> bool {
+    looks_like_direct_edit(baseline, current)
+}
+
 fn common_affix_chars(left: &[char], right: &[char]) -> usize {
     let mut prefix = 0;
     while prefix < left.len() && prefix < right.len() && left[prefix] == right[prefix] {
@@ -206,7 +226,7 @@ fn normalize_for_containment(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{looks_like_direct_edit, snapshot_contains_delivery};
+    use super::{looks_like_direct_edit, should_learn_stable_edit, snapshot_contains_delivery};
 
     #[test]
     fn accepts_exact_delivery_snapshot() {
@@ -242,6 +262,22 @@ mod tests {
         assert!(!looks_like_direct_edit(
             "那你进行详细完整的流程，试一试搜题现在的功能是不是符合预期的？",
             "completely unrelated focused field"
+        ));
+    }
+
+    #[test]
+    fn rejects_stable_edit_to_unrelated_ui_label() {
+        assert!(!should_learn_stable_edit(
+            "运行一下这个recipe，看看效果",
+            "Ask for follow-up changes"
+        ));
+    }
+
+    #[test]
+    fn accepts_stable_embedded_direct_edit() {
+        assert!(should_learn_stable_edit(
+            "Before. 那你试一试搜题现在的功能是不是符合预期的？ After.",
+            "Before. 那你试一试sootie现在的功能是不是符合预期的？ After."
         ));
     }
 }

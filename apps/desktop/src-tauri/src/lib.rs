@@ -202,6 +202,7 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             window::show_main_window,
+            window::capture_main_window_snapshot,
             window::hide_main_window,
             window::show_pill_window,
             window::hide_pill_window,
@@ -342,7 +343,14 @@ pub fn run() {
                     None => return,
                 };
 
-                let language = state.settings.lock().stt_engine_language.clone();
+                let settings = state.settings.lock();
+                if settings.is_streaming_stt_active() {
+                    tracing::info!("startup_model_ensure_skipped-cloud_stt_active");
+                    return;
+                }
+
+                let language = settings.stt_engine_language.clone();
+                drop(settings);
                 let engine_manager = state.engine_manager.clone();
 
                 let runtime = tokio::runtime::Runtime::new().unwrap();

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { useEventListeners } from "@/hooks/useEventListeners";
 import { Button } from "@/components/ui/button";
 import {
   CaretRight,
@@ -438,13 +437,46 @@ function ModelStep({
       .catch((err: unknown) => logger.error("failed_to_recommend_models", { error: String(err) }));
   }, [language]);
 
-  // Check if recommended model is already downloaded and start download if not
+  // Register download listeners before starting the model download. Starting
+  // earlier can drop initial progress events while onboarding is still on prior
+  // steps, which makes the UI appear stuck at 0 until completion.
   useEffect(() => {
     let mounted = true;
+    const cleanups: Array<() => void> = [];
     const modelName = getRecommendedModelName(language || "auto");
 
-    const checkAndDownload = async () => {
+    const registerCleanup = (cleanup: () => void) => {
+      if (mounted) {
+        cleanups.push(cleanup);
+      } else {
+        cleanup();
+      }
+    };
+
+    const setupAndDownload = async () => {
       try {
+        registerCleanup(
+          await events.onModelDownloadProgress((data) => {
+            setProgressMap((prev) => ({ ...prev, [data.model]: data.progress }));
+          }),
+        );
+        registerCleanup(
+          await events.onModelDownloadComplete(async (completedModelName) => {
+            setDownloadedMap((prev) => ({ ...prev, [completedModelName]: true }));
+            setProgressMap((prev) => ({ ...prev, [completedModelName]: 100 }));
+            modelCommands
+              .recommendModelsByLanguage(language || "auto")
+              .then(setModels)
+              .catch((err: unknown) => logger.error("failed_to_refresh_models_after_download", { error: String(err) }));
+            const displayName = completedModelName === "sense-voice-small" ? "SenseVoice Small"
+              : completedModelName === "whisper-base" ? "Whisper Base"
+              : completedModelName === "whisper-small" ? "Whisper Small"
+              : completedModelName;
+            showToast(`${displayName} download complete`);
+          }),
+        );
+        if (!mounted) return;
+
         const isDownloaded = await modelCommands.isModelDownloaded(modelName);
         if (!mounted) return;
 
@@ -457,7 +489,6 @@ function ModelStep({
           await modelCommands.downloadModel(modelName);
         }
       } catch (err: unknown) {
-        // Backend returns error if already downloading - that's expected
         const errorMsg = String(err);
         if (!errorMsg.includes("already downloading") && mounted) {
           logger.error("failed_to_start_model_download", { modelName, error: errorMsg });
@@ -465,32 +496,12 @@ function ModelStep({
       }
     };
 
-    checkAndDownload();
+    setupAndDownload();
 
     return () => {
       mounted = false;
+      cleanups.forEach((cleanup) => cleanup());
     };
-  }, [language]);
-
-  useEventListeners(async () => {
-    return [
-      await events.onModelDownloadProgress((data) => {
-        setProgressMap((prev) => ({ ...prev, [data.model]: data.progress }));
-      }),
-      await events.onModelDownloadComplete(async (modelName) => {
-        setDownloadedMap((prev) => ({ ...prev, [modelName]: true }));
-        setProgressMap((prev) => ({ ...prev, [modelName]: 100 }));
-        modelCommands
-          .recommendModelsByLanguage(language || "auto")
-          .then(setModels)
-          .catch((err: unknown) => logger.error("failed_to_refresh_models_after_download", { error: String(err) }));
-        const displayName = modelName === "sense-voice-small" ? "SenseVoice Small"
-          : modelName === "whisper-base" ? "Whisper Base"
-          : modelName === "whisper-small" ? "Whisper Small"
-          : modelName;
-        showToast(`${displayName} download complete`);
-      }),
-    ];
   }, [language]);
 
   useEffect(() => {
@@ -898,20 +909,6 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   const steps = allSteps;
 
   const handleNext = async () => {
-    if (current.id === "language") {
-      const language = settings?.stt_engine_language || "auto";
-      const modelName = getRecommendedModelName(language);
-      modelCommands.isModelDownloaded(modelName).then((isDownloaded) => {
-        if (!isDownloaded) {
-          modelCommands.downloadModel(modelName).catch((err: unknown) => {
-            const errorMsg = String(err);
-            if (!errorMsg.includes("already downloading")) {
-              logger.error("failed_to_start_model_download", { modelName, error: errorMsg });
-            }
-          });
-        }
-      });
-    }
     if (current.id === "model" && selectedModel) {
       const engineType = selectedModel?.startsWith("sense-voice")
         ? "sensevoice"

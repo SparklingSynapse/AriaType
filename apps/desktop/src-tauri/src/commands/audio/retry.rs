@@ -47,7 +47,18 @@ pub async fn retry_transcription_internal(
     match text_result {
         Ok(output) => {
             let app_clone = app.clone();
-            let (final_text, polish_time_ms) = if output.raw_text.is_empty() {
+            let correction_memory_enabled = {
+                let settings = state.settings.lock();
+                settings.correction_memory_enabled
+            };
+            let corrected_text = if correction_memory_enabled {
+                crate::correction_learning::storage::apply_shared_corrections_best_effort(
+                    &output.raw_text,
+                )
+            } else {
+                output.raw_text.clone()
+            };
+            let (final_text, polish_time_ms) = if corrected_text.is_empty() {
                 (String::new(), 0)
             } else {
                 maybe_polish_transcription_text(
@@ -57,7 +68,7 @@ pub async fn retry_transcription_internal(
                     },
                     &state,
                     retry_task_id,
-                    output.raw_text.clone(),
+                    corrected_text,
                     None,
                 )
                 .await
