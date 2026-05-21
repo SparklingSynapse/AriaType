@@ -6,7 +6,8 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
-- Keep recording feedback and shortcut state trustworthy (e12df70)
+- Prevent shortcut slash leaks (518887d)
+- Keep recording feedback and shortcut state trustworthy (6d2bdd2)
 
 ## v0.6.1 (2026-05-19)
 
