@@ -24,6 +24,6 @@ test('Log Viewer page renders', async ({ tauriPage }) => {
     tauriPage,
     'Log-Viewer-page-renders.png',
     0.5,
-    { captureMode: 'native', stabilizationMs: 1500 },
+    { captureMode: 'native-with-fallback', stabilizationMs: 1500 },
   );
 });

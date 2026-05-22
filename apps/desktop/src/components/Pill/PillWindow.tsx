@@ -22,6 +22,8 @@ const PILL_SIZE_SCALE: Record<number, number> = {
 
 const DEFAULT_PILL_BACKGROUND_COLOR = "#1d1d1d";
 const DEFAULT_PILL_BACKGROUND_OPACITY = 1;
+const DEFAULT_ERROR_TOOLTIP_MESSAGE = "Transcription failed. Please try again.";
+const DEFAULT_ERROR_TOOLTIP_DURATION_MS = 4000;
 
 function normalizePillBackgroundColor(color: string | undefined): string {
   if (!color || !/^#[0-9a-f]{6}$/i.test(color)) {
@@ -62,6 +64,14 @@ function shouldRequestNativeShowForTooltip(event: PillTooltipEvent): boolean {
   return event.task_id === null || event.task_id === undefined;
 }
 
+function fallbackErrorTooltip(taskId: number): PillTooltipEvent {
+  return {
+    message: DEFAULT_ERROR_TOOLTIP_MESSAGE,
+    duration_ms: DEFAULT_ERROR_TOOLTIP_DURATION_MS,
+    task_id: taskId,
+  };
+}
+
 export function PillWindow() {
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
@@ -74,6 +84,22 @@ export function PillWindow() {
   const latestTaskId = useRef<number>(0);
   const tooltipTimer = useRef<number | undefined>(undefined);
   const indicatorModeRef = useRef(indicatorMode);
+
+  const showTooltipEvent = useCallback((event: PillTooltipEvent) => {
+    setTooltip(event);
+    if (indicatorModeRef.current === "when_recording" && shouldRequestNativeShowForTooltip(event)) {
+      void windowCommands.showPill().catch((error) => {
+        logger.error("failed_to_show_pill_for_tooltip", { error: String(error) });
+      });
+    }
+    if (tooltipTimer.current !== undefined) {
+      window.clearTimeout(tooltipTimer.current);
+    }
+    tooltipTimer.current = window.setTimeout(() => {
+      setTooltip(null);
+      tooltipTimer.current = undefined;
+    }, Math.max(0, event.duration_ms));
+  }, []);
 
   // Apply font-size to document root for rem-based scaling
   useEffect(() => {
@@ -127,6 +153,9 @@ export function PillWindow() {
             setHasAudioActivity(false);
           }
           setStatus(next);
+          if (next === "error") {
+            showTooltipEvent(fallbackErrorTooltip(task_id));
+          }
         }
       );
 
@@ -148,19 +177,7 @@ export function PillWindow() {
         if (typeof event.task_id === "number" && event.task_id < latestTaskId.current) {
           return;
         }
-        setTooltip(event);
-        if (indicatorModeRef.current === "when_recording" && shouldRequestNativeShowForTooltip(event)) {
-          void windowCommands.showPill().catch((error) => {
-            logger.error("failed_to_show_pill_for_tooltip", { error: String(error) });
-          });
-        }
-        if (tooltipTimer.current !== undefined) {
-          window.clearTimeout(tooltipTimer.current);
-        }
-        tooltipTimer.current = window.setTimeout(() => {
-          setTooltip(null);
-          tooltipTimer.current = undefined;
-        }, Math.max(0, event.duration_ms));
+        showTooltipEvent(event);
       });
     };
 
@@ -175,14 +192,14 @@ export function PillWindow() {
         window.clearTimeout(tooltipTimer.current);
       }
     };
-  }, []);
+  }, [showTooltipEvent]);
 
   const isActive = status !== "idle";
 
   // For "when_recording" mode: pill animates in/out and hides the OS window after exit.
   // For "always" mode: pill content is always rendered, no show/hide animation.
   const showPillBody = indicatorMode === "always" || isActive;
-  const showTooltip = indicatorMode !== "never" && tooltip !== null;
+  const showTooltip = tooltip !== null && (indicatorMode !== "never" || status === "error");
   const showContent = showPillBody || showTooltip;
 
   const handleDrag = useCallback(async () => {

@@ -1,14 +1,20 @@
 use futures_util::StreamExt;
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+use std::sync::{LazyLock, Mutex};
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
 const PROGRESS_LOG_THRESHOLD_PERCENT: u32 = 10;
+const DOWNLOAD_SLOT_WAIT_MS: u64 = 250;
+
+static ACTIVE_DOWNLOAD_PATHS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 pub struct DownloadResult {
     pub path: PathBuf,
@@ -102,6 +108,29 @@ pub async fn download(options: DownloadOptions) -> Result<DownloadResult, String
         "download_started"
     );
 
+    let _slot = acquire_download_slot(&options.output_path, &options).await?;
+    if options.output_path.exists() {
+        let bytes = options
+            .output_path
+            .metadata()
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        if let Some(callback) = &options.progress_callback {
+            callback(bytes, bytes);
+        }
+        info!(
+            model = model_name,
+            filename = %filename,
+            output_path = ?options.output_path,
+            bytes,
+            "download_skipped-existing_file_after_wait"
+        );
+        return Ok(DownloadResult {
+            path: options.output_path,
+            bytes,
+        });
+    }
+
     let mut last_error = String::new();
 
     for (attempt, url) in options.urls.iter().enumerate() {
@@ -166,6 +195,55 @@ pub async fn download(options: DownloadOptions) -> Result<DownloadResult, String
         "All download sources failed. Last error: {}",
         last_error
     ))
+}
+
+struct DownloadSlot {
+    path: PathBuf,
+}
+
+impl Drop for DownloadSlot {
+    fn drop(&mut self) {
+        if let Ok(mut paths) = ACTIVE_DOWNLOAD_PATHS.lock() {
+            paths.remove(&self.path);
+        }
+    }
+}
+
+async fn acquire_download_slot(
+    output_path: &Path,
+    options: &DownloadOptions,
+) -> Result<DownloadSlot, String> {
+    let path = output_path.to_path_buf();
+    let model_name = options.model_name.as_deref().unwrap_or("unknown");
+    let mut logged_wait = false;
+
+    loop {
+        if options.is_cancelled() {
+            return Err("cancelled".to_string());
+        }
+
+        let acquired = {
+            let mut paths = ACTIVE_DOWNLOAD_PATHS
+                .lock()
+                .map_err(|_| "download slot lock poisoned".to_string())?;
+            paths.insert(path.clone())
+        };
+
+        if acquired {
+            return Ok(DownloadSlot { path });
+        }
+
+        if !logged_wait {
+            info!(
+                model = model_name,
+                output_path = ?path,
+                "download_waiting_for_active_path"
+            );
+            logged_wait = true;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(DOWNLOAD_SLOT_WAIT_MS)).await;
+    }
 }
 
 /// Download from a single URL
@@ -366,4 +444,45 @@ where
         .with_progress_callback(Arc::new(progress_callback));
 
     download(options).await.map(|r| r.path)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tempfile::TempDir;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{download, DownloadOptions};
+
+    #[tokio::test]
+    async fn concurrent_downloads_to_same_path_reuse_completed_file() {
+        let mock_server = MockServer::start().await;
+        let body = b"downloaded model bytes";
+
+        Mock::given(method("GET"))
+            .and(path("/model.bin"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(body.as_slice())
+                    .set_delay(Duration::from_millis(100)),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let dir = TempDir::new().unwrap();
+        let output_path = dir.path().join("model.bin");
+        let url = format!("{}/model.bin", mock_server.uri());
+
+        let first = download(DownloadOptions::new(url.clone(), output_path.clone()));
+        let second = download(DownloadOptions::new(url, output_path.clone()));
+
+        let (first, second) = tokio::join!(first, second);
+
+        assert_eq!(first.unwrap().path, output_path);
+        assert_eq!(second.unwrap().path, output_path);
+        assert_eq!(std::fs::read(output_path).unwrap(), body);
+    }
 }

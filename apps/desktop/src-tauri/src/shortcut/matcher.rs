@@ -47,6 +47,7 @@ pub enum ModifierKey {
 pub struct MatcherState {
     pub(crate) modifiers: ModifierState,
     pub(crate) pressed_key: Option<String>,
+    pub(crate) suppressed_key: Option<String>,
     pub(crate) active_profile: Option<String>,
     pub(crate) active_cancel: bool,
     pub(crate) active_end: bool,
@@ -64,6 +65,7 @@ pub fn handle_input(
     input: MatcherInput,
 ) -> MatcherOutcome {
     let mut outcome = MatcherOutcome::default();
+    let state_before_input = state.clone();
 
     if snapshot.capture_active {
         match &input {
@@ -90,11 +92,19 @@ pub fn handle_input(
     let matches_cancel = snapshot.cancel.iter().any(|pattern| {
         pattern_matches_state(pattern, &state.modifiers, state.pressed_key.as_deref())
     });
+    let activates_cancel = snapshot.cancel.iter().any(|pattern| {
+        input_can_activate_pattern(pattern, &state_before_input, &input)
+            && pattern_matches_state(pattern, &state.modifiers, state.pressed_key.as_deref())
+    });
     let matches_end = snapshot.end.iter().any(|pattern| {
         pattern_matches_state(pattern, &state.modifiers, state.pressed_key.as_deref())
     });
+    let activates_end = snapshot.end.iter().any(|pattern| {
+        input_can_activate_pattern(pattern, &state_before_input, &input)
+            && pattern_matches_state(pattern, &state.modifiers, state.pressed_key.as_deref())
+    });
 
-    if matches_cancel && state.active_profile.is_some() {
+    if activates_cancel && state.active_profile.is_some() {
         state.active_profile = None;
         state.active_cancel = true;
         outcome.swallow = true;
@@ -102,7 +112,7 @@ pub fn handle_input(
         return outcome;
     }
 
-    if matches_end && state.active_profile.is_some() {
+    if activates_end && state.active_profile.is_some() {
         state.active_profile = None;
         state.active_end = true;
         outcome.swallow = true;
@@ -121,6 +131,7 @@ pub fn handle_input(
             &state.modifiers,
             state.pressed_key.as_deref(),
         ) {
+            clear_suppressed_key_if_released(state, &input);
             state.active_profile = None;
             outcome.swallow = true;
             outcome.events.push(MatcherEvent::ProfileReleased {
@@ -130,6 +141,11 @@ pub fn handle_input(
             outcome.swallow = true;
         }
 
+        return outcome;
+    }
+
+    if suppressed_key_should_swallow(state, &input) {
+        outcome.swallow = true;
         return outcome;
     }
 
@@ -156,7 +172,10 @@ pub fn handle_input(
     }
 
     for (profile_id, pattern) in &snapshot.profiles {
-        if pattern_matches_state(pattern, &state.modifiers, state.pressed_key.as_deref()) {
+        if input_can_activate_pattern(pattern, &state_before_input, &input)
+            && pattern_matches_state(pattern, &state.modifiers, state.pressed_key.as_deref())
+        {
+            state.suppressed_key = pattern.key_token().map(str::to_string);
             state.active_profile = Some(profile_id.clone());
             outcome.swallow = true;
             outcome.events.push(MatcherEvent::ProfilePressed {
@@ -166,13 +185,13 @@ pub fn handle_input(
         }
     }
 
-    if matches_cancel {
+    if activates_cancel {
         state.active_cancel = true;
         outcome.swallow = true;
         outcome.events.push(MatcherEvent::CancelPressed);
     }
 
-    if matches_end {
+    if activates_end {
         state.active_end = true;
         outcome.swallow = true;
         outcome.events.push(MatcherEvent::EndPressed);
@@ -195,6 +214,46 @@ fn apply_input_to_state(state: &mut MatcherState, input: &MatcherInput) {
                 state.pressed_key = None;
             }
         }
+    }
+}
+
+fn input_can_activate_pattern(
+    pattern: &HotkeyPattern,
+    state_before_input: &MatcherState,
+    input: &MatcherInput,
+) -> bool {
+    match input {
+        MatcherInput::KeyPressed(key) => {
+            pattern.key_token() == Some(key.as_str())
+                && state_before_input.pressed_key.as_deref() != Some(key.as_str())
+        }
+        MatcherInput::ModifierPressed(_) => pattern.key_token().is_none(),
+        MatcherInput::ModifierReleased(_) | MatcherInput::KeyReleased(_) => false,
+    }
+}
+
+fn clear_suppressed_key_if_released(state: &mut MatcherState, input: &MatcherInput) {
+    let MatcherInput::KeyReleased(key) = input else {
+        return;
+    };
+
+    if state.suppressed_key.as_deref() == Some(key.as_str()) {
+        state.suppressed_key = None;
+    }
+}
+
+fn suppressed_key_should_swallow(state: &mut MatcherState, input: &MatcherInput) -> bool {
+    let Some(suppressed_key) = state.suppressed_key.clone() else {
+        return false;
+    };
+
+    match input {
+        MatcherInput::KeyPressed(key) if key == &suppressed_key => true,
+        MatcherInput::KeyReleased(key) if key == &suppressed_key => {
+            state.suppressed_key = None;
+            true
+        }
+        _ => false,
     }
 }
 
@@ -272,6 +331,46 @@ mod tests {
     }
 
     #[test]
+    fn profile_ignores_shortcut_when_primary_key_is_pressed_before_modifier() {
+        let mut profiles = HashMap::new();
+        profiles.insert(
+            "dictate".to_string(),
+            parse_hotkey_pattern("Cmd+Slash").unwrap(),
+        );
+        let snapshot = MatcherSnapshot {
+            profiles,
+            cancel: Vec::new(),
+            end: Vec::new(),
+            capture_active: false,
+        };
+        let mut state = MatcherState::default();
+
+        let slash_first = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyPressed("Slash".to_string()),
+        );
+        let cmd_after_key = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::ModifierPressed(ModifierKey::CmdLeft),
+        );
+        let repeated_slash = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyPressed("Slash".to_string()),
+        );
+
+        assert!(!slash_first.swallow);
+        assert!(slash_first.events.is_empty());
+        assert!(!cmd_after_key.swallow);
+        assert!(cmd_after_key.events.is_empty());
+        assert!(!repeated_slash.swallow);
+        assert!(repeated_slash.events.is_empty());
+        assert!(state.active_profile.is_none());
+    }
+
+    #[test]
     fn releasing_active_profile_emits_release_and_swallow() {
         let mut profiles = HashMap::new();
         profiles.insert(
@@ -309,6 +408,67 @@ mod tests {
                 profile_id: "dictate".to_string()
             }]
         );
+    }
+
+    #[test]
+    fn profile_suppresses_primary_key_until_key_release_after_modifier_release() {
+        let mut profiles = HashMap::new();
+        profiles.insert(
+            "dictate".to_string(),
+            parse_hotkey_pattern("Cmd+Slash").unwrap(),
+        );
+        let snapshot = MatcherSnapshot {
+            profiles,
+            cancel: Vec::new(),
+            end: Vec::new(),
+            capture_active: false,
+        };
+        let mut state = MatcherState::default();
+
+        let _ = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::ModifierPressed(ModifierKey::CmdLeft),
+        );
+        let _ = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyPressed("Slash".to_string()),
+        );
+        let cmd_release = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::ModifierReleased(ModifierKey::CmdLeft),
+        );
+        let repeated_slash = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyPressed("Slash".to_string()),
+        );
+        let slash_release = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyReleased("Slash".to_string()),
+        );
+        let slash_after_release = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::KeyPressed("Slash".to_string()),
+        );
+
+        assert!(cmd_release.swallow);
+        assert_eq!(
+            cmd_release.events,
+            vec![MatcherEvent::ProfileReleased {
+                profile_id: "dictate".to_string()
+            }]
+        );
+        assert!(repeated_slash.swallow);
+        assert!(repeated_slash.events.is_empty());
+        assert!(slash_release.swallow);
+        assert!(slash_release.events.is_empty());
+        assert!(!slash_after_release.swallow);
+        assert!(slash_after_release.events.is_empty());
     }
 
     #[test]

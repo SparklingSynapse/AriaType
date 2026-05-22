@@ -6,6 +6,11 @@ pub(crate) const PILL_WINDOW_W_LOGICAL: f64 = 240.0;
 pub(crate) const PILL_WINDOW_H_LOGICAL: f64 = 140.0;
 const MARGIN_LOGICAL: f64 = 4.0;
 
+#[derive(Debug, Clone, Serialize)]
+pub struct MainWindowSnapshot {
+    pub base64: String,
+}
+
 fn show_pill_without_focus(window: &tauri::WebviewWindow) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -26,6 +31,55 @@ fn show_pill_without_focus(window: &tauri::WebviewWindow) -> Result<(), String> 
     #[cfg(not(target_os = "macos"))]
     {
         window.show().map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn activate_app_for_visible_window() {
+    use cocoa::base::{id, nil};
+    use objc::{class, msg_send, sel, sel_impl};
+
+    unsafe {
+        let ns_app: id = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![ns_app, unhide: nil];
+        let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
+        let _: () = msg_send![ns_app, arrangeInFront: nil];
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn order_window_front(window: &tauri::WebviewWindow) {
+    use cocoa::base::{id, nil};
+    use objc::{msg_send, sel, sel_impl};
+
+    if let Ok(ns_window) = window.ns_window() {
+        unsafe {
+            let ns_window = ns_window as id;
+            let _: () = msg_send![ns_window, makeKeyAndOrderFront: nil];
+            let _: () = msg_send![ns_window, orderFrontRegardless];
+        }
+    }
+}
+
+#[cfg(all(target_os = "macos", feature = "e2e-testing"))]
+fn prepare_main_window_for_e2e_snapshot(window: &tauri::WebviewWindow) {
+    let _ = window.set_visible_on_all_workspaces(true);
+    let _ = window.set_size(tauri::LogicalSize::new(980.0, 740.0));
+    let _ = window.center();
+
+    use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
+    use cocoa::base::{id, NO};
+
+    if let Ok(ns_window) = window.ns_window() {
+        unsafe {
+            let ns_window = ns_window as id;
+            let behavior = NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
+                | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary
+                | NSWindowCollectionBehavior::NSWindowCollectionBehaviorManaged;
+            ns_window.setCollectionBehavior_(behavior);
+            ns_window.setCanHide_(NO);
+            ns_window.setHidesOnDeactivate_(NO);
+        }
     }
 }
 
@@ -289,11 +343,126 @@ pub struct Position {
 
 #[tauri::command]
 pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
+    #[cfg(all(target_os = "macos", feature = "e2e-testing"))]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+    }
+
     if let Some(window) = app.get_webview_window("main") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let window_for_main = window.clone();
+            app.run_on_main_thread(move || {
+                #[cfg(feature = "e2e-testing")]
+                prepare_main_window_for_e2e_snapshot(&window_for_main);
+
+                activate_app_for_visible_window();
+                let result = window_for_main
+                    .show()
+                    .map_err(|e| e.to_string())
+                    .and_then(|_| window_for_main.unminimize().map_err(|e| e.to_string()))
+                    .map(|_| {
+                        order_window_front(&window_for_main);
+                        let _ = window_for_main.set_focus();
+                    });
+                let _ = tx.send(result);
+            })
+            .map_err(|e| e.to_string())?;
+
+            return rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .map_err(|e| e.to_string())?;
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            window.show().map_err(|e| e.to_string())?;
+            window.unminimize().map_err(|e| e.to_string())?;
+            window.set_focus().map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn capture_main_window_snapshot(app: AppHandle) -> Result<MainWindowSnapshot, String> {
+    #[cfg(feature = "e2e-testing")]
+    {
+        show_main_window(app).await?;
+        return tokio::task::spawn_blocking(capture_main_window_snapshot_blocking)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(not(feature = "e2e-testing"))]
+    {
+        let _ = app;
+        Err("main-window snapshot capture is only available in e2e builds".to_string())
+    }
+}
+
+#[cfg(all(target_os = "macos", feature = "e2e-testing"))]
+fn capture_main_window_snapshot_blocking() -> Result<MainWindowSnapshot, String> {
+    use base64::Engine;
+    use image::ImageFormat;
+    use std::io::Cursor;
+
+    let pid = std::process::id();
+    let windows = xcap::Window::all().map_err(|e| e.to_string())?;
+    let mut same_pid_windows = Vec::new();
+    let mut visible_window_summaries = Vec::new();
+    let mut candidates = Vec::new();
+
+    for window in windows {
+        let window_pid = window.pid().unwrap_or_default();
+        let id = window.id().unwrap_or_default();
+        let width = window.width().unwrap_or_default();
+        let height = window.height().unwrap_or_default();
+        let title = window.title().unwrap_or_default();
+        let app_name = window.app_name().unwrap_or_default();
+
+        if visible_window_summaries.len() < 12 {
+            visible_window_summaries.push(format!(
+                "pid={window_pid} id={id} app={app_name:?} title={title:?} size={width}x{height}"
+            ));
+        }
+
+        if window_pid != pid {
+            continue;
+        }
+
+        same_pid_windows.push(format!(
+            "id={id} app={app_name:?} title={title:?} size={width}x{height}"
+        ));
+
+        if width >= 600 && height >= 400 {
+            candidates.push((u64::from(width) * u64::from(height), window));
+        }
+    }
+
+    let Some((_, window)) = candidates.into_iter().max_by_key(|(area, _)| *area) else {
+        return Err(format!(
+            "no e2e main window found for pid {pid}; same-pid windows: {}; visible windows: {}",
+            same_pid_windows.join(", "),
+            visible_window_summaries.join(", ")
+        ));
+    };
+
+    let image = window.capture_image().map_err(|e| e.to_string())?;
+    let mut cursor = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut cursor, ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    let bytes = cursor.into_inner();
+    let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+
+    Ok(MainWindowSnapshot { base64 })
+}
+
+#[cfg(all(not(target_os = "macos"), feature = "e2e-testing"))]
+fn capture_main_window_snapshot_blocking() -> Result<MainWindowSnapshot, String> {
+    Err("main-window snapshot capture is only implemented for macOS e2e".to_string())
 }
 
 #[tauri::command]

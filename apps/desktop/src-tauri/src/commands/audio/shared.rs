@@ -5,8 +5,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tracing::{error, info, warn};
 
 use crate::events::{
-    emit_recording_state, emit_retry_complete, emit_retry_error, emit_retry_state, EventName,
-    RecordingStatus, RetryStatus,
+    emit_pill_tooltip, emit_recording_state, emit_retry_complete, emit_retry_error,
+    emit_retry_state, EventName, RecordingStatus, RetryStatus,
 };
 use crate::services::transcription_finalize::FinalizeResult;
 use crate::state::app_state::AppState;
@@ -17,6 +17,13 @@ pub(crate) const AUDIO_ACTIVITY_ON_THRESHOLD: u32 = 40;
 pub(crate) const AUDIO_ACTIVITY_OFF_THRESHOLD: u32 = 25;
 pub(crate) const RECORDING_CHUNK_DURATION_MS: usize = 200;
 pub(crate) const ERROR_STATE_SETTLE_MS: u64 = 2000;
+pub(crate) const PROCESSING_ERROR_TOOLTIP_DURATION_MS: u64 = 4000;
+pub(crate) const TRANSCRIPTION_ERROR_TOOLTIP_MESSAGE: &str =
+    "Transcription failed. Please try again.";
+pub(crate) const POLISH_ERROR_TOOLTIP_MESSAGE: &str =
+    "Polish failed. Using original transcription.";
+pub(crate) const POLISH_POLICY_TOOLTIP_MESSAGE: &str =
+    "Polish result was rejected. Using original transcription.";
 
 pub(crate) fn should_emit_error_recovery_idle(
     current_task_id: u64,
@@ -29,6 +36,12 @@ pub(crate) fn should_emit_error_recovery_idle(
 
 pub(crate) async fn emit_recording_error_then_idle(app: &AppHandle, task_id: u64) {
     emit_recording_state(app, RecordingStatus::Error, task_id);
+    emit_pill_tooltip(
+        app,
+        TRANSCRIPTION_ERROR_TOOLTIP_MESSAGE,
+        PROCESSING_ERROR_TOOLTIP_DURATION_MS,
+        Some(task_id),
+    );
     tokio::time::sleep(tokio::time::Duration::from_millis(ERROR_STATE_SETTLE_MS)).await;
 
     let state = app.state::<AppState>();
@@ -93,11 +106,25 @@ pub(crate) async fn apply_retry_success(app: &AppHandle, entry_id: &str, task_id
     emit_retry_state(app, entry_id, RetryStatus::Completed, task_id);
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     crate::text_injector::insert_text(text);
+    let correction_memory_enabled = {
+        let state = app.state::<AppState>();
+        let settings = state.settings.lock();
+        settings.correction_memory_enabled
+    };
+    if correction_memory_enabled {
+        crate::correction_learning::observe_post_delivery_edit(app.clone(), text.to_string());
+    }
 }
 
 pub(crate) fn apply_retry_error(app: &AppHandle, entry_id: &str, task_id: u64, error: &str) {
     emit_retry_error(app, entry_id, task_id, error);
     emit_retry_state(app, entry_id, RetryStatus::Error, task_id);
+    emit_pill_tooltip(
+        app,
+        TRANSCRIPTION_ERROR_TOOLTIP_MESSAGE,
+        PROCESSING_ERROR_TOOLTIP_DURATION_MS,
+        None,
+    );
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -118,6 +145,29 @@ impl ProcessingEventTarget<'_> {
             Self::Recording(app) => emit_recording_state(app, RecordingStatus::Polishing, task_id),
             Self::Retry { app, entry_id } => {
                 emit_retry_state(app, entry_id, RetryStatus::Polishing, task_id);
+            }
+        }
+    }
+
+    pub(crate) fn emit_polish_error_tooltip(&self, task_id: u64) {
+        self.emit_processing_tooltip(task_id, POLISH_ERROR_TOOLTIP_MESSAGE);
+    }
+
+    pub(crate) fn emit_polish_policy_tooltip(&self, task_id: u64) {
+        self.emit_processing_tooltip(task_id, POLISH_POLICY_TOOLTIP_MESSAGE);
+    }
+
+    fn emit_processing_tooltip(&self, task_id: u64, message: &'static str) {
+        match self {
+            Self::None => {}
+            Self::Recording(app) => emit_pill_tooltip(
+                app,
+                message,
+                PROCESSING_ERROR_TOOLTIP_DURATION_MS,
+                Some(task_id),
+            ),
+            Self::Retry { app, .. } => {
+                emit_pill_tooltip(app, message, PROCESSING_ERROR_TOOLTIP_DURATION_MS, None)
             }
         }
     }

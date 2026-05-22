@@ -176,7 +176,7 @@ export async function expectNativeScreenshot(
   options?: ScreenshotOptions,
 ): Promise<void> {
   const image = await captureStableScreenshot(page as never, {
-    captureMode: options?.captureMode ?? 'native',
+    captureMode: options?.captureMode ?? 'native-with-fallback',
     stabilizationMs: options?.stabilizationMs,
   });
 
