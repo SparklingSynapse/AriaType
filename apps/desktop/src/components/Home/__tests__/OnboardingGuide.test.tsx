@@ -120,7 +120,7 @@ describe("OnboardingGuide model download flow", () => {
     let progressListenerReady = false;
     let releaseProgressListener: (() => void) | undefined;
     mocks.onModelDownloadProgressMock.mockImplementationOnce(() => (
-      new Promise<() => void>((resolve) => {
+      new Promise<() => undefined>((resolve) => {
         releaseProgressListener = () => {
           progressListenerReady = true;
           resolve(() => undefined);
