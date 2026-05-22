@@ -2,11 +2,11 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## Unreleased
+## v0.6.2 (2026-05-22)
 
 ### Bug Fixes
 
-- Prevent shortcut slash leaks (518887d)
+- Prevent shortcut slash leaks (4dea12d)
 - Keep recording feedback and shortcut state trustworthy (6d2bdd2)
 
 ## v0.6.1 (2026-05-19)
