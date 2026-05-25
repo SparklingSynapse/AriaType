@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## Unreleased
+
+### Features
+
+- Support windows (68cc615)
+
 ## v0.6.2 (2026-05-22)
 
 ### Bug Fixes
