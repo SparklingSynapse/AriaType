@@ -413,13 +413,13 @@ enum RuntimePermissionAction {
 #[cfg(target_os = "macos")]
 fn runtime_permission_action(
     runtime_is_mounted: bool,
-    previous_accessibility_granted: Option<bool>,
-    accessibility_granted: bool,
+    previous_runtime_permissions_granted: Option<bool>,
+    runtime_permissions_granted: bool,
 ) -> RuntimePermissionAction {
     match (
         runtime_is_mounted,
-        previous_accessibility_granted,
-        accessibility_granted,
+        previous_runtime_permissions_granted,
+        runtime_permissions_granted,
     ) {
         (true, _, false) => RuntimePermissionAction::Unmount,
         (false, Some(false), true) | (false, None, true) => RuntimePermissionAction::Mount,
@@ -446,7 +446,7 @@ fn owner_loop(mut state: OwnerState) {
     #[cfg(target_os = "macos")]
     let mut last_permission_poll_at = Instant::now() - SHORTCUT_PERMISSION_POLL_INTERVAL;
     #[cfg(target_os = "macos")]
-    let mut last_accessibility_granted: Option<bool> = None;
+    let mut last_runtime_permissions_granted: Option<bool> = None;
     #[cfg(target_os = "macos")]
     let mut last_probe_at = Instant::now() - SHORTCUT_RUNTIME_PROBE_INTERVAL;
     #[cfg(target_os = "macos")]
@@ -472,7 +472,7 @@ fn owner_loop(mut state: OwnerState) {
         poll_macos_runtime_health(
             &mut state,
             &mut last_permission_poll_at,
-            &mut last_accessibility_granted,
+            &mut last_runtime_permissions_granted,
             &mut last_probe_at,
             &mut last_capture_reconcile_at,
         );
@@ -500,6 +500,7 @@ fn handle_command(state: &mut OwnerState, command: ManagerCommand) {
                     Ok(()) => Ok(()),
                     Err(error)
                         if error.contains("Accessibility permission not granted")
+                            || error.contains("Input Monitoring permission not granted")
                             || error.contains("Failed to create fresh event tap probe") =>
                     {
                         Ok(())
@@ -987,7 +988,7 @@ fn refresh_matcher_snapshot(state: &mut OwnerState) -> Result<(), String> {
 fn poll_macos_runtime_health(
     state: &mut OwnerState,
     last_permission_poll_at: &mut Instant,
-    last_accessibility_granted: &mut Option<bool>,
+    last_runtime_permissions_granted: &mut Option<bool>,
     last_probe_at: &mut Instant,
     last_capture_reconcile_at: &mut Instant,
 ) {
@@ -999,25 +1000,35 @@ fn poll_macos_runtime_health(
         let permission_snapshot = crate::permissions::report_permission_snapshot_if_changed(
             "shortcut_runtime_permission_poll",
         );
-        let accessibility_granted =
-            permission_snapshot.accessibility == crate::permissions::PermissionStatus::Granted;
+        let runtime_permissions_granted = permission_snapshot.accessibility
+            == crate::permissions::PermissionStatus::Granted
+            && permission_snapshot.input_monitoring
+                == crate::permissions::PermissionStatus::Granted;
         let action = runtime_permission_action(
-            state.main_runner.is_some(),
-            *last_accessibility_granted,
-            accessibility_granted,
+            runtime_is_live(state.main_runner.is_some(), state.capture_runner.is_some()),
+            *last_runtime_permissions_granted,
+            runtime_permissions_granted,
         );
 
         match action {
             RuntimePermissionAction::Mount => {
+                tracing::info!("shortcut_runtime_permission_mount_requested");
                 let _ = ensure_main_runner(state);
             }
             RuntimePermissionAction::Unmount => {
+                tracing::warn!(
+                    accessibility = permission_snapshot.accessibility.as_str(),
+                    input_monitoring = permission_snapshot.input_monitoring.as_str(),
+                    capture_active = state.facade_state.capture_active.load(Ordering::SeqCst),
+                    "shortcut_runtime_permission_unmount_requested"
+                );
                 stop_main_runner(state);
+                stop_capture_runtime(state, false);
             }
             RuntimePermissionAction::Keep => {}
         }
 
-        *last_accessibility_granted = Some(accessibility_granted);
+        *last_runtime_permissions_granted = Some(runtime_permissions_granted);
         *last_permission_poll_at = Instant::now();
     }
 
@@ -1383,10 +1394,19 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn runtime_permission_action_mounts_on_startup_when_accessibility_is_granted() {
+    fn runtime_permission_action_mounts_on_startup_when_runtime_permissions_are_granted() {
         assert_eq!(
             runtime_permission_action(false, None, true),
             RuntimePermissionAction::Mount
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn runtime_permission_action_unmounts_when_input_monitoring_is_revoked() {
+        assert_eq!(
+            runtime_permission_action(true, Some(true), false),
+            RuntimePermissionAction::Unmount
         );
     }
 

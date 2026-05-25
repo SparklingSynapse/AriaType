@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { runCommand } = await import('./build-all-platforms-lib.mjs');
+const {
+  WINDOWS_CROSS_BUILD_COMMAND,
+  checkRequiredBuildTools,
+  runCommand,
+  windowsCrossBuildEnv,
+} = await import('./build-all-platforms-lib.mjs');
 
 test('retries once when notarization upload times out', () => {
   let attempts = 0;
@@ -112,4 +117,86 @@ test('mirrors command output to a build log when requested', () => {
   );
   assert.equal(observedOptions.shell, '/bin/bash');
   assert.equal(observedOptions.stdio, 'inherit');
+});
+
+test('preflight fails fast when a required build tool is missing', () => {
+  const logs = [];
+  const success = checkRequiredBuildTools(
+    [
+      {
+        command: 'cmake',
+        description: 'CMake',
+        installHint: 'brew install cmake',
+      },
+    ],
+    {
+      exec() {
+        throw new Error('not found');
+      },
+      log: {
+        info(message) {
+          logs.push(message);
+        },
+        error(message) {
+          logs.push(message);
+        },
+      },
+    },
+  );
+
+  assert.equal(success, false);
+  assert.ok(logs.some((message) => message.includes('Missing required build tool: CMake')));
+  assert.ok(logs.some((message) => message.includes('brew install cmake')));
+});
+
+test('preflight passes when all required build tools exist', () => {
+  let checks = 0;
+  const success = checkRequiredBuildTools(
+    [
+      {
+        command: 'cmake',
+        description: 'CMake',
+        installHint: 'brew install cmake',
+      },
+    ],
+    {
+      exec() {
+        checks += 1;
+      },
+      log: {
+        info() {},
+        error() {},
+      },
+    },
+  );
+
+  assert.equal(success, true);
+  assert.equal(checks, 1);
+});
+
+test('windows cross-build command uses the dedicated Windows Tauri config', () => {
+  assert.equal(
+    WINDOWS_CROSS_BUILD_COMMAND,
+    'cargo tauri build --config src-tauri/tauri.windows.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc',
+  );
+});
+
+test('windows cross-build env preserves existing env and enables static CRT flags', () => {
+  const env = windowsCrossBuildEnv({
+    PATH: '/usr/bin',
+    RUSTFLAGS: '-Clink-arg=/DEBUG',
+  });
+
+  assert.equal(env.PATH, '/usr/bin');
+  assert.equal(env.LLAMA_STATIC_CRT, '1');
+  assert.equal(env.STATIC_VCRUNTIME, 'false');
+  assert.equal(env.RUSTFLAGS, '-Clink-arg=/DEBUG -Ctarget-feature=+crt-static');
+});
+
+test('windows cross-build env does not duplicate crt-static rustflag', () => {
+  const env = windowsCrossBuildEnv({
+    RUSTFLAGS: '-Ctarget-feature=+crt-static',
+  });
+
+  assert.equal(env.RUSTFLAGS, '-Ctarget-feature=+crt-static');
 });
