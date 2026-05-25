@@ -180,6 +180,9 @@ pub fn start_runner(
     if check_permission(PermissionKind::Accessibility) != PermissionStatus::Granted {
         return Err("Accessibility permission not granted".to_string());
     }
+    if check_permission(PermissionKind::InputMonitoring) != PermissionStatus::Granted {
+        return Err("Input Monitoring permission not granted".to_string());
+    }
 
     let running = Arc::new(AtomicBool::new(true));
     let active = Arc::new(AtomicBool::new(true));

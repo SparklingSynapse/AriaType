@@ -1,5 +1,7 @@
 use std::process::Command;
 
+use cpal::traits::HostTrait;
+
 use super::{PermissionProvider, PermissionStatus};
 
 pub struct WindowsPermissions;
