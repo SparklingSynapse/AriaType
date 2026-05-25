@@ -1,5 +1,8 @@
 import { execSync } from 'child_process';
 
+export const WINDOWS_CROSS_BUILD_COMMAND =
+  'cargo tauri build --config src-tauri/tauri.windows.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc';
+
 function write(log, level, message) {
   const method = log[level] ?? log.log;
   method.call(log, message);
@@ -27,6 +30,23 @@ function isRetryableNotarizationTimeout(error, description) {
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function appendEnvToken(value, token) {
+  if (!value) {
+    return token;
+  }
+
+  return value.split(/\s+/).includes(token) ? value : `${value} ${token}`;
+}
+
+export function windowsCrossBuildEnv(baseEnv = process.env) {
+  return {
+    ...baseEnv,
+    LLAMA_STATIC_CRT: '1',
+    STATIC_VCRUNTIME: 'false',
+    RUSTFLAGS: appendEnvToken(baseEnv.RUSTFLAGS, '-Ctarget-feature=+crt-static'),
+  };
 }
 
 export function runCommand(command, description, options = {}) {
@@ -84,4 +104,28 @@ export function runCommand(command, description, options = {}) {
 
   write(log, 'error', `\n❌ ${description} failed\n`);
   return false;
+}
+
+export function checkRequiredBuildTools(requiredTools, options = {}) {
+  const {
+    exec = execSync,
+    log = console,
+  } = options;
+  let allAvailable = true;
+
+  for (const tool of requiredTools) {
+    try {
+      exec(`${tool.command} --version`, { stdio: 'ignore' });
+    } catch {
+      allAvailable = false;
+      write(log, 'error', `❌ Missing required build tool: ${tool.description}`);
+      write(log, 'error', `   Install: ${tool.installHint}`);
+    }
+  }
+
+  if (!allAvailable) {
+    write(log, 'error', '\nInstall the missing tools above, then rerun the build.\n');
+  }
+
+  return allAvailable;
 }

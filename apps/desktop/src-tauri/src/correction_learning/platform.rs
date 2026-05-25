@@ -5,7 +5,7 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 const MAX_TEXT_SNAPSHOT_CHARS: i32 = 50_000;
 
 pub async fn read_focused_editable_text() -> Option<String> {
@@ -44,7 +44,7 @@ fn non_empty_text(text: String) -> Option<String> {
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 fn bounded_text_range(character_count: i32, caret_offset: Option<i32>) -> Option<(i32, i32)> {
     if character_count <= 0 {
         return None;

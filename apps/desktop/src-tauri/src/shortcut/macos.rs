@@ -19,6 +19,11 @@ pub fn check_accessibility() -> bool {
         == crate::permissions::PermissionStatus::Granted
 }
 
+pub fn check_input_monitoring() -> bool {
+    crate::permissions::check_permission(crate::permissions::PermissionKind::InputMonitoring)
+        == crate::permissions::PermissionStatus::Granted
+}
+
 /// Create and immediately tear down a fresh keyboard-only event tap.
 ///
 /// This is stricter than `check_accessibility()`: it verifies that macOS will
@@ -32,6 +37,9 @@ pub fn fresh_event_tap_probe() -> Result<(), String> {
 
     if !check_accessibility() {
         return Err("Accessibility permission not granted".to_string());
+    }
+    if !check_input_monitoring() {
+        return Err("Input Monitoring permission not granted".to_string());
     }
 
     let event_mask: CGEventMask = (1 << CGEventType::KeyDown.0)

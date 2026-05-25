@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build AriaType for all platforms: macOS (ARM + Intel) and Windows.
- * 
+ *
  * Usage:
  *   pnpm build:all                    # Build all platforms
  *   pnpm build:all --skip-mac-arm     # Skip macOS ARM
@@ -9,6 +9,9 @@
  *   pnpm build:all --skip-win         # Skip Windows
  *   pnpm build:all --unsigned         # Build unsigned (no signing)
  *   pnpm build:all --cross-win        # Cross-compile Windows from macOS/Linux
+ *
+ * Native build requirements:
+ *   - CMake is required by llama-cpp-sys-2 (macOS: brew install cmake)
  * 
  * Cross-compilation notes:
  *   - Windows builds require either:
@@ -25,7 +28,12 @@ import { fileURLToPath } from 'url';
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { platform } from 'os';
 import { execSync } from 'child_process';
-import { runCommand } from './build-all-platforms-lib.mjs';
+import {
+  WINDOWS_CROSS_BUILD_COMMAND,
+  checkRequiredBuildTools,
+  runCommand,
+  windowsCrossBuildEnv,
+} from './build-all-platforms-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -50,6 +58,30 @@ const autoSkipMacIntel = skipMacIntel || !isMacOS;
 const desktopDir = resolve(root, 'apps/desktop');
 const tauriTargetDir = resolve(desktopDir, 'src-tauri/target');
 const buildDiagnosticsDir = resolve(desktopDir, '.build-diagnostics');
+
+function cmakeInstallHint() {
+  if (isMacOS) {
+    return 'brew install cmake';
+  }
+  if (isWindows) {
+    return 'winget install Kitware.CMake';
+  }
+  return 'Install cmake with your system package manager, for example: sudo apt-get install cmake';
+}
+
+function requiredBuildTools() {
+  if (autoSkipMacArm && autoSkipMacIntel && autoSkipWin) {
+    return [];
+  }
+
+  return [
+    {
+      command: 'cmake',
+      description: 'CMake (required by llama-cpp-sys-2)',
+      installHint: cmakeInstallHint(),
+    },
+  ];
+}
 
 function cleanTarget(targetTriple) {
   console.log(`\n🧹 Cleaning ${targetTriple || 'all'} build artifacts...`);
@@ -178,6 +210,10 @@ function collectMacDmgDiagnostics(targetTriple, error, diagnosticsDir = createDi
 console.log('\n🚀 AriaType Multi-Platform Build\n');
 console.log(`   Host platform: ${isMacOS ? 'macOS' : isWindows ? 'Windows' : hostPlatform}\n`);
 
+if (!checkRequiredBuildTools(requiredBuildTools())) {
+  process.exit(1);
+}
+
 const results = [];
 
 // macOS ARM (Apple Silicon)
@@ -263,7 +299,7 @@ if (!autoSkipWin) {
     // Check if cargo-xwin is installed
     try {
       execSync('cargo xwin --version', { stdio: 'ignore' });
-      cmd = 'cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc';
+      cmd = WINDOWS_CROSS_BUILD_COMMAND;
     } catch {
       console.error('❌ cargo-xwin not found. Install with:');
       console.error('   cargo install cargo-xwin');
@@ -279,7 +315,7 @@ if (!autoSkipWin) {
       'Building Windows (x64)' + (canCrossCompile ? ' [cross]' : ''),
       {
         cwd: desktopDir,
-        env: { ...process.env },
+        env: canCrossCompile ? windowsCrossBuildEnv(process.env) : { ...process.env },
       }
     );
     if (success) {

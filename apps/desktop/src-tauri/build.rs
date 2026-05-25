@@ -1,6 +1,6 @@
 fn main() {
-    #[cfg(target_os = "macos")]
-    {
+    let target = std::env::var("TARGET").unwrap_or_default();
+    if target.contains("apple-darwin") {
         println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET=12.0");
 
         // ggml-metal Objective-C code uses @available which emits calls to
