@@ -21,7 +21,11 @@ pub type SharedMatcherSnapshot = Arc<RwLock<MatcherSnapshot>>;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeEvent {
     Matcher(MatcherEvent),
-    RunnerNeedsRestart { mode: RunnerMode, generation: u64 },
+    #[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+    RunnerNeedsRestart {
+        mode: RunnerMode,
+        generation: u64,
+    },
 }
 
 pub trait PlatformRunner: Send {

@@ -24,8 +24,9 @@ export type StableScreenshotOptions = {
   nativeRetryDelayMs?: number;
 };
 
-const TRANSIENT_TOAST_TIMEOUT_MS = 4000;
+const TRANSIENT_TOAST_TIMEOUT_MS = 8000;
 const TRANSIENT_TOAST_POLL_MS = 50;
+const TRANSIENT_TOAST_QUIET_MS = 1500;
 
 export function getSnapshotStabilizationMs(): number {
   const configured = Number(process.env.E2E_HARNESS_SNAPSHOT_STABILIZATION_MS ?? '1000');
@@ -43,8 +44,8 @@ export async function moveMouseToNeutralZone(page: ScreenshotPage): Promise<void
     )
     .catch(() => null)) ?? { width: 860, height: 620 };
 
-  const targetX = Math.max(8, Math.min(viewport.width - 12, viewport.width / 2));
-  const targetY = Math.max(8, Math.min(20, viewport.height - 12));
+  const targetX = 12;
+  const targetY = Math.max(12, Math.min(viewport.height / 2, viewport.height - 12));
 
   await page.mouse.move(targetX, targetY).catch(() => undefined);
 }
@@ -53,13 +54,16 @@ export async function waitForTransientToastsToSettle(
   page: Pick<ScreenshotPage, 'evaluate'>,
   timeoutMs = TRANSIENT_TOAST_TIMEOUT_MS,
   pollMs = TRANSIENT_TOAST_POLL_MS,
+  quietMs = TRANSIENT_TOAST_QUIET_MS,
 ): Promise<void> {
   await page
     .evaluate(
       `(async function() {
         const deadline = Date.now() + ${JSON.stringify(timeoutMs)};
         const pollMs = ${JSON.stringify(pollMs)};
+        const quietMs = ${JSON.stringify(quietMs)};
         const selector = '[data-sonner-toast]';
+        let quietStartedAt = null;
 
         const isVisibleToast = (element) => {
           if (!(element instanceof HTMLElement)) {
@@ -90,7 +94,12 @@ export async function waitForTransientToastsToSettle(
         while (Date.now() < deadline) {
           const hasVisibleToast = Array.from(document.querySelectorAll(selector)).some(isVisibleToast);
           if (!hasVisibleToast) {
-            return true;
+            quietStartedAt = quietStartedAt ?? Date.now();
+            if (Date.now() - quietStartedAt >= quietMs) {
+              return true;
+            }
+          } else {
+            quietStartedAt = null;
           }
 
           await new Promise((resolve) => setTimeout(resolve, pollMs));

@@ -70,6 +70,22 @@ impl ShortcutProfilesMap {
     }
 }
 
+pub fn default_dictate_hotkey() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Cmd+Slash"
+    } else {
+        "Ctrl+Slash"
+    }
+}
+
+pub fn default_riff_hotkey() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Opt+Slash"
+    } else {
+        "Alt+Slash"
+    }
+}
+
 /// Single shortcut profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShortcutProfile {
@@ -87,10 +103,10 @@ fn default_trigger_mode() -> ShortcutTriggerMode {
 }
 
 impl ShortcutProfile {
-    /// Dictate profile: Cmd+Slash, no polish template.
+    /// Dictate profile: platform-native default, no polish template.
     pub fn default_dictate() -> Self {
         Self {
-            hotkey: "Cmd+Slash".to_string(),
+            hotkey: default_dictate_hotkey().to_string(),
             trigger_mode: ShortcutTriggerMode::Hold,
             action: ShortcutAction::Record {
                 polish_template_id: None,
@@ -98,10 +114,10 @@ impl ShortcutProfile {
         }
     }
 
-    /// Riff profile: Opt+Slash, default polish template.
+    /// Riff profile: platform-native default, default polish template.
     pub fn default_riff() -> Self {
         Self {
-            hotkey: "Opt+Slash".to_string(),
+            hotkey: default_riff_hotkey().to_string(),
             trigger_mode: ShortcutTriggerMode::Toggle,
             action: ShortcutAction::Record {
                 polish_template_id: Some("filler".to_string()),
@@ -254,9 +270,9 @@ mod tests {
     #[test]
     fn profiles_map_default_dictate_riff_no_custom() {
         let profiles = ShortcutProfilesMap::default();
-        assert_eq!(profiles.dictate.hotkey, "Cmd+Slash");
+        assert_eq!(profiles.dictate.hotkey, default_dictate_hotkey());
         assert_eq!(profiles.dictate.trigger_mode, ShortcutTriggerMode::Hold);
-        assert_eq!(profiles.riff.hotkey, "Opt+Slash");
+        assert_eq!(profiles.riff.hotkey, default_riff_hotkey());
         assert_eq!(profiles.riff.trigger_mode, ShortcutTriggerMode::Toggle);
         assert!(profiles.custom.is_none());
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatHotkey, HotkeyTags } from "../hotkey-input";
+import { formatHotkeyForPlatform, HotkeyTags } from "../hotkey-input";
 import { render, screen } from "@testing-library/react";
 
 describe("formatHotkey", () => {
@@ -38,36 +38,55 @@ describe("formatHotkey", () => {
     ["cmd+tab", "⌘+⇥"],
     ["cmd+capslock", "⌘+⇪"],
   ])("formats %s as %s", (input, expected) => {
-    expect(formatHotkey(input)).toBe(expected);
+    expect(formatHotkeyForPlatform(input, "macos")).toBe(expected);
   });
 
   it("handles case insensitive input", () => {
-    expect(formatHotkey("CMD+A")).toBe("⌘+A");
-    expect(formatHotkey("ctrl+SHIFT+Space")).toBe("Ctrl+⇧+Space");
-    expect(formatHotkey("CMDRIGHT+SLASH")).toBe("R⌘+/");
+    expect(formatHotkeyForPlatform("CMD+A", "macos")).toBe("⌘+A");
+    expect(formatHotkeyForPlatform("ctrl+SHIFT+Space", "macos")).toBe("Ctrl+⇧+Space");
+    expect(formatHotkeyForPlatform("CMDRIGHT+SLASH", "macos")).toBe("R⌘+/");
   });
 
   it("capitalizes unknown keys", () => {
-    expect(formatHotkey("unknownkey")).toBe("Unknownkey");
+    expect(formatHotkeyForPlatform("unknownkey", "macos")).toBe("Unknownkey");
+  });
+
+  it.each([
+    ["cmd+slash", "Win+/"],
+    ["cmdleft+slash", "LWin+/"],
+    ["cmdright+slash", "RWin+/"],
+    ["opt+slash", "Alt+/"],
+    ["alt+slash", "Alt+/"],
+    ["optright+b", "RAlt+B"],
+    ["ctrl+slash", "Ctrl+/"],
+  ])("formats Windows hotkey %s as %s", (input, expected) => {
+    expect(formatHotkeyForPlatform(input, "windows")).toBe(expected);
   });
 });
 
 describe("HotkeyTags", () => {
   it("renders multiple key tags", () => {
-    render(<HotkeyTags hotkey="cmdleft+shift+a" />);
+    render(<HotkeyTags hotkey="cmdleft+shift+a" platform="macos" />);
     // Should render 3 key tags: L⌘, ⇧, A
     const tags = screen.getAllByText(/L⌘|⇧|A/);
     expect(tags.length).toBe(3);
   });
 
   it("renders single key", () => {
-    render(<HotkeyTags hotkey="fn" />);
+    render(<HotkeyTags hotkey="fn" platform="macos" />);
     expect(screen.getByText("Fn")).toBeInTheDocument();
   });
 
   it("renders special key symbols", () => {
-    render(<HotkeyTags hotkey="cmd+enter" />);
+    render(<HotkeyTags hotkey="cmd+enter" platform="macos" />);
     expect(screen.getByText("⌘")).toBeInTheDocument();
     expect(screen.getByText("↵")).toBeInTheDocument();
+  });
+
+  it("renders platform-native modifier labels on Windows", () => {
+    render(<HotkeyTags hotkey="cmd+opt+slash" platform="windows" />);
+    expect(screen.getByText("Win")).toBeInTheDocument();
+    expect(screen.getByText("Alt")).toBeInTheDocument();
+    expect(screen.getByText("/")).toBeInTheDocument();
   });
 });

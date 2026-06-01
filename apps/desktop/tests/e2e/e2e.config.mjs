@@ -51,6 +51,9 @@ export default createRunnerConfig({
   tauriExecutable,
   tauriCommand,
   tauriFeatures,
+  tauriEnv: {
+    ARIATYPE_E2E_FAST_MODEL_DOWNLOAD: '1',
+  },
   capabilityFiles,
   seedDataFiles: [
     {

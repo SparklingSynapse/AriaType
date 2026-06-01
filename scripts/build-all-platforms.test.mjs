@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 const {
   WINDOWS_CROSS_BUILD_COMMAND,
@@ -172,6 +173,13 @@ test('preflight passes when all required build tools exist', () => {
 
   assert.equal(success, true);
   assert.equal(checks, 1);
+});
+
+test('windows cross-build preflight documents ninja as a required tool', () => {
+  const script = readFileSync(new URL('./build-all-platforms.mjs', import.meta.url), 'utf8');
+
+  assert.match(script, /brew install cmake ninja llvm nsis/);
+  assert.match(script, /Ninja \(required by Windows cargo-xwin CMake builds\)/);
 });
 
 test('windows cross-build command uses the dedicated Windows Tauri config', () => {

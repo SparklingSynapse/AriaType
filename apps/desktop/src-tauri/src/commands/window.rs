@@ -390,9 +390,9 @@ pub async fn capture_main_window_snapshot(app: AppHandle) -> Result<MainWindowSn
     #[cfg(feature = "e2e-testing")]
     {
         show_main_window(app).await?;
-        return tokio::task::spawn_blocking(capture_main_window_snapshot_blocking)
+        tokio::task::spawn_blocking(capture_main_window_snapshot_blocking)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())?
     }
 
     #[cfg(not(feature = "e2e-testing"))]

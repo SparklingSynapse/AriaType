@@ -23,6 +23,7 @@ export type OrderedTauriRunnerConfig = {
   tauriExecutable?: string;
   tauriCommand: string[];
   tauriFeatures?: string[];
+  tauriEnv?: Record<string, string>;
   capabilityFiles?: CapabilityFileMapping[];
   seedFiles?: SeedFileMapping[];
   seedDataFiles?: SeedFileMapping[];

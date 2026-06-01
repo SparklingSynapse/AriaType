@@ -792,6 +792,68 @@ fn ensure_profile_trigger_modes(
     migrated
 }
 
+#[cfg(test)]
+pub fn migrate_platform_shortcut_defaults_for_test(
+    json: &mut serde_json::Value,
+    is_macos: bool,
+) -> bool {
+    migrate_platform_shortcut_defaults_for_platform(json, is_macos)
+}
+
+fn migrate_platform_shortcut_defaults(json: &mut serde_json::Value) -> bool {
+    migrate_platform_shortcut_defaults_for_platform(json, cfg!(target_os = "macos"))
+}
+
+fn migrate_platform_shortcut_defaults_for_platform(
+    json: &mut serde_json::Value,
+    is_macos: bool,
+) -> bool {
+    if is_macos {
+        return false;
+    }
+
+    let Some(profiles) = json
+        .get_mut("shortcut_profiles")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return false;
+    };
+
+    let mut migrated = false;
+    migrated |= migrate_profile_hotkey(profiles, "dictate", "Cmd+Slash", "Ctrl+Slash");
+    migrated |= migrate_profile_hotkey(profiles, "riff", "Opt+Slash", "Alt+Slash");
+
+    if migrated {
+        tracing::info!("shortcut_profiles_migrated-platform_defaults");
+    }
+
+    migrated
+}
+
+fn migrate_profile_hotkey(
+    profiles: &mut serde_json::Map<String, serde_json::Value>,
+    profile_key: &str,
+    old_hotkey: &str,
+    new_hotkey: &str,
+) -> bool {
+    let Some(profile) = profiles
+        .get_mut(profile_key)
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return false;
+    };
+
+    if profile.get("hotkey").and_then(serde_json::Value::as_str) != Some(old_hotkey) {
+        return false;
+    }
+
+    profile.insert(
+        "hotkey".to_string(),
+        serde_json::Value::String(new_hotkey.to_string()),
+    );
+    true
+}
+
 /// Migrate window_context_enabled from old default (false) to new default (true).
 /// This field was introduced with default=false, then changed to default=true.
 /// We migrate false -> true because users likely never intentionally set it to false
@@ -850,9 +912,13 @@ pub fn load_settings_from_disk() -> AppSettings {
             let migrated_cloud = migrate_cloud_settings(&mut json_value);
             let migrated_model = validate_model_name(&mut json_value);
             let migrated_profiles = migrate_to_profiles_map(&mut json_value);
+            let migrated_platform_shortcuts = migrate_platform_shortcut_defaults(&mut json_value);
             let migrated_window_context = migrate_window_context_enabled(&mut json_value);
-            let migrated =
-                migrated_cloud || migrated_model || migrated_profiles || migrated_window_context;
+            let migrated = migrated_cloud
+                || migrated_model
+                || migrated_profiles
+                || migrated_platform_shortcuts
+                || migrated_window_context;
 
             match serde_json::from_value::<AppSettings>(json_value.clone()) {
                 Ok(settings) => {

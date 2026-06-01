@@ -759,6 +759,7 @@ fn current_runner_generation(state: &OwnerState, mode: RunnerMode) -> Option<u64
     }
 }
 
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
 fn capture_runner_reconcile_needed(
     capture_active: bool,
     main_runner_is_present: bool,
