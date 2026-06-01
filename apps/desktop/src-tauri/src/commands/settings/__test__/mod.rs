@@ -140,6 +140,13 @@ fn correction_memory_defaults_enabled() {
 }
 
 #[test]
+fn stay_in_tray_defaults_enabled() {
+    let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
+
+    assert!(settings.stay_in_tray);
+}
+
+#[test]
 fn normalize_pill_background_color_accepts_only_hex_rgb_values() {
     assert_eq!(
         normalize_pill_background_color(" #AABBCC "),

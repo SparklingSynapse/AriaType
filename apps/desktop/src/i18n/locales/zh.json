@@ -29,7 +29,7 @@
   "general.startup.recordingSound": "录音提示音",
   "general.startup.recordingSoundDesc": "录音开始或结束时播放提示音",
   "general.startup.stayInTray": "常驻托盘",
-  "general.startup.stayInTrayDesc": "关闭主窗口后保持应用在系统托盘中。开启后应用隐藏时不会出现在程序坞中。",
+  "general.startup.stayInTrayDesc": "额外显示系统托盘图标。关闭主窗口后只隐藏窗口，不退出应用。",
   "general.audio.title": "音频输入",
   "general.audio.description": "选择用于录音的麦克风",
   "general.audio.inputDevice": "输入设备",

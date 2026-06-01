@@ -112,6 +112,7 @@ pub struct AppSettings {
     pub active_cloud_polish_provider: String,
     pub cloud_polish_configs: HashMap<String, CloudProviderConfig>,
     pub vad_enabled: bool,
+    #[serde(default = "default_stay_in_tray")]
     pub stay_in_tray: bool,
     pub polish_custom_templates: Vec<CustomPolishTemplate>,
     /// Enable window context capture via screenshot + OCR at recording start.
@@ -145,6 +146,10 @@ fn default_pill_background_opacity() -> f32 {
 }
 
 fn default_correction_memory_enabled() -> bool {
+    true
+}
+
+fn default_stay_in_tray() -> bool {
     true
 }
 
@@ -388,7 +393,7 @@ impl Default for AppSettings {
             active_cloud_polish_provider: "anthropic".to_string(),
             cloud_polish_configs: HashMap::new(),
             vad_enabled: false,
-            stay_in_tray: false,
+            stay_in_tray: default_stay_in_tray(),
             polish_custom_templates: Vec::new(),
             window_context_enabled: true,
             pill_size: 2,
@@ -888,6 +893,7 @@ pub fn update_settings(
     let mut should_clear_cache = false;
     let mut model_to_preload: Option<String> = None;
     let mut hotkey_to_register: Option<String> = None;
+    let mut stay_in_tray_to_apply: Option<bool> = None;
     let preset_to_apply: Option<String>;
     let indicator_mode_to_apply: Option<String>;
 
@@ -1058,21 +1064,7 @@ pub fn update_settings(
             "stay_in_tray" => {
                 if let Some(v) = value.as_bool() {
                     settings.stay_in_tray = v;
-                    #[cfg(target_os = "macos")]
-                    {
-                        if let Err(e) =
-                            crate::commands::settings::set_activation_policy_for_app(&app, v)
-                        {
-                            tracing::error!(error = %e, "activation_policy_set_failed");
-                        }
-                        if v {
-                            if let Err(e) = crate::tray::show_tray(&app) {
-                                tracing::error!(error = %e, "tray_show_failed");
-                            }
-                        } else {
-                            crate::tray::remove_tray(&app);
-                        }
-                    }
+                    stay_in_tray_to_apply = Some(v);
                 }
             }
             "cloud_stt_enabled" => {
@@ -1204,6 +1196,16 @@ pub fn update_settings(
 
     if indicator_mode_to_apply.is_some() {
         crate::commands::window::update_pill_visibility(&app);
+    }
+
+    if let Some(stay_in_tray) = stay_in_tray_to_apply {
+        if stay_in_tray {
+            if let Err(e) = crate::tray::show_tray(&app) {
+                tracing::error!(error = %e, "tray_show_failed");
+            }
+        } else {
+            crate::tray::remove_tray(&app);
+        }
     }
 
     if should_clear_cache {
@@ -1456,35 +1458,6 @@ pub async fn check_active_cloud_polish_config(
             ))
         }
     }
-}
-
-#[cfg(target_os = "macos")]
-pub fn set_activation_policy_for_app(app: &AppHandle, stay_in_tray: bool) -> Result<(), String> {
-    // Save the main window's visibility state before changing policy
-    let main_window_was_visible = app
-        .get_webview_window("main")
-        .map(|w| w.is_visible().unwrap_or(false))
-        .unwrap_or(false);
-
-    let policy = if stay_in_tray {
-        tauri::ActivationPolicy::Accessory
-    } else {
-        tauri::ActivationPolicy::Regular
-    };
-    app.set_activation_policy(policy)
-        .map_err(|e| format!("Failed to set activation policy: {}", e))?;
-
-    // When switching to Accessory mode, macOS hides the app's windows.
-    // Restore the main window's visibility if it was visible before.
-    if stay_in_tray && main_window_was_visible {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
-    }
-
-    info!(stay_in_tray = stay_in_tray, "activation_policy_updated");
-    Ok(())
 }
 
 /// Scans the models directory for legacy model files (ggml/gguf format)
