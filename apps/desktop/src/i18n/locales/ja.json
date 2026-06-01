@@ -31,7 +31,7 @@
   "general.startup.recordingSound": "録音サウンド",
   "general.startup.recordingSoundDesc": "録音開始または終了時に通知音を再生",
   "general.startup.stayInTray": "システムトレイに常駐",
-  "general.startup.stayInTrayDesc": "メインウィンドウが閉じていてもアプリをシステムトレイに維持します。非表示時はDockに表示されません。",
+  "general.startup.stayInTrayDesc": "システムトレイに追加のアイコンを表示します。メインウィンドウを閉じてもアプリは終了せず、ウィンドウだけを隠します。",
   "general.audio.title": "オーディオ入力",
   "general.audio.description": "録音に使用するマイクを選択",
   "general.audio.inputDevice": "入力デバイス",

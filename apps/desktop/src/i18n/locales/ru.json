@@ -31,7 +31,7 @@
   "general.startup.recordingSound": "Звук записи",
   "general.startup.recordingSoundDesc": "Воспроизводить звук при начале или окончании записи",
   "general.startup.stayInTray": "Оставаться в трее",
-  "general.startup.stayInTrayDesc": "Держать приложение в системном трее даже при закрытом главном окне. При скрытии приложение не появится в Dock.",
+  "general.startup.stayInTrayDesc": "Показывает дополнительный значок в системном трее. Закрытие главного окна скрывает его, не завершая приложение.",
   "general.audio.title": "Аудиовход",
   "general.audio.description": "Выберите микрофон для записи",
   "general.audio.inputDevice": "Устройство ввода",

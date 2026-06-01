@@ -4,6 +4,12 @@ All notable changes to the desktop application will be documented in this file.
 
 ## Unreleased
 
+### Bug Fixes
+
+- Keep tray window reachable from dock (1e227c3)
+
+## v0.6.3 (2026-05-25)
+
 ### Features
 
 - Support windows (68cc615)

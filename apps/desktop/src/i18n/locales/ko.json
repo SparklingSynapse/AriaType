@@ -31,7 +31,7 @@
   "general.startup.recordingSound": "녹음 알림음",
   "general.startup.recordingSoundDesc": "녹음 시작 또는 종료 시 알림음 재생",
   "general.startup.stayInTray": "시스템 트레이에 유지",
-  "general.startup.stayInTrayDesc": "메인 창이 닫혀도 앱을 시스템 트레이에 유지합니다. 숨김 상태에서는 Dock에 나타나지 않습니다.",
+  "general.startup.stayInTrayDesc": "시스템 트레이에 아이콘을 추가로 표시합니다. 메인 창을 닫으면 앱을 종료하지 않고 창만 숨깁니다.",
   "general.audio.title": "오디오 입력",
   "general.audio.description": "녹음에 사용할 마이크 선택",
   "general.audio.inputDevice": "입력 장치",

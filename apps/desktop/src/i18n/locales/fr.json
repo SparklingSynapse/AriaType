@@ -21,7 +21,7 @@
   "general.startup.recordingSound": "Son d'enregistrement",
   "general.startup.recordingSoundDesc": "Jouer un son au début ou à la fin de l'enregistrement",
   "general.startup.stayInTray": "Rester dans la barre d'état système",
-  "general.startup.stayInTrayDesc": "Garder l'application dans la barre d'état système même lorsque la fenêtre principale est fermée. L'application n'apparaîtra pas dans le Dock lorsqu'elle est masquée.",
+  "general.startup.stayInTrayDesc": "Affiche une icône supplémentaire dans la barre d'état système. Fermer la fenêtre principale la masque sans quitter l'application.",
   "general.audio.title": "Entrée audio",
   "general.audio.description": "Sélectionnez le microphone à utiliser",
   "general.audio.inputDevice": "Périphérique d'entrée",
