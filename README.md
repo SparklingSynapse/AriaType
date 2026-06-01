@@ -152,6 +152,11 @@ Useful ways to help:
 
 Developer documentation starts at [context/README.md](context/README.md).
 
+## Discussion
+
+<img width="200" alt="IMG_2446" src="https://github.com/user-attachments/assets/9c37cca9-6fe4-4171-8716-49eed8cb92ed" />
+
+
 ## License
 
 AriaType is licensed under [AGPL-3.0](LICENSE).
