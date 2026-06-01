@@ -4,19 +4,59 @@ import { cn } from "@/lib/utils";
 import { hotkeyCommands, events } from "@/lib/tauri";
 import { showErrorToast } from "@/lib/toast";
 
-const HOTKEY_LABELS: Record<string, string> = {
-  cmd: "⌘",
-  cmdleft: "L⌘",
-  cmdright: "R⌘",
+export type HotkeyDisplayPlatform = "macos" | "windows" | "linux" | "unknown";
+
+const MODIFIER_LABELS: Record<HotkeyDisplayPlatform, Record<string, string>> = {
+  macos: {
+    cmd: "⌘",
+    cmdleft: "L⌘",
+    cmdright: "R⌘",
+    opt: "⌥",
+    optleft: "L⌥",
+    optright: "R⌥",
+    alt: "⌥",
+    altleft: "L⌥",
+    altright: "R⌥",
+  },
+  windows: {
+    cmd: "Win",
+    cmdleft: "LWin",
+    cmdright: "RWin",
+    opt: "Alt",
+    optleft: "LAlt",
+    optright: "RAlt",
+    alt: "Alt",
+    altleft: "LAlt",
+    altright: "RAlt",
+  },
+  linux: {
+    cmd: "Super",
+    cmdleft: "LSuper",
+    cmdright: "RSuper",
+    opt: "Alt",
+    optleft: "LAlt",
+    optright: "RAlt",
+    alt: "Alt",
+    altleft: "LAlt",
+    altright: "RAlt",
+  },
+  unknown: {
+    cmd: "Cmd",
+    cmdleft: "LCmd",
+    cmdright: "RCmd",
+    opt: "Alt",
+    optleft: "LAlt",
+    optright: "RAlt",
+    alt: "Alt",
+    altleft: "LAlt",
+    altright: "RAlt",
+  },
+};
+
+const BASE_HOTKEY_LABELS: Record<string, string> = {
   ctrl: "Ctrl",
   ctrlleft: "LCtrl",
   ctrlright: "RCtrl",
-  alt: "⌥",
-  altleft: "L⌥",
-  altright: "R⌥",
-  opt: "⌥",
-  optleft: "L⌥",
-  optright: "R⌥",
   shift: "⇧",
   shiftleft: "L⇧",
   shiftright: "R⇧",
@@ -70,10 +110,28 @@ const HOTKEY_LABELS: Record<string, string> = {
   mediatrackprev: "⏮",
 };
 
-function getKeyLabel(part: string): string {
+function getShortcutDisplayPlatform(): HotkeyDisplayPlatform {
+  if (typeof navigator === "undefined") {
+    return "unknown";
+  }
+
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = `${nav.userAgentData?.platform ?? ""} ${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`;
+
+  if (/mac/i.test(platform)) return "macos";
+  if (/win/i.test(platform)) return "windows";
+  if (/linux/i.test(platform)) return "linux";
+  return "unknown";
+}
+
+function getKeyLabel(part: string, platform: HotkeyDisplayPlatform = getShortcutDisplayPlatform()): string {
   const normalizedPart = part.toLowerCase();
-  if (HOTKEY_LABELS[normalizedPart]) {
-    return HOTKEY_LABELS[normalizedPart];
+  const platformLabels = MODIFIER_LABELS[platform] ?? MODIFIER_LABELS.unknown;
+  if (platformLabels[normalizedPart]) {
+    return platformLabels[normalizedPart];
+  }
+  if (BASE_HOTKEY_LABELS[normalizedPart]) {
+    return BASE_HOTKEY_LABELS[normalizedPart];
   }
   if (normalizedPart.length === 1) {
     return normalizedPart.toUpperCase();
@@ -82,9 +140,13 @@ function getKeyLabel(part: string): string {
 }
 
 function formatHotkey(hotkey: string): string {
+  return formatHotkeyForPlatform(hotkey, getShortcutDisplayPlatform());
+}
+
+function formatHotkeyForPlatform(hotkey: string, platform: HotkeyDisplayPlatform): string {
   return hotkey
     .split("+")
-    .map((part) => getKeyLabel(part))
+    .map((part) => getKeyLabel(part, platform))
     .join("+");
 }
 
@@ -103,12 +165,13 @@ function HotkeyTag({ keyLabel }: { keyLabel: string }) {
   );
 }
 
-function HotkeyTags({ hotkey }: { hotkey: string }) {
+function HotkeyTags({ hotkey, platform }: { hotkey: string; platform?: HotkeyDisplayPlatform }) {
   if (!hotkey) {
     return null;
   }
   
-  const keys = hotkey.split("+").map((part) => getKeyLabel(part));
+  const displayPlatform = platform ?? getShortcutDisplayPlatform();
+  const keys = hotkey.split("+").map((part) => getKeyLabel(part, displayPlatform));
 
   return (
     <div className="flex items-center gap-1">
@@ -303,4 +366,4 @@ export function HotkeyInput({ value, onChange, profileKey, placeholder, classNam
   );
 }
 
-export { formatHotkey, HotkeyTags };
+export { formatHotkey, formatHotkeyForPlatform, HotkeyTags };

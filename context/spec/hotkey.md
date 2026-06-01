@@ -15,17 +15,20 @@ Frontend does NOT validate hotkeys. Backend emits `hotkey-captured` event only w
 
 ## Default Shortcuts
 
-Two profiles with default hotkeys:
+Two profiles with platform-native default hotkeys:
 
 | Profile | Hotkey | Behavior |
 |---------|--------|----------|
-| Dictate | `Cmd+Slash` | Raw transcription, no polish |
-| Chat | `Opt+Slash` | Transcription with polish template |
+| Dictate (macOS) | `Cmd+Slash` | Raw transcription, no polish |
+| Riff (macOS) | `Opt+Slash` | Transcription with polish template |
+| Dictate (Windows/Linux) | `Ctrl+Slash` | Raw transcription, no polish |
+| Riff (Windows/Linux) | `Alt+Slash` | Transcription with polish template |
 
-**Why Cmd+Slash and Opt+Slash:**
+**Why Slash-based shortcuts:**
 - `/` is rarely used as a system shortcut key
 - Easy to press with one hand
-- Different modifiers (Cmd vs Opt) distinguish the two modes
+- Different modifiers distinguish the two modes
+- Windows avoids the Win key by default because the shell may reserve it
 - Both use the same key (`/`) for muscle memory consistency
 
 ## Trigger Modes
@@ -81,6 +84,8 @@ Supported modifier keys:
 | `Fn` | `function` | macOS only |
 
 Side-specific variants: `CmdLeft`, `CmdRight`, `CtrlLeft`, `CtrlRight`, `OptLeft`, `OptRight`, `ShiftLeft`, `ShiftRight`.
+
+Display labels are platform-native: `Cmd` renders as Command on macOS, Win on Windows, and Super on Linux; `Opt` renders as Option on macOS and Alt elsewhere.
 
 ## Capture Flow
 

@@ -127,6 +127,9 @@ pub fn analyze_pressed_sequence(_sequence: &[PressedInput]) -> Result<String, St
             }
             PressedInput::Key(token) => {
                 let normalized_key = normalize_key_token(token);
+                if key.as_ref() == Some(&normalized_key) {
+                    continue;
+                }
                 if key.replace(normalized_key).is_some() {
                     return Err(
                         "Multiple keys not supported. Use modifiers + single key.".to_string()
@@ -416,6 +419,18 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(hotkey, "CmdRight+Slash");
+    }
+
+    #[test]
+    fn analyzes_repeated_keydown_as_single_key_capture() {
+        let hotkey = analyze_pressed_sequence(&[
+            PressedInput::Modifier("CtrlLeft".to_string()),
+            PressedInput::Key("Slash".to_string()),
+            PressedInput::Key("Slash".to_string()),
+        ])
+        .unwrap();
+
+        assert_eq!(hotkey, "CtrlLeft+Slash");
     }
 
     #[test]

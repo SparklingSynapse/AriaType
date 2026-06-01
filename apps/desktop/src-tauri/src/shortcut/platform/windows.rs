@@ -174,6 +174,27 @@ fn matcher_input_from_vk(message: u32, vk_code: u16) -> Option<MatcherInput> {
     use winapi::um::winuser::{WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
 
     let key = match vk_code {
+        16 => {
+            return Some(if matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN) {
+                MatcherInput::ModifierPressed(ModifierKey::ShiftLeft)
+            } else {
+                MatcherInput::ModifierReleased(ModifierKey::ShiftLeft)
+            })
+        }
+        17 => {
+            return Some(if matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN) {
+                MatcherInput::ModifierPressed(ModifierKey::CtrlLeft)
+            } else {
+                MatcherInput::ModifierReleased(ModifierKey::CtrlLeft)
+            })
+        }
+        18 => {
+            return Some(if matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN) {
+                MatcherInput::ModifierPressed(ModifierKey::OptLeft)
+            } else {
+                MatcherInput::ModifierReleased(ModifierKey::OptLeft)
+            })
+        }
         160 => {
             return Some(if matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN) {
                 MatcherInput::ModifierPressed(ModifierKey::ShiftLeft)

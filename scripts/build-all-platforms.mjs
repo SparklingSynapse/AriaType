@@ -18,7 +18,7 @@
  *     a) Running on Windows (native)
  *     b) --cross-win flag with cargo-xwin installed
  *   - Cross-compilation requirements:
- *     brew install llvm nsis
+ *     brew install cmake ninja llvm nsis
  *     cargo install cargo-xwin
  *     rustup target add x86_64-pc-windows-msvc
  */
@@ -69,18 +69,38 @@ function cmakeInstallHint() {
   return 'Install cmake with your system package manager, for example: sudo apt-get install cmake';
 }
 
+function ninjaInstallHint() {
+  if (isMacOS) {
+    return 'brew install ninja';
+  }
+  if (isWindows) {
+    return 'winget install Ninja-build.Ninja';
+  }
+  return 'Install ninja with your system package manager, for example: sudo apt-get install ninja-build';
+}
+
 function requiredBuildTools() {
   if (autoSkipMacArm && autoSkipMacIntel && autoSkipWin) {
     return [];
   }
 
-  return [
+  const tools = [
     {
       command: 'cmake',
       description: 'CMake (required by llama-cpp-sys-2)',
       installHint: cmakeInstallHint(),
     },
   ];
+
+  if (canCrossCompile) {
+    tools.push({
+      command: 'ninja',
+      description: 'Ninja (required by Windows cargo-xwin CMake builds)',
+      installHint: ninjaInstallHint(),
+    });
+  }
+
+  return tools;
 }
 
 function cleanTarget(targetTriple) {

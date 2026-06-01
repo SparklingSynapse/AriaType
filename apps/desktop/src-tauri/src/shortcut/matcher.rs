@@ -40,6 +40,7 @@ pub enum ModifierKey {
     ShiftRight,
     CmdLeft,
     CmdRight,
+    #[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
     Function,
 }
 

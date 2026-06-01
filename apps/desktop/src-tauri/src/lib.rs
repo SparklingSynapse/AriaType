@@ -60,6 +60,7 @@ fn should_hide_main_window_on_close(stay_in_tray: bool, platform: MainWindowClos
     stay_in_tray || platform == MainWindowClosePlatform::Macos
 }
 
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
 fn should_show_main_window_on_reopen(_has_visible_windows: bool) -> bool {
     true
 }
@@ -728,15 +729,15 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
+        .run(|_app, _event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen {
                 has_visible_windows,
                 ..
-            } = event
+            } = _event
             {
                 if should_show_main_window_on_reopen(has_visible_windows) {
-                    show_main_window_best_effort(app, "dock_reopen");
+                    show_main_window_best_effort(_app, "dock_reopen");
                 }
             }
         });
