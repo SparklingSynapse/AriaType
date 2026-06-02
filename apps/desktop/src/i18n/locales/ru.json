@@ -315,6 +315,7 @@
   "hotkey.recording.modeToggle": "Переключение",
   "hotkey.recording.modeDoubleTap": "Двойное нажатие",
   "hotkey.registrationFailed": "Горячая клавиша уже используется",
+  "hotkey.captureFailed": "Не удалось захватить горячую клавишу",
   "hotkey.conflictDictate": "Горячая клавиша уже используется профилем Dictate",
   "hotkey.conflictRiff": "Горячая клавиша уже используется профилем Riff",
   "hotkey.conflictCustom": "Горячая клавиша уже используется профилем Custom",

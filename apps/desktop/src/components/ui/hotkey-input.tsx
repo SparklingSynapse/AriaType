@@ -195,6 +195,7 @@ export function HotkeyInput({ value, onChange, profileKey, placeholder, classNam
   const [isCapturing, setIsCapturing] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const stoppingRef = useRef(false);
+  const startingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   function getHotkeyConflictMessage(errorMsg: string): string | null {
@@ -283,8 +284,10 @@ export function HotkeyInput({ value, onChange, profileKey, placeholder, classNam
   }, [value]);
 
   const startCapture = async () => {
-    if (isCapturing) return;
+    if (isCapturing || startingRef.current) return;
+    startingRef.current = true;
     setRegistrationError(null);
+    const captureFailedMessage = t("hotkey.captureFailed", "Unable to capture hotkey");
 
     try {
       await hotkeyCommands.startCapture(profileKey);
@@ -296,9 +299,18 @@ export function HotkeyInput({ value, onChange, profileKey, placeholder, classNam
         try {
           await hotkeyCommands.startCapture(profileKey);
           setIsCapturing(true);
-        } catch {
+        } catch (retryErr) {
+          const retryErrorMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          setRegistrationError(retryErrorMsg || captureFailedMessage);
+          showErrorToast(captureFailedMessage);
         }
+        return;
       }
+
+      setRegistrationError(errorMsg || captureFailedMessage);
+      showErrorToast(captureFailedMessage);
+    } finally {
+      startingRef.current = false;
     }
   };
 

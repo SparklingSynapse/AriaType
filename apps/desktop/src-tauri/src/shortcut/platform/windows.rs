@@ -3,7 +3,7 @@ use std::ptr;
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "windows")]
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{self, Sender};
 #[cfg(target_os = "windows")]
 use std::sync::{Arc, LazyLock, Mutex};
 #[cfg(target_os = "windows")]
@@ -58,9 +58,28 @@ pub fn start_runner(
         mode,
     });
 
+    let (ready_tx, ready_rx) = mpsc::channel();
     let handle = thread::spawn(move || {
-        run_windows_runner(thread_running, thread_active, callback_state);
+        run_windows_runner(thread_running, thread_active, callback_state, ready_tx);
     });
+
+    match ready_rx.recv() {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            running.store(false, Ordering::SeqCst);
+            active.store(false, Ordering::SeqCst);
+            let _ = handle.join();
+            return Err(error);
+        }
+        Err(error) => {
+            running.store(false, Ordering::SeqCst);
+            active.store(false, Ordering::SeqCst);
+            let _ = handle.join();
+            return Err(format!(
+                "windows shortcut hook startup channel closed: {error}"
+            ));
+        }
+    }
 
     Ok(WindowsRunner {
         thread_handle: Some(handle),
@@ -88,6 +107,7 @@ fn run_windows_runner(
     running: Arc<AtomicBool>,
     active: Arc<AtomicBool>,
     callback_state: Arc<WindowsCallbackState>,
+    ready_tx: Sender<Result<(), String>>,
 ) {
     use winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
     use winapi::um::libloaderapi::GetModuleHandleW;
@@ -131,14 +151,24 @@ fn run_windows_runner(
         }
     }
 
+    let mode = callback_state.mode;
     if let Ok(mut state) = CALLBACK_STATE.lock() {
-        *state = Some(callback_state);
+        *state = Some(Arc::clone(&callback_state));
     }
 
     let module = unsafe { GetModuleHandleW(ptr::null()) };
     let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), module, 0) };
 
     if hook.is_null() {
+        let error = windows_last_error_message("SetWindowsHookExW");
+        tracing::warn!(
+            mode = ?mode,
+            error = %error,
+            "windows_shortcut_hook_install_failed"
+        );
+        let _ = ready_tx.send(Err(format!(
+            "windows shortcut hook install failed: {error}"
+        )));
         running.store(false, Ordering::SeqCst);
         active.store(false, Ordering::SeqCst);
         if let Ok(mut state) = CALLBACK_STATE.lock() {
@@ -146,6 +176,9 @@ fn run_windows_runner(
         }
         return;
     }
+
+    tracing::info!(mode = ?mode, "windows_shortcut_hook_installed");
+    let _ = ready_tx.send(Ok(()));
 
     let mut message: MSG = unsafe { std::mem::zeroed() };
     while running.load(Ordering::SeqCst) {
@@ -166,6 +199,14 @@ fn run_windows_runner(
     }
     running.store(false, Ordering::SeqCst);
     active.store(false, Ordering::SeqCst);
+}
+
+#[cfg(target_os = "windows")]
+fn windows_last_error_message(operation: &str) -> String {
+    use winapi::um::errhandlingapi::GetLastError;
+
+    let code = unsafe { GetLastError() };
+    format!("{operation} failed with Windows error code {code}")
 }
 
 #[cfg(target_os = "windows")]

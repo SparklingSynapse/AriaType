@@ -140,6 +140,7 @@
   "hotkey.recording.modeToggle": "Alternar",
   "hotkey.recording.modeDoubleTap": "Doble toque",
   "hotkey.registrationFailed": "Tecla de acceso rápido ya en uso",
+  "hotkey.captureFailed": "No se pudo capturar la tecla de acceso rápido",
   "hotkey.conflictDictate": "Tecla de acceso rápido ya usada por el perfil Dictate",
   "hotkey.conflictRiff": "Tecla de acceso rápido ya usada por el perfil Riff",
   "hotkey.conflictCustom": "Tecla de acceso rápido ya usada por el perfil Custom",

@@ -140,6 +140,7 @@
   "hotkey.recording.modeToggle": "Umschalten",
   "hotkey.recording.modeDoubleTap": "Doppeltippen",
   "hotkey.registrationFailed": "Tastenkombination bereits verwendet",
+  "hotkey.captureFailed": "Tastenkombination konnte nicht erfasst werden",
   "hotkey.conflictDictate": "Tastenkombination bereits vom Dictate-Profil verwendet",
   "hotkey.conflictRiff": "Tastenkombination bereits vom Riff-Profil verwendet",
   "hotkey.conflictCustom": "Tastenkombination bereits vom Custom-Profil verwendet",
