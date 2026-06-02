@@ -1,6 +1,36 @@
-import { describe, expect, it } from "vitest";
-import { formatHotkeyForPlatform, HotkeyTags } from "../hotkey-input";
-import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+import { hotkeyCommands } from "@/lib/tauri";
+import { showErrorToast } from "@/lib/toast";
+
+import { formatHotkeyForPlatform, HotkeyInput, HotkeyTags } from "../hotkey-input";
+
+vi.mock("@/lib/tauri", () => ({
+  hotkeyCommands: {
+    startCapture: vi.fn(),
+    stopCapture: vi.fn(),
+    cancelCapture: vi.fn(),
+  },
+  events: {
+    onHotkeyCaptured: vi.fn(() => Promise.resolve(() => {})),
+    onShortcutRegistrationFailed: vi.fn(() => Promise.resolve(() => {})),
+  },
+}));
+
+vi.mock("@/lib/toast", () => ({
+  showErrorToast: vi.fn(),
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (_key: string, fallback?: string) => fallback ?? _key,
+  }),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("formatHotkey", () => {
   // Format tests - frontend only handles display formatting
@@ -88,5 +118,22 @@ describe("HotkeyTags", () => {
     expect(screen.getByText("Win")).toBeInTheDocument();
     expect(screen.getByText("Alt")).toBeInTheDocument();
     expect(screen.getByText("/")).toBeInTheDocument();
+  });
+});
+
+describe("HotkeyInput", () => {
+  it("shows a visible error when capture startup fails", async () => {
+    vi.mocked(hotkeyCommands.startCapture).mockRejectedValue(
+      new Error("windows shortcut hook install failed"),
+    );
+
+    render(<HotkeyInput value="" onChange={vi.fn()} profileKey="dictate" />);
+
+    fireEvent.mouseDown(screen.getByRole("button", { name: "hotkey.clickToSet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("windows shortcut hook install failed")).toBeInTheDocument();
+    });
+    expect(showErrorToast).toHaveBeenCalledWith("Unable to capture hotkey");
   });
 });

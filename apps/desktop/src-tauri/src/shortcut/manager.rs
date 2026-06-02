@@ -478,8 +478,12 @@ fn owner_loop(mut state: OwnerState) {
         );
 
         #[cfg(not(target_os = "macos"))]
-        if state.started && state.main_runner.is_none() {
+        if state.started
+            && state.main_runner.is_none()
+            && last_main_restart_at.elapsed() >= SHORTCUT_RUNTIME_RESTART_INTERVAL
+        {
             let _ = ensure_main_runner(&mut state);
+            last_main_restart_at = Instant::now();
         }
 
         thread::sleep(Duration::from_millis(20));
@@ -498,11 +502,8 @@ fn handle_command(state: &mut OwnerState, command: ManagerCommand) {
                 state.started = true;
                 match ensure_main_runner(state) {
                     Ok(()) => Ok(()),
-                    Err(error)
-                        if error.contains("Accessibility permission not granted")
-                            || error.contains("Input Monitoring permission not granted")
-                            || error.contains("Failed to create fresh event tap probe") =>
-                    {
+                    Err(error) if shortcut_runtime_start_error_is_recoverable(&error) => {
+                        tracing::warn!(error = %error, "shortcut_runtime_start_deferred");
                         Ok(())
                     }
                     Err(error) => Err(error),
@@ -627,6 +628,13 @@ fn handle_command(state: &mut OwnerState, command: ManagerCommand) {
             let _ = reply.send(());
         }
     }
+}
+
+fn shortcut_runtime_start_error_is_recoverable(error: &str) -> bool {
+    error.contains("Accessibility permission not granted")
+        || error.contains("Input Monitoring permission not granted")
+        || error.contains("Failed to create fresh event tap probe")
+        || error.contains("windows shortcut hook install failed")
 }
 
 fn handle_runtime_event(

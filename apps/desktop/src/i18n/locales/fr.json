@@ -140,6 +140,7 @@
   "hotkey.recording.modeToggle": "Basculer",
   "hotkey.recording.modeDoubleTap": "Double pression",
   "hotkey.registrationFailed": "Touche de raccourci déjà utilisée",
+  "hotkey.captureFailed": "Impossible de capturer le raccourci",
   "hotkey.conflictDictate": "Touche de raccourci déjà utilisée par le profil Dictate",
   "hotkey.conflictRiff": "Touche de raccourci déjà utilisée par le profil Riff",
   "hotkey.conflictCustom": "Touche de raccourci déjà utilisée par le profil Custom",

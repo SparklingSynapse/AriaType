@@ -315,6 +315,7 @@
   "hotkey.recording.modeToggle": "Alternar",
   "hotkey.recording.modeDoubleTap": "Toque duplo",
   "hotkey.registrationFailed": "Tecla de atalho já em uso",
+  "hotkey.captureFailed": "Não foi possível capturar a tecla de atalho",
   "hotkey.conflictDictate": "Tecla de atalho já usada pelo perfil Dictate",
   "hotkey.conflictRiff": "Tecla de atalho já usada pelo perfil Riff",
   "hotkey.conflictCustom": "Tecla de atalho já usada pelo perfil Custom",

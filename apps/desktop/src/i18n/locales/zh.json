@@ -148,6 +148,7 @@
   "hotkey.recording.modeToggle": "切换",
   "hotkey.recording.modeDoubleTap": "双击",
   "hotkey.registrationFailed": "快捷键已被占用",
+  "hotkey.captureFailed": "无法捕获快捷键",
   "hotkey.conflictDictate": "快捷键已被 Dictate 配置占用",
   "hotkey.conflictRiff": "快捷键已被 Riff 配置占用",
   "hotkey.conflictCustom": "快捷键已被 Custom 配置占用",
