@@ -49,7 +49,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&show_settings, &toggle_recording, &separator, &quit])?;
 
-    let mut builder = TrayIconBuilder::with_id("ariatype-tray")
+    let builder = TrayIconBuilder::with_id("ariatype-tray")
         .icon(tray_icon)
         .menu(&menu)
         .tooltip("AriaType")
@@ -57,9 +57,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_tray_icon_event(handle_tray_icon_event);
 
     #[cfg(target_os = "macos")]
-    {
-        builder = builder.icon_as_template(true).menu_on_left_click(true);
-    }
+    let builder = builder.icon_as_template(true).menu_on_left_click(true);
 
     let _tray = builder.build(app)?;
 

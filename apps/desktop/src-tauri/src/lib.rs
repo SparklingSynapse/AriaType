@@ -42,6 +42,46 @@ use commands::{hotkey, model, model_cache, settings, system, text, window};
 use events::EventName;
 use state::app_state::AppState;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MainWindowClosePlatform {
+    Macos,
+    Other,
+}
+
+fn current_main_window_close_platform() -> MainWindowClosePlatform {
+    if cfg!(target_os = "macos") {
+        MainWindowClosePlatform::Macos
+    } else {
+        MainWindowClosePlatform::Other
+    }
+}
+
+fn should_hide_main_window_on_close(stay_in_tray: bool, platform: MainWindowClosePlatform) -> bool {
+    stay_in_tray || platform == MainWindowClosePlatform::Macos
+}
+
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+fn should_show_main_window_on_reopen(_has_visible_windows: bool) -> bool {
+    true
+}
+
+fn show_main_window_best_effort(app: &tauri::AppHandle, reason: &'static str) {
+    if let Some(win) = app.get_webview_window("main") {
+        if let Err(e) = win.show() {
+            warn!(error = %e, reason, "main_window_show_failed");
+        }
+        if let Err(e) = win.unminimize() {
+            warn!(error = %e, reason, "main_window_unminimize_failed");
+        }
+        if let Err(e) = win.set_focus() {
+            warn!(error = %e, reason, "main_window_focus_failed");
+        }
+        info!(reason, "main_window_shown");
+    } else {
+        warn!(reason, "main_window_not_found");
+    }
+}
+
 fn cleanup_old_logs(log_dir: &std::path::Path, keep_days: u64) {
     let cutoff =
         std::time::SystemTime::now() - std::time::Duration::from_secs(keep_days * 24 * 3600);
@@ -181,10 +221,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             let _ = app.emit("single-instance", ());
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
+            show_main_window_best_effort(app, "single_instance");
         }));
 
     #[cfg(target_os = "macos")]
@@ -372,14 +409,31 @@ pub fn run() {
                 }
             }
 
-            // Intercept the main window's close button: hide instead of destroy.
-            // Without this, clicking the red × on macOS destroys the WebviewWindow,
-            // making it impossible to reopen via show_main_window.
+            // Intercept the main window's close button when the app should keep running.
+            // macOS keeps this behavior even without tray mode so the WebviewWindow is not destroyed.
             if let Some(main_win) = app.get_webview_window("main") {
+                let app_handle = app.handle().clone();
                 let win = main_win.clone();
                 main_win.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        let stay_in_tray = app_handle
+                            .try_state::<AppState>()
+                            .map(|state| state.settings.lock().stay_in_tray)
+                            .unwrap_or(false);
+
+                        if !should_hide_main_window_on_close(
+                            stay_in_tray,
+                            current_main_window_close_platform(),
+                        ) {
+                            return;
+                        }
+
                         api.prevent_close();
+                        if stay_in_tray && app_handle.tray_by_id("ariatype-tray").is_none() {
+                            if let Err(e) = tray::show_tray(&app_handle) {
+                                tracing::warn!(error = %e, "tray_show_failed-main_window_close");
+                            }
+                        }
                         if let Err(e) = win.hide() {
                             tracing::warn!(error = %e, "Failed to hide main window on close request");
                         }
@@ -671,15 +725,59 @@ pub fn run() {
                 info!("tray_creation_skipped-stay_in_tray_disabled");
             }
 
-            #[cfg(target_os = "macos")]
-            {
-                if let Err(e) = commands::settings::set_activation_policy_for_app(app.handle(), stay_in_tray) {
-                    warn!(error = %e, "activation_policy_set_failed");
-                }
-            }
-
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } = _event
+            {
+                if should_show_main_window_on_reopen(has_visible_windows) {
+                    show_main_window_best_effort(_app, "dock_reopen");
+                }
+            }
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn close_hides_to_tray_on_non_macos_when_tray_mode_is_enabled() {
+        assert!(should_hide_main_window_on_close(
+            true,
+            MainWindowClosePlatform::Other
+        ));
+    }
+
+    #[test]
+    fn close_exits_on_non_macos_when_tray_mode_is_disabled() {
+        assert!(!should_hide_main_window_on_close(
+            false,
+            MainWindowClosePlatform::Other
+        ));
+    }
+
+    #[test]
+    fn close_keeps_macos_window_reopenable_without_tray_mode() {
+        assert!(should_hide_main_window_on_close(
+            false,
+            MainWindowClosePlatform::Macos
+        ));
+    }
+
+    #[test]
+    fn dock_reopen_shows_main_window_when_no_windows_are_visible() {
+        assert!(should_show_main_window_on_reopen(false));
+    }
+
+    #[test]
+    fn dock_reopen_still_shows_main_window_when_auxiliary_windows_are_visible() {
+        assert!(should_show_main_window_on_reopen(true));
+    }
 }

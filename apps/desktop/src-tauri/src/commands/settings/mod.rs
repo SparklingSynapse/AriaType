@@ -112,6 +112,7 @@ pub struct AppSettings {
     pub active_cloud_polish_provider: String,
     pub cloud_polish_configs: HashMap<String, CloudProviderConfig>,
     pub vad_enabled: bool,
+    #[serde(default = "default_stay_in_tray")]
     pub stay_in_tray: bool,
     pub polish_custom_templates: Vec<CustomPolishTemplate>,
     /// Enable window context capture via screenshot + OCR at recording start.
@@ -145,6 +146,10 @@ fn default_pill_background_opacity() -> f32 {
 }
 
 fn default_correction_memory_enabled() -> bool {
+    true
+}
+
+fn default_stay_in_tray() -> bool {
     true
 }
 
@@ -388,7 +393,7 @@ impl Default for AppSettings {
             active_cloud_polish_provider: "anthropic".to_string(),
             cloud_polish_configs: HashMap::new(),
             vad_enabled: false,
-            stay_in_tray: false,
+            stay_in_tray: default_stay_in_tray(),
             polish_custom_templates: Vec::new(),
             window_context_enabled: true,
             pill_size: 2,
@@ -787,6 +792,68 @@ fn ensure_profile_trigger_modes(
     migrated
 }
 
+#[cfg(test)]
+pub fn migrate_platform_shortcut_defaults_for_test(
+    json: &mut serde_json::Value,
+    is_macos: bool,
+) -> bool {
+    migrate_platform_shortcut_defaults_for_platform(json, is_macos)
+}
+
+fn migrate_platform_shortcut_defaults(json: &mut serde_json::Value) -> bool {
+    migrate_platform_shortcut_defaults_for_platform(json, cfg!(target_os = "macos"))
+}
+
+fn migrate_platform_shortcut_defaults_for_platform(
+    json: &mut serde_json::Value,
+    is_macos: bool,
+) -> bool {
+    if is_macos {
+        return false;
+    }
+
+    let Some(profiles) = json
+        .get_mut("shortcut_profiles")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return false;
+    };
+
+    let mut migrated = false;
+    migrated |= migrate_profile_hotkey(profiles, "dictate", "Cmd+Slash", "Ctrl+Slash");
+    migrated |= migrate_profile_hotkey(profiles, "riff", "Opt+Slash", "Alt+Slash");
+
+    if migrated {
+        tracing::info!("shortcut_profiles_migrated-platform_defaults");
+    }
+
+    migrated
+}
+
+fn migrate_profile_hotkey(
+    profiles: &mut serde_json::Map<String, serde_json::Value>,
+    profile_key: &str,
+    old_hotkey: &str,
+    new_hotkey: &str,
+) -> bool {
+    let Some(profile) = profiles
+        .get_mut(profile_key)
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return false;
+    };
+
+    if profile.get("hotkey").and_then(serde_json::Value::as_str) != Some(old_hotkey) {
+        return false;
+    }
+
+    profile.insert(
+        "hotkey".to_string(),
+        serde_json::Value::String(new_hotkey.to_string()),
+    );
+    true
+}
+
 /// Migrate window_context_enabled from old default (false) to new default (true).
 /// This field was introduced with default=false, then changed to default=true.
 /// We migrate false -> true because users likely never intentionally set it to false
@@ -845,9 +912,13 @@ pub fn load_settings_from_disk() -> AppSettings {
             let migrated_cloud = migrate_cloud_settings(&mut json_value);
             let migrated_model = validate_model_name(&mut json_value);
             let migrated_profiles = migrate_to_profiles_map(&mut json_value);
+            let migrated_platform_shortcuts = migrate_platform_shortcut_defaults(&mut json_value);
             let migrated_window_context = migrate_window_context_enabled(&mut json_value);
-            let migrated =
-                migrated_cloud || migrated_model || migrated_profiles || migrated_window_context;
+            let migrated = migrated_cloud
+                || migrated_model
+                || migrated_profiles
+                || migrated_platform_shortcuts
+                || migrated_window_context;
 
             match serde_json::from_value::<AppSettings>(json_value.clone()) {
                 Ok(settings) => {
@@ -888,6 +959,7 @@ pub fn update_settings(
     let mut should_clear_cache = false;
     let mut model_to_preload: Option<String> = None;
     let mut hotkey_to_register: Option<String> = None;
+    let mut stay_in_tray_to_apply: Option<bool> = None;
     let preset_to_apply: Option<String>;
     let indicator_mode_to_apply: Option<String>;
 
@@ -1058,21 +1130,7 @@ pub fn update_settings(
             "stay_in_tray" => {
                 if let Some(v) = value.as_bool() {
                     settings.stay_in_tray = v;
-                    #[cfg(target_os = "macos")]
-                    {
-                        if let Err(e) =
-                            crate::commands::settings::set_activation_policy_for_app(&app, v)
-                        {
-                            tracing::error!(error = %e, "activation_policy_set_failed");
-                        }
-                        if v {
-                            if let Err(e) = crate::tray::show_tray(&app) {
-                                tracing::error!(error = %e, "tray_show_failed");
-                            }
-                        } else {
-                            crate::tray::remove_tray(&app);
-                        }
-                    }
+                    stay_in_tray_to_apply = Some(v);
                 }
             }
             "cloud_stt_enabled" => {
@@ -1204,6 +1262,16 @@ pub fn update_settings(
 
     if indicator_mode_to_apply.is_some() {
         crate::commands::window::update_pill_visibility(&app);
+    }
+
+    if let Some(stay_in_tray) = stay_in_tray_to_apply {
+        if stay_in_tray {
+            if let Err(e) = crate::tray::show_tray(&app) {
+                tracing::error!(error = %e, "tray_show_failed");
+            }
+        } else {
+            crate::tray::remove_tray(&app);
+        }
     }
 
     if should_clear_cache {
@@ -1456,35 +1524,6 @@ pub async fn check_active_cloud_polish_config(
             ))
         }
     }
-}
-
-#[cfg(target_os = "macos")]
-pub fn set_activation_policy_for_app(app: &AppHandle, stay_in_tray: bool) -> Result<(), String> {
-    // Save the main window's visibility state before changing policy
-    let main_window_was_visible = app
-        .get_webview_window("main")
-        .map(|w| w.is_visible().unwrap_or(false))
-        .unwrap_or(false);
-
-    let policy = if stay_in_tray {
-        tauri::ActivationPolicy::Accessory
-    } else {
-        tauri::ActivationPolicy::Regular
-    };
-    app.set_activation_policy(policy)
-        .map_err(|e| format!("Failed to set activation policy: {}", e))?;
-
-    // When switching to Accessory mode, macOS hides the app's windows.
-    // Restore the main window's visibility if it was visible before.
-    if stay_in_tray && main_window_was_visible {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
-    }
-
-    info!(stay_in_tray = stay_in_tray, "activation_policy_updated");
-    Ok(())
 }
 
 /// Scans the models directory for legacy model files (ggml/gguf format)

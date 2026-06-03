@@ -20,6 +20,7 @@ async function assertJourneyStep(
   switch (stepId) {
     case 'permissions':
       await expect(tauriPage.locator('h2')).toContainText('Permissions');
+      await expect(tauriPage.getByAltText('Permissions')).toBeVisible();
       await expect(
         tauriPage.locator('[data-testid="onboarding-permission-microphone"] svg.text-green-500').first(),
       ).toBeVisible({ timeout: 10000 });
@@ -29,14 +30,17 @@ async function assertJourneyStep(
       return;
     case 'language':
       await expect(tauriPage.locator('h2')).toContainText('Language');
+      await expect(tauriPage.getByAltText('Language')).toBeVisible();
       await expect(tauriPage.locator('[data-step-id="language"] button[data-state]')).toBeVisible();
       return;
     case 'hotkey':
       await expect(tauriPage.locator('h2')).toContainText('Hotkey');
+      await expect(tauriPage.getByAltText('Hotkey')).toBeVisible();
       await expect(tauriPage.locator('[data-step-id="hotkey"] [role="button"]')).toBeVisible();
       return;
     case 'model':
       await expect(tauriPage.locator('h2')).toContainText('Model');
+      await expect(tauriPage.getByAltText('Model')).toBeVisible();
       await expect(tauriPage.locator('[data-step-id="model"] .rounded-2xl').first()).toBeVisible({
         timeout: modelReadyTimeoutMs,
       });
@@ -49,10 +53,12 @@ async function assertJourneyStep(
       return;
     case 'practice':
       await expect(tauriPage.locator('h2')).toContainText('Try It Out');
+      await expect(tauriPage.getByAltText('Practice')).toBeVisible();
       await expect(tauriPage.locator('[tabindex="0"]')).toBeVisible();
       return;
     case 'done':
       await expect(tauriPage.locator('[data-testid="onboarding-modal"] h2')).toBeVisible();
+      await expect(tauriPage.getByAltText('Done')).toBeVisible();
       await expect(tauriPage.locator('[data-testid="onboarding-primary-action"]')).toContainText('Get Started');
       await expect(tauriPage.locator('[data-testid="onboarding-primary-action"]')).not.toBeDisabled();
       return;

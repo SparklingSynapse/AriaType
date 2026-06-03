@@ -259,6 +259,7 @@ async function startExternalRuntime(config, onStarted) {
     TAURI_PLAYWRIGHT_SOCKET: config.socketPath,
     CARGO_TERM_COLOR: process.env.CARGO_TERM_COLOR ?? 'always',
     FORCE_COLOR: process.env.FORCE_COLOR ?? '1',
+    ...(config.tauriEnv ?? {}),
   };
 
   logStep(`start tauri: ${formatCommand(tauriExecutable, args)}`);

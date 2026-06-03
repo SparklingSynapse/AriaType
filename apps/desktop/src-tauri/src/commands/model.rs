@@ -11,10 +11,39 @@ use std::time::Instant;
 use tauri::{AppHandle, Emitter, State};
 use tracing::{error, info, instrument, warn};
 
+#[cfg(feature = "e2e-testing")]
+fn e2e_fast_model_download_enabled() -> bool {
+    std::env::var("ARIATYPE_E2E_FAST_MODEL_DOWNLOAD").as_deref() == Ok("1")
+}
+
+#[cfg(not(feature = "e2e-testing"))]
+fn e2e_fast_model_download_enabled() -> bool {
+    false
+}
+
+fn mark_e2e_configured_model_downloaded(models: &mut [ModelInfo], state: &State<'_, AppState>) {
+    if !e2e_fast_model_download_enabled() {
+        return;
+    }
+
+    let configured_model = {
+        let settings = state.settings.lock();
+        settings.model.clone()
+    };
+
+    for model in models {
+        if model.name == configured_model {
+            model.downloaded = true;
+        }
+    }
+}
+
 // Legacy command for backward compatibility - returns all engines
 #[tauri::command]
 pub fn get_models(state: State<'_, AppState>) -> Vec<ModelInfo> {
-    state.engine_manager.get_all_models()
+    let mut models = state.engine_manager.get_all_models();
+    mark_e2e_configured_model_downloaded(&mut models, &state);
+    models
 }
 
 // New command supporting multiple engines
@@ -24,12 +53,18 @@ pub fn get_models_for_engine(
     state: State<'_, AppState>,
 ) -> Result<Vec<ModelInfo>, String> {
     let engine_type: EngineType = engine.parse()?;
-    Ok(state.engine_manager.get_models(engine_type))
+    let mut models = state.engine_manager.get_models(engine_type);
+    mark_e2e_configured_model_downloaded(&mut models, &state);
+    Ok(models)
 }
 
 // Legacy command for backward compatibility (Whisper only)
 #[tauri::command]
 pub fn is_model_downloaded(model_name: String, state: State<'_, AppState>) -> bool {
+    if e2e_fast_model_download_enabled() {
+        return true;
+    }
+
     let engine_type =
         crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name)
             .unwrap_or(EngineType::Whisper); // fallback to Whisper if unknown
@@ -46,6 +81,10 @@ pub fn is_model_downloaded_for_engine(
     model_name: String,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
+    if e2e_fast_model_download_enabled() {
+        return Ok(true);
+    }
+
     let engine_type: EngineType = engine.parse()?;
     Ok(state
         .engine_manager
@@ -89,6 +128,28 @@ pub async fn download_model(
     let engine_type =
         crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name)
             .ok_or_else(|| format!("Unknown model: {}", model_name))?;
+
+    if e2e_fast_model_download_enabled() {
+        info!(
+            model = %model_name,
+            engine = ?engine_type,
+            "model_download_ready-e2e_fast_path"
+        );
+
+        if let Err(e) = app.emit(
+            EventName::MODEL_DOWNLOAD_PROGRESS,
+            serde_json::json!({
+                "model": model_name,
+                "downloaded": 1,
+                "total": 1,
+                "progress": 100,
+            }),
+        ) {
+            warn!(error = %e, model = %model_name, "model_download_progress_emit_failed-e2e_fast_path");
+        }
+
+        return Ok(());
+    }
 
     let cancel_flag = {
         let mut downloading = state.downloading_models.lock();

@@ -1,5 +1,6 @@
 use super::{
-    classify_cloud_check_error, migrate_to_profiles_map_for_test, normalize_pill_background_color,
+    classify_cloud_check_error, migrate_platform_shortcut_defaults_for_test,
+    migrate_to_profiles_map_for_test, normalize_pill_background_color,
     normalize_pill_background_opacity, validate_cloud_polish_config_for_check,
     validate_cloud_stt_config_for_check, AppSettings, CloudProviderConfig, CloudSttConfig,
 };
@@ -125,6 +126,78 @@ fn migrate_array_profiles_copies_global_recording_mode_into_existing_profiles() 
 }
 
 #[test]
+fn migrate_platform_shortcut_defaults_rewrites_untouched_mac_defaults_on_windows() {
+    let mut json = json!({
+        "shortcut_profiles": {
+            "dictate": {
+                "hotkey": "Cmd+Slash",
+                "trigger_mode": "hold",
+                "action": { "Record": { "polish_template_id": null } }
+            },
+            "riff": {
+                "hotkey": "Opt+Slash",
+                "trigger_mode": "toggle",
+                "action": { "Record": { "polish_template_id": "filler" } }
+            },
+            "custom": {
+                "hotkey": "Cmd+Alt+Slash",
+                "trigger_mode": "toggle",
+                "action": { "Record": { "polish_template_id": null } }
+            }
+        }
+    });
+
+    let migrated = migrate_platform_shortcut_defaults_for_test(&mut json, false);
+
+    assert!(migrated);
+    assert_eq!(json["shortcut_profiles"]["dictate"]["hotkey"], "Ctrl+Slash");
+    assert_eq!(json["shortcut_profiles"]["riff"]["hotkey"], "Alt+Slash");
+    assert_eq!(
+        json["shortcut_profiles"]["custom"]["hotkey"],
+        "Cmd+Alt+Slash"
+    );
+}
+
+#[test]
+fn migrate_platform_shortcut_defaults_keeps_macos_and_customized_values() {
+    let mut mac_json = json!({
+        "shortcut_profiles": {
+            "dictate": { "hotkey": "Cmd+Slash" },
+            "riff": { "hotkey": "Opt+Slash" }
+        }
+    });
+    let mut customized_json = json!({
+        "shortcut_profiles": {
+            "dictate": { "hotkey": "Shift+Space" },
+            "riff": { "hotkey": "Ctrl+Space" }
+        }
+    });
+
+    assert!(!migrate_platform_shortcut_defaults_for_test(
+        &mut mac_json,
+        true
+    ));
+    assert_eq!(
+        mac_json["shortcut_profiles"]["dictate"]["hotkey"],
+        "Cmd+Slash"
+    );
+    assert_eq!(mac_json["shortcut_profiles"]["riff"]["hotkey"], "Opt+Slash");
+
+    assert!(!migrate_platform_shortcut_defaults_for_test(
+        &mut customized_json,
+        false
+    ));
+    assert_eq!(
+        customized_json["shortcut_profiles"]["dictate"]["hotkey"],
+        "Shift+Space"
+    );
+    assert_eq!(
+        customized_json["shortcut_profiles"]["riff"]["hotkey"],
+        "Ctrl+Space"
+    );
+}
+
+#[test]
 fn missing_pill_background_color_uses_default() {
     let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
 
@@ -137,6 +210,13 @@ fn correction_memory_defaults_enabled() {
     let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
 
     assert!(settings.correction_memory_enabled);
+}
+
+#[test]
+fn stay_in_tray_defaults_enabled() {
+    let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
+
+    assert!(settings.stay_in_tray);
 }
 
 #[test]
