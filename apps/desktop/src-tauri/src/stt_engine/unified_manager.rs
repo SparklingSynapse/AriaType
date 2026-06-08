@@ -9,7 +9,10 @@ use super::models;
 use super::sherpa_onnx::SherpaOnnxEngine;
 use super::traits::{EngineType, TranscriptionRequest, TranscriptionResult};
 use crate::utils::AppPaths;
-use crate::utils::{download, DownloadOptions, HuggingFaceSource};
+use crate::utils::{
+    download, downloaded_file_is_complete, remove_download_artifacts, DownloadOptions,
+    HuggingFaceSource,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InferenceProvider {
@@ -290,10 +293,12 @@ impl UnifiedEngineManager {
         }
 
         let model_subdir = self.models_dir.join(model_def.name);
-        model_def
-            .files
-            .iter()
-            .all(|f| model_subdir.join(f.filename).exists())
+        model_def.files.iter().all(|file| {
+            downloaded_file_is_complete(
+                &model_subdir.join(file.filename),
+                Some(file.minimum_complete_bytes()),
+            )
+        })
     }
 
     pub fn resolve_available_model(
@@ -392,8 +397,12 @@ impl UnifiedEngineManager {
         for model_file in model_def.files {
             let output_path = model_subdir.join(model_file.filename);
 
-            if output_path.exists() {
-                let file_bytes = u64::from(model_file.size_mb) * 1024 * 1024;
+            if downloaded_file_is_complete(&output_path, Some(model_file.minimum_complete_bytes()))
+            {
+                let file_bytes = output_path
+                    .metadata()
+                    .map(|metadata| metadata.len())
+                    .unwrap_or_else(|_| model_file.estimated_size_bytes());
                 completed_bytes.fetch_add(file_bytes, std::sync::atomic::Ordering::Relaxed);
                 progress_cb(
                     completed_bytes.load(std::sync::atomic::Ordering::Relaxed),
@@ -402,6 +411,11 @@ impl UnifiedEngineManager {
                 info!(file = %model_file.filename, "file_already_exists_skipping");
                 last_output_path = Some(output_path);
                 continue;
+            }
+
+            if output_path.exists() {
+                info!(file = %model_file.filename, "incomplete_model_file_redownloading");
+                remove_download_artifacts(&output_path);
             }
 
             info!(
@@ -415,7 +429,7 @@ impl UnifiedEngineManager {
 
             let cb = progress_cb.clone();
             let completed_ref = completed_bytes.clone();
-            let file_size_bytes = u64::from(model_file.size_mb) * 1024 * 1024;
+            let file_size_bytes = model_file.estimated_size_bytes();
             let options = DownloadOptions::new(&urls[0], &output_path)
                 .with_fallbacks(urls[1..].to_vec())
                 .with_cancel_flag(cancel_flag.clone())
@@ -425,6 +439,7 @@ impl UnifiedEngineManager {
                     let base = completed_ref.load(std::sync::atomic::Ordering::Relaxed);
                     cb(base + file_done, total_size_bytes);
                 }))
+                .with_minimum_bytes(model_file.minimum_complete_bytes())
                 .with_model_name(model_name);
 
             let result = download(options).await?;
@@ -513,7 +528,7 @@ impl UnifiedEngineManager {
     }
 
     pub fn is_vad_model_downloaded(&self) -> bool {
-        self.vad_model_path().exists()
+        downloaded_file_is_complete(&self.vad_model_path(), Some(1))
     }
 
     pub async fn download_vad_model(
@@ -522,9 +537,14 @@ impl UnifiedEngineManager {
     ) -> Result<PathBuf, String> {
         let output_path = self.vad_model_path();
 
-        if output_path.exists() {
+        if downloaded_file_is_complete(&output_path, Some(1)) {
             info!("vad_model_already_exists");
             return Ok(output_path);
+        }
+
+        if output_path.exists() {
+            info!("incomplete_vad_model_redownloading");
+            remove_download_artifacts(&output_path);
         }
 
         info!(
@@ -540,6 +560,7 @@ impl UnifiedEngineManager {
         let options = DownloadOptions::new(&urls[0], &output_path)
             .with_fallbacks(urls[1..].to_vec())
             .with_cancel_flag(cancel_flag)
+            .with_minimum_bytes(1)
             .with_model_name("silero-vad");
 
         let result = download(options).await?;

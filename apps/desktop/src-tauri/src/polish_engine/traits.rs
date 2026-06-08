@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// Polish engine type enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -111,6 +112,7 @@ pub struct PolishRequest {
     pub system_context: SystemContext,
     pub language: String,
     pub model_name: Option<String>,
+    pub timeout: Option<Duration>,
 }
 
 impl PolishRequest {
@@ -124,6 +126,7 @@ impl PolishRequest {
             system_context: SystemContext::new(system_prompt),
             language: language.into(),
             model_name: None,
+            timeout: None,
         }
     }
 
@@ -134,6 +137,11 @@ impl PolishRequest {
 
     pub fn with_window_context(mut self, ctx: impl Into<String>) -> Self {
         self.system_context.window_context = Some(ctx.into());
+        self
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
         self
     }
 }
@@ -285,6 +293,7 @@ mod tests {
         assert_eq!(request.language, "en");
         assert!(request.model_name.is_none());
         assert!(request.system_context.window_context.is_none());
+        assert!(request.timeout.is_none());
     }
 
     #[test]
@@ -301,6 +310,13 @@ mod tests {
             request.system_context.window_context,
             Some("window text".to_string())
         );
+    }
+
+    #[test]
+    fn test_polish_request_with_timeout() {
+        let request =
+            PolishRequest::new("test", "prompt", "en").with_timeout(Duration::from_secs(12));
+        assert_eq!(request.timeout, Some(Duration::from_secs(12)));
     }
 
     #[test]

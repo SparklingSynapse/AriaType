@@ -1,6 +1,16 @@
 use std::num::NonZeroU32;
 use std::path::Path;
+use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
+
+const THINK_START_TAG: &str = "<think>";
+const THINK_END_TAG: &str = "</think>";
+const DISABLE_THINKING_TEMPLATE_KWARGS: &str = r#"{"enable_thinking":false}"#;
+const DISABLE_THINKING_SYSTEM_INSTRUCTION: &str =
+    "Do not use thinking mode or chain-of-thought reasoning. Do not output <think> blocks. Output only the final polished text.";
+const NO_THINK_DIRECTIVE: &str = "/no_think";
+const LOCAL_POLISH_CONTEXT_TOKENS: u32 = 24_576;
+const LOCAL_POLISH_MAX_NEW_TOKENS: i32 = 20_480;
 
 fn build_polish_context_params() -> llama_cpp_2::context::params::LlamaContextParams {
     use llama_cpp_2::context::params::LlamaContextParams;
@@ -8,7 +18,7 @@ fn build_polish_context_params() -> llama_cpp_2::context::params::LlamaContextPa
     // Flash attention auto-selection crashes on some Metal-backed local polish runs
     // before generation begins, so force it off for the shared local polish runtime.
     LlamaContextParams::default()
-        .with_n_ctx(Some(NonZeroU32::new(2048).unwrap()))
+        .with_n_ctx(Some(NonZeroU32::new(LOCAL_POLISH_CONTEXT_TOKENS).unwrap()))
         .with_flash_attention_policy(llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_DISABLED)
 }
 
@@ -28,6 +38,10 @@ pub struct EngineConfig {
     pub log_prefix: &'static str,
     pub strip_think_tags: bool,
     pub prompt_format: PromptFormat,
+    /// Disable thinking at prompt/template level for local polish by default.
+    pub disable_thinking: bool,
+    /// Add the Qwen soft switch for models that understand `/no_think`.
+    pub no_think_directive: bool,
     /// Minimum acceptable model file size in MB (catches incomplete downloads)
     pub min_model_size_mb: u64,
 }
@@ -103,6 +117,7 @@ pub fn polish_text_blocking(
     language: &str,
     model_path: &Path,
     default_prompt: &str,
+    timeout: Option<Duration>,
     config: &EngineConfig,
 ) -> Result<String, String> {
     use llama_cpp_2::{
@@ -113,8 +128,9 @@ pub fn polish_text_blocking(
     };
 
     let engine = config.log_prefix;
+    let deadline = timeout.map(|duration| Instant::now() + duration);
 
-    info!(engine = %engine, language = %language, "polish_config");
+    info!(engine = %engine, language = %language, ?timeout, "polish_config");
     debug!(engine = %engine, system_prompt = %system_prompt, "polish_system_prompt_configured");
 
     info!(engine = %engine, text_len = text.len(), "polish_input_start");
@@ -142,12 +158,14 @@ pub fn polish_text_blocking(
     }
 
     let t0 = std::time::Instant::now();
+    ensure_not_timed_out(deadline, engine, "before_backend_init")?;
 
     info!(engine = %engine, "polish_backend_init_start");
     let backend = LlamaBackend::init().map_err(|e| {
         error!(engine = %engine, error = %e, "polish_backend_init_failed");
         format!("Backend init: {e}")
     })?;
+    ensure_not_timed_out(deadline, engine, "after_backend_init")?;
 
     info!(engine = %engine, path = ?model_path, "polish_model_load_start");
     let model_params = LlamaModelParams::default();
@@ -157,12 +175,14 @@ pub fn polish_text_blocking(
     })?;
     let model_load_ms = t0.elapsed().as_millis() as u64;
     info!(engine = %engine, duration_ms = model_load_ms, "polish_model_loaded");
+    ensure_not_timed_out(deadline, engine, "after_model_load")?;
 
     let ctx_params = build_polish_context_params();
     let mut ctx = model.new_context(&backend, ctx_params).map_err(|e| {
         error!(engine = %engine, error = %e, "polish_context_creation_failed");
         format!("Context: {e}")
     })?;
+    ensure_not_timed_out(deadline, engine, "after_context_creation")?;
 
     let lang_hint = {
         let name = language_name(language);
@@ -179,12 +199,14 @@ pub fn polish_text_blocking(
         String::new()
     };
 
+    let system_content = build_system_content(system_prompt, &extra_instruction, config);
+
     let prompt = match config.prompt_format {
         PromptFormat::ChatMl => format!(
-            "<|im_start|>system\n{system_prompt}{extra_instruction}<|im_end|>\n<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"
+            "<|im_start|>system\n{system_content}<|im_end|>\n<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"
         ),
         PromptFormat::Gemma => format!(
-            "<start_of_turn>user\n{system_prompt}{extra_instruction}\n\n{text}<end_of_turn>\n<start_of_turn>model\n"
+            "<start_of_turn>user\n{system_content}\n\n{text}<end_of_turn>\n<start_of_turn>model\n"
         ),
         PromptFormat::ModelChatTemplate => {
             let template = model.chat_template(None).map_err(|e| {
@@ -194,7 +216,7 @@ pub fn polish_text_blocking(
             let messages_json = serde_json::json!([
                 {
                     "role": "system",
-                    "content": format!("{system_prompt}{extra_instruction}"),
+                    "content": system_content,
                 },
                 {
                     "role": "user",
@@ -209,11 +231,13 @@ pub fn polish_text_blocking(
                 json_schema: None,
                 grammar: None,
                 reasoning_format: None,
-                chat_template_kwargs: None,
+                chat_template_kwargs: config
+                    .disable_thinking
+                    .then_some(DISABLE_THINKING_TEMPLATE_KWARGS),
                 add_generation_prompt: true,
                 use_jinja: true,
                 parallel_tool_calls: false,
-                enable_thinking: false,
+                enable_thinking: !config.disable_thinking,
                 add_bos: false,
                 add_eos: false,
                 parse_tool_calls: false,
@@ -234,6 +258,7 @@ pub fn polish_text_blocking(
         format!("Tokenize: {e}")
     })?;
     info!(engine = %engine, token_count = tokens.len(), "polish_tokenization_complete");
+    ensure_not_timed_out(deadline, engine, "after_tokenization")?;
 
     let mut batch = LlamaBatch::new(tokens.len(), 1);
     let last_idx = (tokens.len() - 1) as i32;
@@ -244,20 +269,24 @@ pub fn polish_text_blocking(
     }
 
     let t_decode = std::time::Instant::now();
+    ensure_not_timed_out(deadline, engine, "before_prefill_decode")?;
     ctx.decode(&mut batch).map_err(|e| {
         error!(engine = %engine, error = %e, "polish_prefill_decode_failed");
         format!("Decode: {e}")
     })?;
     let prefill_ms = t_decode.elapsed().as_millis() as u64;
     info!(engine = %engine, duration_ms = prefill_ms, "polish_prefill_complete");
+    ensure_not_timed_out(deadline, engine, "after_prefill_decode")?;
 
     let n_prompt = tokens.len() as i32;
-    let max_new_tokens = 512_i32;
+    let max_new_tokens = max_new_tokens_for_prompt(tokens.len())?;
     let mut n_cur = n_prompt;
     let mut output_bytes = Vec::new();
     let t_gen = std::time::Instant::now();
 
     loop {
+        ensure_not_timed_out(deadline, engine, "generation_loop")?;
+
         let mut candidates_p =
             LlamaTokenDataArray::from_iter(ctx.candidates_ith(batch.n_tokens() - 1), false);
         let new_token = candidates_p.sample_token_greedy();
@@ -288,6 +317,7 @@ pub fn polish_text_blocking(
         batch
             .add(new_token, n_cur, &[0], true)
             .map_err(|e| format!("Batch add: {e}"))?;
+        ensure_not_timed_out(deadline, engine, "before_generation_decode")?;
         ctx.decode(&mut batch).map_err(|e| {
             error!(
                 engine = %engine,
@@ -322,18 +352,14 @@ pub fn polish_text_blocking(
     let result = output.trim().to_string();
     debug!(engine = %engine, output_len = result.len(), "polish_raw_output");
 
-    // Strip ... block if configured (Qwen3 chain-of-thought)
+    // Strip <think>...</think> block if configured (Qwen3 chain-of-thought)
     let final_result = if config.strip_think_tags {
-        if let Some(end_idx) = result.find("") {
-            // Complete think block found, extract content after it
-            result[end_idx + "".len()..].trim().to_string()
-        } else if result.contains("") {
-            // Incomplete think block (truncated) - return empty or error
-            warn!(engine = %engine, "polish_incomplete_think_block");
-            String::new()
-        } else {
-            // No think tags at all, return as-is
-            result
+        match strip_think_block(&result) {
+            Some(output) => output,
+            None => {
+                warn!(engine = %engine, "polish_incomplete_think_block");
+                String::new()
+            }
         }
     } else {
         result
@@ -343,9 +369,148 @@ pub fn polish_text_blocking(
     Ok(final_result)
 }
 
+fn build_system_content(
+    system_prompt: &str,
+    extra_instruction: &str,
+    config: &EngineConfig,
+) -> String {
+    let mut content = format!("{system_prompt}{extra_instruction}");
+
+    if config.disable_thinking {
+        content.push('\n');
+        content.push_str(DISABLE_THINKING_SYSTEM_INSTRUCTION);
+    }
+
+    if config.no_think_directive {
+        content.push('\n');
+        content.push_str(NO_THINK_DIRECTIVE);
+    }
+
+    content
+}
+
+fn max_new_tokens_for_prompt(prompt_tokens: usize) -> Result<i32, String> {
+    let context_tokens = LOCAL_POLISH_CONTEXT_TOKENS as i32;
+    let prompt_tokens = i32::try_from(prompt_tokens)
+        .map_err(|_| "Prompt is too long for local polish context".to_string())?;
+    let available_tokens = context_tokens.saturating_sub(prompt_tokens + 1);
+
+    if available_tokens <= 0 {
+        return Err(format!(
+            "Prompt is too long for local polish context: {prompt_tokens} tokens"
+        ));
+    }
+
+    Ok(available_tokens.min(LOCAL_POLISH_MAX_NEW_TOKENS))
+}
+
+fn ensure_not_timed_out(
+    deadline: Option<Instant>,
+    engine: &str,
+    stage: &'static str,
+) -> Result<(), String> {
+    if let Some(deadline) = deadline {
+        if Instant::now() >= deadline {
+            warn!(engine = %engine, stage, "local_polish_generation_deadline_reached");
+            return Err("Local polish timed out".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+fn strip_think_block(result: &str) -> Option<String> {
+    if let Some(end_idx) = result.find(THINK_END_TAG) {
+        Some(result[end_idx + THINK_END_TAG.len()..].trim().to_string())
+    } else if result.contains(THINK_START_TAG) {
+        None
+    } else {
+        Some(result.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strip_think_block_returns_content_after_complete_block() {
+        assert_eq!(
+            strip_think_block("<think>\nreasoning\n</think>\nPolished text.").unwrap(),
+            "Polished text."
+        );
+    }
+
+    #[test]
+    fn test_strip_think_block_returns_none_for_truncated_block() {
+        assert_eq!(strip_think_block("<think>\nreasoning"), None);
+    }
+
+    #[test]
+    fn test_strip_think_block_keeps_plain_output() {
+        assert_eq!(
+            strip_think_block("Polished text.").unwrap(),
+            "Polished text."
+        );
+    }
+
+    #[test]
+    fn test_build_system_content_disables_thinking_by_default() {
+        let config = EngineConfig {
+            log_prefix: "test",
+            strip_think_tags: true,
+            prompt_format: PromptFormat::ModelChatTemplate,
+            disable_thinking: true,
+            no_think_directive: false,
+            min_model_size_mb: 100,
+        };
+
+        let content = build_system_content("Polish this.", "\nKeep language.", &config);
+
+        assert!(content.contains("Polish this."));
+        assert!(content.contains("Keep language."));
+        assert!(content.contains("Do not use thinking mode"));
+        assert!(content.contains("Do not output <think> blocks"));
+        assert!(!content.contains(NO_THINK_DIRECTIVE));
+    }
+
+    #[test]
+    fn test_build_system_content_adds_qwen_no_think_directive() {
+        let config = EngineConfig {
+            log_prefix: "test",
+            strip_think_tags: true,
+            prompt_format: PromptFormat::ModelChatTemplate,
+            disable_thinking: true,
+            no_think_directive: true,
+            min_model_size_mb: 100,
+        };
+
+        let content = build_system_content("Polish this.", "", &config);
+
+        assert!(content.contains("Do not use thinking mode"));
+        assert!(content.contains(NO_THINK_DIRECTIVE));
+    }
+
+    #[test]
+    fn test_max_new_tokens_uses_expanded_budget_for_short_prompt() {
+        assert_eq!(max_new_tokens_for_prompt(100).unwrap(), 20_480);
+    }
+
+    #[test]
+    fn test_max_new_tokens_is_limited_by_remaining_context() {
+        assert_eq!(max_new_tokens_for_prompt(24_000).unwrap(), 575);
+    }
+
+    #[test]
+    fn test_max_new_tokens_rejects_prompt_that_fills_context() {
+        assert!(max_new_tokens_for_prompt(24_576).is_err());
+    }
+
+    #[test]
+    fn test_deadline_rejects_elapsed_generation() {
+        let deadline = Instant::now() - Duration::from_millis(1);
+        assert!(ensure_not_timed_out(Some(deadline), "test", "generation_loop").is_err());
+    }
 
     #[test]
     fn test_language_name_known_codes() {
@@ -419,41 +584,53 @@ mod tests {
             log_prefix: "test",
             strip_think_tags: true,
             prompt_format: PromptFormat::ChatMl,
+            disable_thinking: true,
+            no_think_directive: true,
             min_model_size_mb: 100,
         };
         assert_eq!(config.log_prefix, "test");
         assert!(config.strip_think_tags);
         assert_eq!(config.prompt_format, PromptFormat::ChatMl);
+        assert!(config.disable_thinking);
+        assert!(config.no_think_directive);
         assert_eq!(config.min_model_size_mb, 100);
 
         let config2 = EngineConfig {
             log_prefix: "another",
             strip_think_tags: false,
             prompt_format: PromptFormat::Gemma,
+            disable_thinking: true,
+            no_think_directive: false,
             min_model_size_mb: 200,
         };
         assert_eq!(config2.log_prefix, "another");
         assert!(!config2.strip_think_tags);
         assert_eq!(config2.prompt_format, PromptFormat::Gemma);
+        assert!(config2.disable_thinking);
+        assert!(!config2.no_think_directive);
         assert_eq!(config2.min_model_size_mb, 200);
 
         let config3 = EngineConfig {
             log_prefix: "template",
             strip_think_tags: false,
             prompt_format: PromptFormat::ModelChatTemplate,
+            disable_thinking: true,
+            no_think_directive: false,
             min_model_size_mb: 300,
         };
         assert_eq!(config3.prompt_format, PromptFormat::ModelChatTemplate);
+        assert!(config3.disable_thinking);
         assert_eq!(config3.min_model_size_mb, 300);
     }
 
     #[test]
     fn test_polish_context_params_disable_flash_attention() {
         let params = build_polish_context_params();
-        assert_eq!(params.n_ctx(), NonZeroU32::new(2048));
+        assert_eq!(params.n_ctx(), NonZeroU32::new(24_576));
         assert_eq!(
             params.flash_attention_policy(),
             llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_DISABLED
         );
+        assert_eq!(params.n_ctx(), NonZeroU32::new(LOCAL_POLISH_CONTEXT_TOKENS));
     }
 }

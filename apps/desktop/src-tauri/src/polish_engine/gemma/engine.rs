@@ -40,11 +40,14 @@ impl PolishEngine for GemmaPolishEngine {
         let system_prompt = request.system_context.effective_prompt().into_owned();
         let language = request.language.clone();
         let default_prompt = super::DEFAULT_POLISH_PROMPT.to_string();
+        let timeout = request.timeout;
 
         let config = EngineConfig {
             log_prefix: "polish:gemma",
-            strip_think_tags: false,
+            strip_think_tags: true,
             prompt_format: PromptFormat::Gemma,
+            disable_thinking: true,
+            no_think_directive: false,
             // Gemma 2B Q4_K_M ≈ 1.52GB
             min_model_size_mb: 1300,
         };
@@ -58,6 +61,7 @@ impl PolishEngine for GemmaPolishEngine {
                 &language,
                 &model_path,
                 &default_prompt,
+                timeout,
                 &config,
             )
         })

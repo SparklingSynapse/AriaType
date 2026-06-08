@@ -40,11 +40,14 @@ impl PolishEngine for GlmPolishEngine {
         let system_prompt = request.system_context.effective_prompt().into_owned();
         let language = request.language.clone();
         let default_prompt = super::DEFAULT_POLISH_PROMPT.to_string();
+        let timeout = request.timeout;
 
         let config = EngineConfig {
             log_prefix: "polish:glm",
-            strip_think_tags: false,
+            strip_think_tags: true,
             prompt_format: PromptFormat::ModelChatTemplate,
+            disable_thinking: true,
+            no_think_directive: false,
             // GLM-4.7-Flash-REAP-23B-A3B UD-Q4_K_XL is around 14GB.
             min_model_size_mb: 12 * 1024,
         };
@@ -58,6 +61,7 @@ impl PolishEngine for GlmPolishEngine {
                 &language,
                 &model_path,
                 &default_prompt,
+                timeout,
                 &config,
             )
         })

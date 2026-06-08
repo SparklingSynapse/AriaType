@@ -23,6 +23,8 @@ pub(crate) const TRANSCRIPTION_ERROR_TOOLTIP_MESSAGE: &str =
 pub(crate) const POLISH_ERROR_TOOLTIP_MESSAGE: &str =
     "Polish failed. Using original transcription.";
 pub(crate) const POLISH_ERROR_TOOLTIP_SUFFIX: &str = "Using original transcription.";
+pub(crate) const LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE: &str =
+    "Local polish timed out. Using original transcription.";
 pub(crate) const POLISH_POLICY_TOOLTIP_MESSAGE: &str =
     "Polish result was rejected. Using original transcription.";
 
@@ -161,6 +163,10 @@ impl ProcessingEventTarget<'_> {
         self.emit_processing_tooltip(task_id, polish_error_tooltip_message(reason));
     }
 
+    pub(crate) fn emit_local_polish_timeout_tooltip(&self, task_id: u64) {
+        self.emit_processing_tooltip(task_id, LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE.to_string());
+    }
+
     pub(crate) fn emit_polish_policy_tooltip(&self, task_id: u64) {
         self.emit_processing_tooltip(task_id, POLISH_POLICY_TOOLTIP_MESSAGE.to_string());
     }
@@ -262,7 +268,10 @@ pub(crate) fn should_unregister_cancel_hotkey_after_async_cleanup(
 
 #[cfg(test)]
 mod tests {
-    use super::{polish_error_tooltip_message, POLISH_ERROR_TOOLTIP_MESSAGE};
+    use super::{
+        polish_error_tooltip_message, LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE,
+        POLISH_ERROR_TOOLTIP_MESSAGE,
+    };
 
     #[test]
     fn polish_error_tooltip_includes_reason_when_available() {
@@ -281,6 +290,14 @@ mod tests {
         assert_eq!(
             polish_error_tooltip_message(Some("   ")),
             POLISH_ERROR_TOOLTIP_MESSAGE
+        );
+    }
+
+    #[test]
+    fn local_polish_timeout_tooltip_is_specific() {
+        assert_eq!(
+            LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE,
+            "Local polish timed out. Using original transcription."
         );
     }
 }
