@@ -1,2 +1,15 @@
 # Redirect root to English version
 /   /en/  301
+
+# Static export routes are directory URLs. Force trailing slashes so
+# navigation never falls through to an HTML file download candidate.
+/en   /en/  301
+/zh   /zh/  301
+/en/download   /en/download/  301
+/zh/download   /zh/download/  301
+/en/features   /en/features/  301
+/zh/features   /zh/features/  301
+/en/privacy   /en/privacy/  301
+/zh/privacy   /zh/privacy/  301
+/en/terms   /en/terms/  301
+/zh/terms   /zh/terms/  301

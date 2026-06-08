@@ -8,6 +8,7 @@ import { Globe, ChevronDown } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useAnalytics } from '@/lib/analytics';
 import { AnalyticsEvents } from '@/lib/events';
+import { localeFromPathname, localizedPath, sameRoute, switchLocalePath } from '@/lib/routes';
 
 export default function Navbar() {
   const { trackEvent } = useAnalytics();
@@ -17,10 +18,10 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const langRef = useRef<HTMLDivElement>(null);
 
-  const currentLang = pathname.startsWith('/zh') ? 'zh' : 'en';
+  const currentLang = localeFromPathname(pathname);
   const navItems = [
-    { href: `/${currentLang}`, label: t('nav.home') },
-    { href: `/${currentLang}/download`, label: t('nav.download') },
+    { href: localizedPath(currentLang), label: t('nav.home') },
+    { href: localizedPath(currentLang, 'download'), label: t('nav.download') },
   ];
 
   useEffect(() => {
@@ -43,8 +44,7 @@ export default function Navbar() {
 
   const switchLanguage = (lang: string) => {
     trackEvent(AnalyticsEvents.LANGUAGE_SWITCH, { from: currentLang, to: lang });
-    const newPath = pathname.replace(/^\/(en|zh)/, `/${lang}`);
-    window.location.href = newPath === pathname ? `/${lang}` : newPath;
+    window.location.href = switchLocalePath(pathname, lang);
     setIsLangOpen(false);
   };
 
@@ -58,7 +58,7 @@ export default function Navbar() {
     >
         <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
           <Link
-            href={`/${currentLang}`}
+            href={localizedPath(currentLang)}
             className="flex items-center gap-2.5 group"
           >
             <Image
@@ -78,7 +78,7 @@ export default function Navbar() {
                 href={item.href}
                 onClick={() => trackEvent(AnalyticsEvents.NAV_CLICK, { label: item.label, href: item.href })}
                 className={`nav-link text-sm tracking-wide ${
-                  pathname === item.href
+                  sameRoute(pathname, item.href)
                     ? 'active text-foreground'
                     : 'text-foreground/70 hover:text-foreground'
                 }`}

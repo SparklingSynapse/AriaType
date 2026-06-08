@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAnalytics } from '@/lib/analytics';
 import { AnalyticsEvents } from '@/lib/events';
+import { localizedPath } from '@/lib/routes';
 
 export default function FeaturesPage() {
   const { trackEvent } = useAnalytics();
@@ -162,7 +163,7 @@ export default function FeaturesPage() {
           <h2 className="text-3xl font-bold mb-3">{t('features.ctaTitle')}</h2>
           <p className="text-muted-foreground mb-8">{t('features.ctaSubtitle')}</p>
           <Link
-            href={`/${lang}/download`}
+            href={localizedPath(lang, 'download')}
             onClick={() => trackEvent(AnalyticsEvents.CTA_CLICK, { location: 'features', label: 'download' })}
             className="inline-flex items-center gap-2 px-8 py-4 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
           >

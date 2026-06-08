@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useDownload } from '@/hooks/useDownload';
 import { useAnalytics } from '@/lib/analytics';
 import { AnalyticsEvents } from '@/lib/events';
+import { localizedPath } from '@/lib/routes';
 
 interface HomeDownloadButtonProps {
   lang: string;
@@ -42,7 +43,7 @@ export function HomeDownloadButton({ lang , className}: HomeDownloadButtonProps)
   // Fallback: go to download page (also shown while loading)
   return (
     <Link
-      href={`/${lang}/download`}
+      href={localizedPath(lang, 'download')}
       onClick={handleLinkClick}
       className={baseClassName}
     >

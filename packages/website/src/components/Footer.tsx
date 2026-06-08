@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAnalytics } from '@/lib/analytics';
 import { AnalyticsEvents } from '@/lib/events';
+import { localizedPath } from '@/lib/routes';
 
 export default function Footer() {
   const { trackEvent } = useAnalytics();
@@ -19,14 +20,14 @@ export default function Footer() {
           <p className="text-foreground/50">{t('footer.copyright')}</p>
           <div className="flex items-center gap-6">
             <Link
-              href={`/${lang}/privacy`}
+              href={localizedPath(lang, 'privacy')}
               onClick={() => trackEvent(AnalyticsEvents.FOOTER_LINK_CLICK, { label: 'privacy' })}
               className="text-foreground/50 hover:text-foreground transition-colors"
             >
               {t('footer.privacy')}
             </Link>
             <Link
-              href={`/${lang}/terms`}
+              href={localizedPath(lang, 'terms')}
               onClick={() => trackEvent(AnalyticsEvents.FOOTER_LINK_CLICK, { label: 'terms' })}
               className="text-foreground/50 hover:text-foreground transition-colors"
             >
