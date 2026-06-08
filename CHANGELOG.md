@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## Unreleased
+
+### Features
+
+- Make polish model risk diagnosable (9d6889f)
+
 ## v0.6.4 (2026-06-02)
 
 ### Bug Fixes

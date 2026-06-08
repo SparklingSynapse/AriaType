@@ -1,5 +1,5 @@
 use crate::polish_engine::traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
-use crate::polish_engine::{cloud::CloudPolishEngine, gemma, lfm, qwen};
+use crate::polish_engine::{cloud::CloudPolishEngine, gemma, glm, lfm, qwen};
 use crate::utils::AppPaths;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -33,6 +33,9 @@ impl UnifiedPolishManager {
             Arc::new(gemma::GemmaPolishEngine::new()),
         );
 
+        // Register GLM engine
+        engines.insert(PolishEngineType::Glm, Arc::new(glm::GlmPolishEngine::new()));
+
         info!(engine_count = engines.len(), "polish_manager_initialized");
         Self {
             engines,
@@ -48,6 +51,8 @@ impl UnifiedPolishManager {
             Some(PolishEngineType::Lfm)
         } else if gemma::is_gemma_model(model_id) {
             Some(PolishEngineType::Gemma)
+        } else if glm::is_glm_model(model_id) {
+            Some(PolishEngineType::Glm)
         } else {
             None
         }
@@ -205,6 +210,14 @@ impl UnifiedPolishManager {
                     false
                 }
             }
+            PolishEngineType::Glm => {
+                if let Some(model) = glm::GlmModelDef::from_id(model_id) {
+                    let path = AppPaths::models_dir().join(model.filename);
+                    path.exists()
+                } else {
+                    false
+                }
+            }
             PolishEngineType::Cloud => {
                 // Cloud engine doesn't have local models
                 false
@@ -227,6 +240,9 @@ impl UnifiedPolishManager {
             }
             PolishEngineType::Gemma => {
                 gemma::GemmaModelDef::from_id(model_id).map(|m| m.filename.to_string())
+            }
+            PolishEngineType::Glm => {
+                glm::GlmModelDef::from_id(model_id).map(|m| m.filename.to_string())
             }
             PolishEngineType::Cloud => {
                 // Cloud engine uses the model ID as the model name directly
@@ -328,6 +344,16 @@ pub fn get_all_polish_models() -> Vec<PolishModelInfo> {
         });
     }
 
+    // Add GLM models
+    for model in glm::get_all_models() {
+        models.push(PolishModelInfo {
+            id: model.id.to_string(),
+            display_name: model.display_name.to_string(),
+            size_display: model.size_display.to_string(),
+            engine_type: PolishEngineType::Glm,
+        });
+    }
+
     models
 }
 
@@ -339,17 +365,18 @@ mod tests {
     fn test_unified_polish_manager_new() {
         let manager = UnifiedPolishManager::new();
         let engines = manager.available_engines();
-        assert_eq!(engines.len(), 3);
+        assert_eq!(engines.len(), 4);
         assert!(engines.contains(&PolishEngineType::Qwen));
         assert!(engines.contains(&PolishEngineType::Lfm));
         assert!(engines.contains(&PolishEngineType::Gemma));
+        assert!(engines.contains(&PolishEngineType::Glm));
     }
 
     #[test]
     fn test_unified_polish_manager_default() {
         let manager = UnifiedPolishManager::default();
         let engines = manager.available_engines();
-        assert_eq!(engines.len(), 3);
+        assert_eq!(engines.len(), 4);
     }
 
     #[test]
@@ -397,6 +424,12 @@ mod tests {
     }
 
     #[test]
+    fn test_get_engine_by_model_id_glm() {
+        let engine = UnifiedPolishManager::get_engine_by_model_id("glm-4.7-flash-reap-23b-a3b");
+        assert_eq!(engine, Some(PolishEngineType::Glm));
+    }
+
+    #[test]
     fn test_get_model_filename_qwen() {
         let manager = UnifiedPolishManager::new();
         let filename = manager.get_model_filename(PolishEngineType::Qwen, "qwen3.5-0.8b");
@@ -428,6 +461,17 @@ mod tests {
 
         let legacy_filename = manager.get_model_filename(PolishEngineType::Gemma, "gemma-4-e2b");
         assert_eq!(legacy_filename, Some("gemma-2b-it.Q4_K_M.gguf".to_string()));
+    }
+
+    #[test]
+    fn test_get_model_filename_glm() {
+        let manager = UnifiedPolishManager::new();
+        let filename =
+            manager.get_model_filename(PolishEngineType::Glm, "glm-4.7-flash-reap-23b-a3b");
+        assert_eq!(
+            filename,
+            Some("GLM-4.7-Flash-REAP-23B-A3B-UD-Q4_K_XL.gguf".to_string())
+        );
     }
 
     #[test]
@@ -464,7 +508,7 @@ mod tests {
     fn test_get_all_polish_models() {
         let models = get_all_polish_models();
         assert!(!models.is_empty());
-        assert!(models.len() >= 6); // At least 3 Qwen + 2 LFM + 1 Gemma models
+        assert!(models.len() >= 7); // At least 3 Qwen + 2 LFM + 1 Gemma + 1 GLM model
 
         // Check that we have all engine types
         let has_qwen = models
@@ -476,9 +520,13 @@ mod tests {
         let has_gemma = models
             .iter()
             .any(|m| m.engine_type == PolishEngineType::Gemma);
+        let has_glm = models
+            .iter()
+            .any(|m| m.engine_type == PolishEngineType::Glm);
         assert!(has_qwen);
         assert!(has_lfm);
         assert!(has_gemma);
+        assert!(has_glm);
 
         // Check that all models have valid fields
         for model in models {

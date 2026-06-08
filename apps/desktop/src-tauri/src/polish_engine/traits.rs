@@ -8,6 +8,7 @@ pub enum PolishEngineType {
     Qwen,
     Lfm,
     Gemma,
+    Glm,
     Cloud,
 }
 
@@ -17,6 +18,7 @@ impl PolishEngineType {
             PolishEngineType::Qwen => "qwen",
             PolishEngineType::Lfm => "lfm",
             PolishEngineType::Gemma => "gemma",
+            PolishEngineType::Glm => "glm",
             PolishEngineType::Cloud => "cloud",
         }
     }
@@ -26,6 +28,7 @@ impl PolishEngineType {
             PolishEngineType::Qwen,
             PolishEngineType::Lfm,
             PolishEngineType::Gemma,
+            PolishEngineType::Glm,
             PolishEngineType::Cloud,
         ]
     }
@@ -39,6 +42,7 @@ impl std::str::FromStr for PolishEngineType {
             "qwen" => Ok(PolishEngineType::Qwen),
             "lfm" => Ok(PolishEngineType::Lfm),
             "gemma" => Ok(PolishEngineType::Gemma),
+            "glm" => Ok(PolishEngineType::Glm),
             "cloud" => Ok(PolishEngineType::Cloud),
             _ => Err(format!("Unknown polish engine type: {}", s)),
         }
@@ -195,15 +199,17 @@ mod tests {
     fn test_polish_engine_type_as_str() {
         assert_eq!(PolishEngineType::Qwen.as_str(), "qwen");
         assert_eq!(PolishEngineType::Lfm.as_str(), "lfm");
+        assert_eq!(PolishEngineType::Glm.as_str(), "glm");
     }
 
     #[test]
     fn test_polish_engine_type_all() {
         let all = PolishEngineType::all();
-        assert_eq!(all.len(), 4);
+        assert_eq!(all.len(), 5);
         assert!(all.contains(&PolishEngineType::Qwen));
         assert!(all.contains(&PolishEngineType::Lfm));
         assert!(all.contains(&PolishEngineType::Gemma));
+        assert!(all.contains(&PolishEngineType::Glm));
         assert!(all.contains(&PolishEngineType::Cloud));
     }
 
@@ -225,6 +231,10 @@ mod tests {
             "LFM".parse::<PolishEngineType>().unwrap(),
             PolishEngineType::Lfm
         );
+        assert_eq!(
+            "GLM".parse::<PolishEngineType>().unwrap(),
+            PolishEngineType::Glm
+        );
     }
 
     #[test]
@@ -238,6 +248,7 @@ mod tests {
     fn test_polish_engine_type_display() {
         assert_eq!(format!("{}", PolishEngineType::Qwen), "qwen");
         assert_eq!(format!("{}", PolishEngineType::Lfm), "lfm");
+        assert_eq!(format!("{}", PolishEngineType::Glm), "glm");
     }
 
     #[test]
@@ -251,12 +262,19 @@ mod tests {
         let json = serde_json::to_string(&lfm).unwrap();
         assert_eq!(json, "\"lfm\"");
 
+        let glm = PolishEngineType::Glm;
+        let json = serde_json::to_string(&glm).unwrap();
+        assert_eq!(json, "\"glm\"");
+
         // Test deserialization
         let qwen: PolishEngineType = serde_json::from_str("\"qwen\"").unwrap();
         assert_eq!(qwen, PolishEngineType::Qwen);
 
         let lfm: PolishEngineType = serde_json::from_str("\"lfm\"").unwrap();
         assert_eq!(lfm, PolishEngineType::Lfm);
+
+        let glm: PolishEngineType = serde_json::from_str("\"glm\"").unwrap();
+        assert_eq!(glm, PolishEngineType::Glm);
     }
 
     #[test]

@@ -22,8 +22,16 @@ pub(crate) const TRANSCRIPTION_ERROR_TOOLTIP_MESSAGE: &str =
     "Transcription failed. Please try again.";
 pub(crate) const POLISH_ERROR_TOOLTIP_MESSAGE: &str =
     "Polish failed. Using original transcription.";
+pub(crate) const POLISH_ERROR_TOOLTIP_SUFFIX: &str = "Using original transcription.";
 pub(crate) const POLISH_POLICY_TOOLTIP_MESSAGE: &str =
     "Polish result was rejected. Using original transcription.";
+
+pub(crate) fn polish_error_tooltip_message(reason: Option<&str>) -> String {
+    match reason.map(str::trim).filter(|reason| !reason.is_empty()) {
+        Some(reason) => format!("Polish failed: {reason}. {POLISH_ERROR_TOOLTIP_SUFFIX}"),
+        None => POLISH_ERROR_TOOLTIP_MESSAGE.to_string(),
+    }
+}
 
 pub(crate) fn should_emit_error_recovery_idle(
     current_task_id: u64,
@@ -149,15 +157,15 @@ impl ProcessingEventTarget<'_> {
         }
     }
 
-    pub(crate) fn emit_polish_error_tooltip(&self, task_id: u64) {
-        self.emit_processing_tooltip(task_id, POLISH_ERROR_TOOLTIP_MESSAGE);
+    pub(crate) fn emit_polish_error_tooltip(&self, task_id: u64, reason: Option<&str>) {
+        self.emit_processing_tooltip(task_id, polish_error_tooltip_message(reason));
     }
 
     pub(crate) fn emit_polish_policy_tooltip(&self, task_id: u64) {
-        self.emit_processing_tooltip(task_id, POLISH_POLICY_TOOLTIP_MESSAGE);
+        self.emit_processing_tooltip(task_id, POLISH_POLICY_TOOLTIP_MESSAGE.to_string());
     }
 
-    fn emit_processing_tooltip(&self, task_id: u64, message: &'static str) {
+    fn emit_processing_tooltip(&self, task_id: u64, message: String) {
         match self {
             Self::None => {}
             Self::Recording(app) => emit_pill_tooltip(
@@ -250,4 +258,29 @@ pub(crate) fn should_unregister_cancel_hotkey_after_async_cleanup(
     cancellation_requested: bool,
 ) -> bool {
     active_task_id == cleanup_task_id && !cancellation_requested
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{polish_error_tooltip_message, POLISH_ERROR_TOOLTIP_MESSAGE};
+
+    #[test]
+    fn polish_error_tooltip_includes_reason_when_available() {
+        assert_eq!(
+            polish_error_tooltip_message(Some("model load failed")),
+            "Polish failed: model load failed. Using original transcription."
+        );
+    }
+
+    #[test]
+    fn polish_error_tooltip_keeps_legacy_message_without_reason() {
+        assert_eq!(
+            polish_error_tooltip_message(None),
+            POLISH_ERROR_TOOLTIP_MESSAGE
+        );
+        assert_eq!(
+            polish_error_tooltip_message(Some("   ")),
+            POLISH_ERROR_TOOLTIP_MESSAGE
+        );
+    }
 }

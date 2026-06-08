@@ -205,6 +205,21 @@ export interface PolishModelInfo {
   name: string;
   size: string;
   downloaded: boolean;
+  compatibility: PolishModelCompatibility;
+}
+
+export interface PolishModelCompatibility {
+  level: "smooth" | "limited" | "unsupported";
+  code:
+    | "smooth"
+    | "memory_unknown"
+    | "memory_below_minimum"
+    | "memory_below_recommended"
+    | "cpu_threads_low";
+  minimum_memory_mb: number;
+  recommended_memory_mb: number;
+  device_memory_mb: number | null;
+  logical_cpu_count: number;
 }
 
 export interface RecommendedModel {

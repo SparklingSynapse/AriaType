@@ -86,6 +86,45 @@ fn should_reject_question_answer_polish(input: &str, output: &str) -> bool {
     is_question_like_text(input) && !has_question_mark(output) && is_answer_like_text(output)
 }
 
+fn classify_polish_failure_reason(error: &str) -> &'static str {
+    let lower = error.to_lowercase();
+
+    if lower.contains("incomplete") {
+        "model download looks incomplete"
+    } else if lower.contains("not downloaded") || lower.contains("not found") {
+        "model file is missing"
+    } else if lower.contains("model load")
+        || lower.contains("context")
+        || lower.contains("null reference")
+        || lower.contains("out of memory")
+        || lower.contains("memory")
+    {
+        "model could not be loaded, likely low memory"
+    } else if lower.contains("backend init") {
+        "polish runtime failed to start"
+    } else if lower.contains("tokenize") || lower.contains("tokenization") {
+        "input could not be tokenized"
+    } else if lower.contains("decode") || lower.contains("inference") {
+        "model inference failed"
+    } else if lower.contains("task join") || lower.contains("panic") {
+        "polish worker crashed"
+    } else if lower.contains("401") || lower.contains("unauthorized") || lower.contains("api key") {
+        "cloud polish authentication failed"
+    } else if lower.contains("429") || lower.contains("rate limit") {
+        "cloud polish was rate limited"
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "cloud polish timed out"
+    } else if lower.contains("network")
+        || lower.contains("connection")
+        || lower.contains("dns")
+        || lower.contains("resolve")
+    {
+        "cloud polish network failed"
+    } else {
+        "unexpected polish error"
+    }
+}
+
 fn accept_polish_result(
     event_target: &ProcessingEventTarget<'_>,
     task_id: u64,
@@ -125,10 +164,12 @@ async fn run_local_polish(
     } = context;
 
     if model_id.is_empty() {
-        event_target.emit_polish_error_tooltip(task_id);
+        let failure_reason = "no polish model selected";
+        event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
         warn!(
             task_id,
             context = log_context,
+            failure_reason,
             "polish_model_not_configured"
         );
         return (accumulated_text, 0);
@@ -179,33 +220,39 @@ async fn run_local_polish(
                         )
                     }
                     Ok(_) => {
-                        event_target.emit_polish_error_tooltip(task_id);
+                        let failure_reason = "model returned empty output";
+                        event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
                         warn!(
                             task_id,
                             context = log_context,
+                            failure_reason,
                             "polish_empty_result-local_using_raw"
                         );
                         (accumulated_text, 0)
                     }
                     Err(e) => {
-                        event_target.emit_polish_error_tooltip(task_id);
-                        warn!(task_id, error = %e, context = log_context, "polish_failed-local_using_raw");
+                        let failure_reason = classify_polish_failure_reason(&e);
+                        event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
+                        warn!(task_id, error = %e, context = log_context, failure_reason, "polish_failed-local_using_raw");
                         (accumulated_text, 0)
                     }
                 }
             } else {
-                event_target.emit_polish_error_tooltip(task_id);
+                let failure_reason = "model is not downloaded";
+                event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
                 warn!(
                     task_id,
                     context = log_context,
+                    failure_reason,
                     "polish_model_not_downloaded-using_raw"
                 );
                 (accumulated_text, 0)
             }
         }
         None => {
-            event_target.emit_polish_error_tooltip(task_id);
-            warn!(task_id, model_id = %model_id, context = log_context, "polish_model_unknown-engine_undetermined");
+            let failure_reason = "unknown polish model";
+            event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
+            warn!(task_id, model_id = %model_id, context = log_context, failure_reason, "polish_model_unknown-engine_undetermined");
             (accumulated_text, 0)
         }
     }
@@ -335,13 +382,17 @@ pub(super) async fn maybe_polish_transcription_text(
                                 )
                             }
                             Ok(_) => {
-                                event_target.emit_polish_error_tooltip(task_id);
-                                warn!(task_id, provider = %provider_type, "polish_empty_result-cloud_using_raw");
+                                let failure_reason = "cloud model returned empty output";
+                                event_target
+                                    .emit_polish_error_tooltip(task_id, Some(failure_reason));
+                                warn!(task_id, provider = %provider_type, failure_reason, "polish_empty_result-cloud_using_raw");
                                 (accumulated_text, 0)
                             }
                             Err(e) => {
-                                event_target.emit_polish_error_tooltip(task_id);
-                                warn!(task_id, provider = %provider_type, error = %e, "polish_failed-cloud_using_raw");
+                                let failure_reason = classify_polish_failure_reason(&e);
+                                event_target
+                                    .emit_polish_error_tooltip(task_id, Some(failure_reason));
+                                warn!(task_id, provider = %provider_type, error = %e, failure_reason, "polish_failed-cloud_using_raw");
                                 (accumulated_text, 0)
                             }
                         };
@@ -369,7 +420,7 @@ pub(super) async fn maybe_polish_transcription_text(
 
 #[cfg(test)]
 mod tests {
-    use super::should_reject_question_answer_polish;
+    use super::{classify_polish_failure_reason, should_reject_question_answer_polish};
 
     #[test]
     fn rejects_polish_output_that_answers_a_dictated_question() {
@@ -395,5 +446,35 @@ mod tests {
         let output = "我觉得这个功能现在已经完整了。";
 
         assert!(!should_reject_question_answer_polish(input, output));
+    }
+
+    #[test]
+    fn classifies_model_load_failure_as_memory_likely() {
+        assert_eq!(
+            classify_polish_failure_reason("Model load: null reference from llama.cpp"),
+            "model could not be loaded, likely low memory"
+        );
+    }
+
+    #[test]
+    fn classifies_incomplete_download_failure() {
+        assert_eq!(
+            classify_polish_failure_reason(
+                "Model file appears incomplete: 18MB (expected at least 400MB)"
+            ),
+            "model download looks incomplete"
+        );
+    }
+
+    #[test]
+    fn classifies_cloud_auth_and_rate_limit_failures() {
+        assert_eq!(
+            classify_polish_failure_reason("HTTP 401 unauthorized: bad API key"),
+            "cloud polish authentication failed"
+        );
+        assert_eq!(
+            classify_polish_failure_reason("HTTP 429 rate limit exceeded"),
+            "cloud polish was rate limited"
+        );
     }
 }
