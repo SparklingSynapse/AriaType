@@ -40,11 +40,14 @@ impl PolishEngine for LfmPolishEngine {
         let system_prompt = request.system_context.effective_prompt().into_owned();
         let language = request.language.clone();
         let default_prompt = super::DEFAULT_POLISH_PROMPT.to_string();
+        let timeout = request.timeout;
 
         let config = EngineConfig {
             log_prefix: "polish:lfm",
-            strip_think_tags: false,
+            strip_think_tags: true,
             prompt_format: PromptFormat::ChatMl,
+            disable_thinking: true,
+            no_think_directive: false,
             // LFM2.5-1.2B Q4_K_M ≈ 697MB, LFM2-2.6B Q4_K_M ≈ 1.6GB
             min_model_size_mb: 600,
         };
@@ -59,6 +62,7 @@ impl PolishEngine for LfmPolishEngine {
                 &language,
                 &model_path,
                 &default_prompt,
+                timeout,
                 &config,
             )
         })

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use tracing::{info, instrument, warn};
 
 use crate::polish_engine::{get_template_by_id, DEFAULT_POLISH_PROMPT};
@@ -13,8 +15,25 @@ struct LocalPolishContext {
     log_context: &'static str,
 }
 
+const LOCAL_POLISH_BASE_TIMEOUT: Duration = Duration::from_secs(10);
+const LOCAL_POLISH_MAX_TIMEOUT: Duration = Duration::from_secs(30);
+const LOCAL_POLISH_BASE_TIMEOUT_CHARS: usize = 500;
+const LOCAL_POLISH_TIMEOUT_STEP_CHARS: usize = 800;
+const LOCAL_POLISH_TIMEOUT_STEP: Duration = Duration::from_secs(5);
+const LOCAL_POLISH_TIMEOUT_REASON: &str = "local polish timed out";
+
 fn contains_any(text: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| text.contains(needle))
+}
+
+fn local_polish_timeout(text: &str) -> Duration {
+    let chars = text.chars().count();
+    let extra_chars = chars.saturating_sub(LOCAL_POLISH_BASE_TIMEOUT_CHARS);
+    let extra_steps = extra_chars.div_ceil(LOCAL_POLISH_TIMEOUT_STEP_CHARS);
+    let timeout = LOCAL_POLISH_BASE_TIMEOUT
+        + Duration::from_secs(LOCAL_POLISH_TIMEOUT_STEP.as_secs() * extra_steps as u64);
+
+    timeout.min(LOCAL_POLISH_MAX_TIMEOUT)
 }
 
 fn has_question_mark(text: &str) -> bool {
@@ -91,6 +110,8 @@ fn classify_polish_failure_reason(error: &str) -> &'static str {
 
     if lower.contains("incomplete") {
         "model download looks incomplete"
+    } else if is_local_polish_timeout_error(error) {
+        LOCAL_POLISH_TIMEOUT_REASON
     } else if lower.contains("not downloaded") || lower.contains("not found") {
         "model file is missing"
     } else if lower.contains("model load")
@@ -123,6 +144,10 @@ fn classify_polish_failure_reason(error: &str) -> &'static str {
     } else {
         "unexpected polish error"
     }
+}
+
+fn is_local_polish_timeout_error(error: &str) -> bool {
+    error.to_lowercase().contains(LOCAL_POLISH_TIMEOUT_REASON)
 }
 
 fn accept_polish_result(
@@ -188,12 +213,14 @@ async fn run_local_polish(
             }) {
                 info!(task_id, engine = ?engine_type, model_id = %model_id, context = log_context, "polish_started-local");
 
+                let timeout = local_polish_timeout(&accumulated_text);
                 let request = crate::polish_engine::PolishRequest::new(
                     accumulated_text.clone(),
                     system_prompt,
                     language,
                 )
-                .with_model(model_filename);
+                .with_model(model_filename)
+                .with_timeout(timeout);
                 let request = match window_context {
                     Some(ref ctx) => request.with_window_context(ctx),
                     None => request,
@@ -201,8 +228,13 @@ async fn run_local_polish(
 
                 event_target.emit_polishing(task_id);
 
-                match state.polish_manager.polish(engine_type, request).await {
-                    Ok(result) if !result.text.is_empty() => {
+                match tokio::time::timeout(
+                    timeout,
+                    state.polish_manager.polish(engine_type, request),
+                )
+                .await
+                {
+                    Ok(Ok(result)) if !result.text.is_empty() => {
                         info!(
                             task_id,
                             chars = result.text.len(),
@@ -219,7 +251,7 @@ async fn run_local_polish(
                             log_context,
                         )
                     }
-                    Ok(_) => {
+                    Ok(Ok(_)) => {
                         let failure_reason = "model returned empty output";
                         event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
                         warn!(
@@ -230,10 +262,25 @@ async fn run_local_polish(
                         );
                         (accumulated_text, 0)
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         let failure_reason = classify_polish_failure_reason(&e);
-                        event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
+                        if is_local_polish_timeout_error(&e) {
+                            event_target.emit_local_polish_timeout_tooltip(task_id);
+                        } else {
+                            event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
+                        }
                         warn!(task_id, error = %e, context = log_context, failure_reason, "polish_failed-local_using_raw");
+                        (accumulated_text, 0)
+                    }
+                    Err(_) => {
+                        event_target.emit_local_polish_timeout_tooltip(task_id);
+                        warn!(
+                            task_id,
+                            context = log_context,
+                            timeout_secs = timeout.as_secs(),
+                            input_chars = accumulated_text.chars().count(),
+                            "polish_timeout-local_using_raw"
+                        );
                         (accumulated_text, 0)
                     }
                 }
@@ -420,7 +467,10 @@ pub(super) async fn maybe_polish_transcription_text(
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_polish_failure_reason, should_reject_question_answer_polish};
+    use super::{
+        classify_polish_failure_reason, local_polish_timeout, should_reject_question_answer_polish,
+        LOCAL_POLISH_BASE_TIMEOUT, LOCAL_POLISH_MAX_TIMEOUT,
+    };
 
     #[test]
     fn rejects_polish_output_that_answers_a_dictated_question() {
@@ -446,6 +496,30 @@ mod tests {
         let output = "我觉得这个功能现在已经完整了。";
 
         assert!(!should_reject_question_answer_polish(input, output));
+    }
+
+    #[test]
+    fn local_polish_timeout_stays_short_for_short_text() {
+        assert_eq!(
+            local_polish_timeout("short text"),
+            LOCAL_POLISH_BASE_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn local_polish_timeout_expands_for_long_text() {
+        let text = "a".repeat(1_400);
+        let timeout = local_polish_timeout(&text);
+
+        assert!(timeout > LOCAL_POLISH_BASE_TIMEOUT);
+        assert!(timeout <= LOCAL_POLISH_MAX_TIMEOUT);
+    }
+
+    #[test]
+    fn local_polish_timeout_is_capped() {
+        let text = "a".repeat(20_000);
+
+        assert_eq!(local_polish_timeout(&text), LOCAL_POLISH_MAX_TIMEOUT);
     }
 
     #[test]
@@ -475,6 +549,14 @@ mod tests {
         assert_eq!(
             classify_polish_failure_reason("HTTP 429 rate limit exceeded"),
             "cloud polish was rate limited"
+        );
+    }
+
+    #[test]
+    fn classifies_local_timeout_without_cloud_reason() {
+        assert_eq!(
+            classify_polish_failure_reason("Local polish timed out"),
+            "local polish timed out"
         );
     }
 }

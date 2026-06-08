@@ -7,6 +7,21 @@ pub struct ModelFile {
     pub size_mb: u32,
 }
 
+impl ModelFile {
+    pub fn estimated_size_bytes(&self) -> u64 {
+        u64::from(self.size_mb) * 1024 * 1024
+    }
+
+    pub fn minimum_complete_bytes(&self) -> u64 {
+        let estimated = self.estimated_size_bytes();
+        if self.size_mb <= 1 {
+            1
+        } else {
+            estimated * 4 / 5
+        }
+    }
+}
+
 /// Unified model definition for all local STT models
 #[derive(Debug, Clone)]
 pub struct ModelDefinition {

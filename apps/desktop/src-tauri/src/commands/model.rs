@@ -2,7 +2,7 @@ use crate::events::EventName;
 use crate::polish_engine::{self as polish, PolishModel};
 use crate::state::app_state::AppState;
 use crate::stt_engine::{EngineType, ModelInfo};
-use crate::utils::downloader::{download, DownloadOptions};
+use crate::utils::downloader::{download, remove_download_artifacts, DownloadOptions};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -438,6 +438,7 @@ async fn download_polish_model_internal(
         .with_fallbacks(urls[1..].to_vec())
         .with_cancel_flag(cancel_flag)
         .with_progress_callback(progress_callback)
+        .with_minimum_bytes(model.minimum_file_bytes())
         .with_model_name(&model_id);
 
     let result = download(options).await;
@@ -508,6 +509,7 @@ fn delete_polish_model_internal(app: AppHandle, model: PolishModel) -> Result<()
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| format!("polish_model_delete_failed: {e}"))?;
     }
+    remove_download_artifacts(&path);
     info!(model_id = ?model, "polish_model_deleted");
 
     if let Err(e) = app.emit(
