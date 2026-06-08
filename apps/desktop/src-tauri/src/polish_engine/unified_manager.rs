@@ -1,6 +1,6 @@
 use crate::polish_engine::traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
-use crate::polish_engine::{cloud::CloudPolishEngine, gemma, glm, lfm, qwen};
-use crate::utils::AppPaths;
+use crate::polish_engine::{cloud::CloudPolishEngine, gemma, glm, lfm, qwen, PolishModel};
+use crate::utils::{downloaded_file_is_complete, AppPaths};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, instrument};
@@ -132,10 +132,11 @@ impl UnifiedPolishManager {
             .get_model_filename(engine_type, model_id)
             .ok_or_else(|| format!("Model not found: {}", model_id))?;
 
-        // Check if model file exists
-        let model_path = AppPaths::models_dir().join(&model_filename);
-        if !model_path.exists() {
-            return Err(format!("Model file not found: {}", model_filename));
+        if !self.is_model_downloaded(engine_type, model_id) {
+            return Err(format!(
+                "Model file not fully downloaded: {}",
+                model_filename
+            ));
         }
 
         // Create instance (will be cached)
@@ -188,32 +189,28 @@ impl UnifiedPolishManager {
         match engine_type {
             PolishEngineType::Qwen => {
                 if let Some(model) = qwen::QwenModelDef::from_id(model_id) {
-                    let path = AppPaths::models_dir().join(model.filename);
-                    path.exists()
+                    polish_model_file_is_downloaded(model_id, model.filename)
                 } else {
                     false
                 }
             }
             PolishEngineType::Lfm => {
                 if let Some(model) = lfm::LfmModelDef::from_id(model_id) {
-                    let path = AppPaths::models_dir().join(model.filename);
-                    path.exists()
+                    polish_model_file_is_downloaded(model_id, model.filename)
                 } else {
                     false
                 }
             }
             PolishEngineType::Gemma => {
                 if let Some(model) = gemma::GemmaModelDef::from_id(model_id) {
-                    let path = AppPaths::models_dir().join(model.filename);
-                    path.exists()
+                    polish_model_file_is_downloaded(model_id, model.filename)
                 } else {
                     false
                 }
             }
             PolishEngineType::Glm => {
                 if let Some(model) = glm::GlmModelDef::from_id(model_id) {
-                    let path = AppPaths::models_dir().join(model.filename);
-                    path.exists()
+                    polish_model_file_is_downloaded(model_id, model.filename)
                 } else {
                     false
                 }
@@ -291,14 +288,35 @@ pub(crate) struct PolishEngineInstance {}
 
 impl PolishEngineInstance {
     fn new(_engine_type: PolishEngineType, model_filename: &str) -> Result<Self, String> {
-        // Verify model file exists
-        let model_path = AppPaths::models_dir().join(model_filename);
-        if !model_path.exists() {
-            return Err(format!("Model file not found: {}", model_filename));
+        if !polish_model_file_is_complete(model_filename) {
+            return Err(format!(
+                "Model file not fully downloaded: {}",
+                model_filename
+            ));
         }
 
         Ok(Self {})
     }
+}
+
+fn polish_model_file_is_complete(model_filename: &str) -> bool {
+    let model = qwen::QwenModelDef::from_filename(model_filename)
+        .map(|model| model.id)
+        .or_else(|| lfm::LfmModelDef::from_filename(model_filename).map(|model| model.id))
+        .or_else(|| gemma::GemmaModelDef::from_filename(model_filename).map(|model| model.id))
+        .or_else(|| glm::GlmModelDef::from_filename(model_filename).map(|model| model.id))
+        .and_then(PolishModel::from_id);
+
+    let path = AppPaths::models_dir().join(model_filename);
+    downloaded_file_is_complete(&path, model.map(|model| model.minimum_file_bytes()))
+}
+
+fn polish_model_file_is_downloaded(model_id: &str, model_filename: &str) -> bool {
+    let path = AppPaths::models_dir().join(model_filename);
+    downloaded_file_is_complete(
+        &path,
+        PolishModel::from_id(model_id).map(|model| model.minimum_file_bytes()),
+    )
 }
 
 /// Model information for UI display

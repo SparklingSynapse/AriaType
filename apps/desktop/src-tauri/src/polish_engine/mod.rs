@@ -38,6 +38,12 @@ pub enum PolishModel {
     GLM4_7_Flash_REAP_23B_A3B,
 }
 
+const MIB: u64 = 1024 * 1024;
+
+fn conservative_minimum_bytes(estimated_mb: u64) -> u64 {
+    estimated_mb * MIB * 3 / 4
+}
+
 impl PolishModel {
     pub fn from_id(id: &str) -> Option<Self> {
         match id {
@@ -115,6 +121,18 @@ impl PolishModel {
                 .unwrap_or_default(),
         }
     }
+
+    pub fn minimum_file_bytes(&self) -> u64 {
+        match self {
+            Self::Qwen3_5_0_8B => conservative_minimum_bytes(600),
+            Self::LFM2_5_1_2B => conservative_minimum_bytes(770),
+            Self::Qwen3_5_2B => conservative_minimum_bytes(1_400),
+            Self::LFM2_2_6B => conservative_minimum_bytes(1_600),
+            Self::Qwen3_4B => conservative_minimum_bytes(2_600),
+            Self::Gemma2B_IT => conservative_minimum_bytes(1_520),
+            Self::GLM4_7_Flash_REAP_23B_A3B => conservative_minimum_bytes(14_200),
+        }
+    }
 }
 
 // Re-export for backward compatibility
@@ -131,7 +149,7 @@ pub fn get_polish_model_path_for(model: PolishModel) -> std::path::PathBuf {
 
 pub fn is_polish_model_downloaded_for(model: PolishModel) -> bool {
     let path = get_polish_model_path_for(model);
-    path.exists()
+    crate::utils::downloaded_file_is_complete(&path, Some(model.minimum_file_bytes()))
 }
 
 pub fn is_polish_model_downloaded() -> bool {

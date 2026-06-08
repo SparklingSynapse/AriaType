@@ -40,11 +40,14 @@ impl PolishEngine for QwenPolishEngine {
         let system_prompt = request.system_context.effective_prompt().into_owned();
         let language = request.language.clone();
         let default_prompt = super::DEFAULT_POLISH_PROMPT.to_string();
+        let timeout = request.timeout;
 
         let config = EngineConfig {
             log_prefix: "polish:qwen",
             strip_think_tags: true,
-            prompt_format: PromptFormat::ChatMl,
+            prompt_format: PromptFormat::ModelChatTemplate,
+            disable_thinking: true,
+            no_think_directive: true,
             // Qwen3.5-0.8B Q5_K_M ≈ 600MB is the smallest variant
             min_model_size_mb: 400,
         };
@@ -59,6 +62,7 @@ impl PolishEngine for QwenPolishEngine {
                 &language,
                 &model_path,
                 &default_prompt,
+                timeout,
                 &config,
             )
         })
