@@ -322,17 +322,22 @@ pub fn delete_model(
 
 #[tauri::command]
 pub fn get_polish_models(_state: State<'_, AppState>) -> Vec<serde_json::Value> {
+    let device = polish::DeviceProfile::current();
+
     polish::get_all_models()
         .into_iter()
         .map(|(id, name, size)| {
             let downloaded = PolishModel::from_id(&id)
                 .map(polish::is_polish_model_downloaded_for)
                 .unwrap_or(false);
+            let compatibility = polish::assess_polish_model_compatibility(&id, &device);
+
             serde_json::json!({
                 "id": id,
                 "name": name,
                 "size": size,
-                "downloaded": downloaded
+                "downloaded": downloaded,
+                "compatibility": compatibility
             })
         })
         .collect()

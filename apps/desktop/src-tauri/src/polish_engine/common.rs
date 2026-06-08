@@ -19,6 +19,8 @@ pub enum PromptFormat {
     ChatMl,
     /// Gemma format: `<start_of_turn>role\n...<end_of_turn>` (Gemma)
     Gemma,
+    /// Use the chat template embedded in the GGUF model metadata.
+    ModelChatTemplate,
 }
 
 /// Configuration for engine-specific behavior
@@ -184,6 +186,46 @@ pub fn polish_text_blocking(
         PromptFormat::Gemma => format!(
             "<start_of_turn>user\n{system_prompt}{extra_instruction}\n\n{text}<end_of_turn>\n<start_of_turn>model\n"
         ),
+        PromptFormat::ModelChatTemplate => {
+            let template = model.chat_template(None).map_err(|e| {
+                error!(engine = %engine, error = %e, "polish_chat_template_missing");
+                format!("Chat template: {e}")
+            })?;
+            let messages_json = serde_json::json!([
+                {
+                    "role": "system",
+                    "content": format!("{system_prompt}{extra_instruction}"),
+                },
+                {
+                    "role": "user",
+                    "content": text,
+                }
+            ])
+            .to_string();
+            let params = llama_cpp_2::openai::OpenAIChatTemplateParams {
+                messages_json: &messages_json,
+                tools_json: None,
+                tool_choice: None,
+                json_schema: None,
+                grammar: None,
+                reasoning_format: None,
+                chat_template_kwargs: None,
+                add_generation_prompt: true,
+                use_jinja: true,
+                parallel_tool_calls: false,
+                enable_thinking: false,
+                add_bos: false,
+                add_eos: false,
+                parse_tool_calls: false,
+            };
+            let rendered = model
+                .apply_chat_template_oaicompat(&template, &params)
+                .map_err(|e| {
+                    error!(engine = %engine, error = %e, "polish_chat_template_apply_failed");
+                    format!("Apply chat template: {e}")
+                })?;
+            rendered.prompt
+        }
     };
     debug!(engine = %engine, prompt_len = prompt.len(), "polish_full_prompt_constructed");
 
@@ -394,6 +436,15 @@ mod tests {
         assert!(!config2.strip_think_tags);
         assert_eq!(config2.prompt_format, PromptFormat::Gemma);
         assert_eq!(config2.min_model_size_mb, 200);
+
+        let config3 = EngineConfig {
+            log_prefix: "template",
+            strip_think_tags: false,
+            prompt_format: PromptFormat::ModelChatTemplate,
+            min_model_size_mb: 300,
+        };
+        assert_eq!(config3.prompt_format, PromptFormat::ModelChatTemplate);
+        assert_eq!(config3.min_model_size_mb, 300);
     }
 
     #[test]

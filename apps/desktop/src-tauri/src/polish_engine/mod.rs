@@ -1,6 +1,8 @@
 pub mod cloud;
 mod common;
+mod compatibility;
 pub mod gemma;
+pub mod glm;
 pub mod lfm;
 pub mod qwen;
 mod templates;
@@ -8,7 +10,12 @@ mod traits;
 mod unified_manager;
 
 pub use cloud::{CloudPolishEngine, CloudProviderConfig, CORE_POLISH_CONSTRAINT};
+pub use compatibility::{
+    assess_polish_model_compatibility, DeviceProfile, PolishModelCompatibility,
+    PolishModelCompatibilityLevel,
+};
 pub use gemma::{GemmaModelDef, DEFAULT_POLISH_PROMPT as GEMMA_DEFAULT_PROMPT};
+pub use glm::{GlmModelDef, DEFAULT_POLISH_PROMPT as GLM_DEFAULT_PROMPT};
 pub use lfm::{LfmModelDef, DEFAULT_POLISH_PROMPT as LFM_DEFAULT_PROMPT};
 pub use qwen::{QwenModelDef, DEFAULT_POLISH_PROMPT as QWEN_DEFAULT_PROMPT};
 pub use templates::{get_all_templates, get_template_by_id, PolishTemplate, POLISH_TEMPLATES};
@@ -28,6 +35,7 @@ pub enum PolishModel {
     LFM2_2_6B,
     Qwen3_4B,
     Gemma2B_IT,
+    GLM4_7_Flash_REAP_23B_A3B,
 }
 
 impl PolishModel {
@@ -39,6 +47,7 @@ impl PolishModel {
             "lfm2-2.6b" => Some(Self::LFM2_2_6B),
             "qwen3-4b" => Some(Self::Qwen3_4B),
             "gemma-2b-it" | "gemma-4-e2b" => Some(Self::Gemma2B_IT),
+            "glm-4.7-flash-reap-23b-a3b" => Some(Self::GLM4_7_Flash_REAP_23B_A3B),
             _ => None,
         }
     }
@@ -51,6 +60,7 @@ impl PolishModel {
             Self::LFM2_2_6B => "lfm2-2.6b",
             Self::Qwen3_4B => "qwen3-4b",
             Self::Gemma2B_IT => "gemma-2b-it",
+            Self::GLM4_7_Flash_REAP_23B_A3B => "glm-4.7-flash-reap-23b-a3b",
         }
     }
 
@@ -74,6 +84,9 @@ impl PolishModel {
             Self::Gemma2B_IT => gemma::GemmaModelDef::from_id("gemma-2b-it")
                 .map(|m| m.filename)
                 .unwrap_or(""),
+            Self::GLM4_7_Flash_REAP_23B_A3B => GlmModelDef::from_id("glm-4.7-flash-reap-23b-a3b")
+                .map(|m| m.filename)
+                .unwrap_or(""),
         }
     }
 
@@ -95,6 +108,9 @@ impl PolishModel {
                 .map(|m| m.urls())
                 .unwrap_or_default(),
             Self::Gemma2B_IT => gemma::GemmaModelDef::from_id("gemma-2b-it")
+                .map(|m| m.urls())
+                .unwrap_or_default(),
+            Self::GLM4_7_Flash_REAP_23B_A3B => GlmModelDef::from_id("glm-4.7-flash-reap-23b-a3b")
                 .map(|m| m.urls())
                 .unwrap_or_default(),
         }
