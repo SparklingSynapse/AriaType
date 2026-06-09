@@ -1,8 +1,8 @@
 import { test, expect } from '../fixtures';
-import { openRoute } from '../utils/helpers';
+import { openRouteWithOnboarding } from '../utils/helpers';
 
 test('Permission Settings page renders', async ({ tauriPage }) => {
-  await openRoute(tauriPage, '/permission');
+  await openRouteWithOnboarding(tauriPage, '/permission');
 
   const permissionPage = tauriPage.locator('[data-testid="permission-page"]');
 

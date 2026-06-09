@@ -379,6 +379,14 @@ fn is_cjk(c: char) -> bool {
 }
 
 pub fn apply_shared_corrections_best_effort(text: &str) -> String {
+    apply_shared_corrections_best_effort_result(text)
+        .map(|result| result.text)
+        .unwrap_or_else(|_| text.to_string())
+}
+
+pub fn apply_shared_corrections_best_effort_result(
+    text: &str,
+) -> Result<CorrectionApplyResult, String> {
     match CorrectionStore::shared().apply_to_text(text) {
         Ok(result) => {
             if !result.applied.is_empty() {
@@ -387,11 +395,11 @@ pub fn apply_shared_corrections_best_effort(text: &str) -> String {
                     "correction_learning_applied"
                 );
             }
-            result.text
+            Ok(result)
         }
         Err(error) => {
             warn!(error = %error, "correction_learning_apply_failed");
-            text.to_string()
+            Err(error)
         }
     }
 }

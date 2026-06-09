@@ -48,7 +48,7 @@ fn test_manager_get_model_path() {
 }
 
 #[test]
-fn test_manager_is_model_downloaded() {
+fn test_manager_incomplete_model_is_not_downloaded() {
     let models_dir = temp_models_dir();
     let manager = UnifiedEngineManager::new(models_dir.clone());
 
@@ -65,8 +65,8 @@ fn test_manager_is_model_downloaded() {
 
     let manager2 = UnifiedEngineManager::new(models_dir);
     assert!(
-        manager2.is_model_downloaded(EngineType::Whisper, "whisper-base"),
-        "Model should be detected as downloaded"
+        !manager2.is_model_downloaded(EngineType::Whisper, "whisper-base"),
+        "Tiny fake files should not be detected as a fully downloaded model"
     );
 }
 

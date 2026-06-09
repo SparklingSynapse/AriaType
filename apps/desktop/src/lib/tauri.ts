@@ -148,6 +148,15 @@ export interface ShortcutProfilesMap {
   custom?: ShortcutProfile;
 }
 
+export interface LocalPolishRuntimeSettings {
+  provider_type: string;
+  base_url: string;
+  api_key: string;
+  server_command: string;
+  server_args_json: string;
+  ready_timeout_secs: number;
+}
+
 export interface AppSettings {
   hotkey?: string;
   recording_mode: "hold" | "toggle";
@@ -179,6 +188,8 @@ export interface AppSettings {
   cloud_polish_enabled: boolean;
   active_cloud_polish_provider: string;
   cloud_polish_configs: Record<string, CloudProviderConfig>;
+  local_polish_runtime: LocalPolishRuntimeSettings;
+  polish_stream_direct_typing_enabled: boolean;
   vad_enabled: boolean;
   stay_in_tray: boolean;
   polish_custom_templates: CustomPolishTemplate[];
@@ -206,6 +217,28 @@ export interface PolishModelInfo {
   size: string;
   downloaded: boolean;
   compatibility: PolishModelCompatibility;
+  latency_profile: PolishModelLatencyProfile;
+}
+
+export interface PolishModelStatus {
+  is_loaded: boolean;
+  is_downloaded: boolean;
+  runtime_ready: boolean;
+  current_model: string;
+  engine_type: string;
+}
+
+export type PolishModelLatencyClass = "fast" | "balanced" | "slow" | "heavy";
+
+export interface PolishModelLatencyProfile {
+  class: PolishModelLatencyClass;
+  code:
+    | "fast_transcript_preserving"
+    | "balanced_rewrite"
+    | "accurate_rewrite"
+    | "heavy_long_context";
+  recommended_templates: string[];
+  caution_templates: string[];
 }
 
 export interface PolishModelCompatibility {
@@ -270,6 +303,8 @@ export const settingsCommands = {
     invokeWithLogging<CloudConnectionCheckResult>("check_active_cloud_stt_config"),
   checkActiveCloudPolishConfig: () =>
     invokeWithLogging<CloudConnectionCheckResult>("check_active_cloud_polish_config"),
+  checkLocalPolishRuntimeConfig: () =>
+    invokeWithLogging<CloudConnectionCheckResult>("check_local_polish_runtime_config"),
   clearCorrectionMemory: () =>
     invokeWithLogging<void>("clear_correction_memory"),
   openCorrectionMemoryDirectory: () =>
@@ -324,6 +359,10 @@ export const modelCommands = {
     invokeWithLogging<PolishModelInfo[]>("get_polish_models"),
   getCurrentPolishModel: () =>
     invokeWithLogging<string>("get_current_polish_model"),
+  getPolishModelStatus: () =>
+    invokeWithLogging<PolishModelStatus>("get_polish_model_status"),
+  preloadPolishModel: () =>
+    invokeWithLogging<void>("preload_polish_model"),
   isPolishModelDownloaded: () =>
     invokeWithLogging<boolean>("is_polish_model_downloaded"),
   isPolishModelDownloadedForModel: (modelId: string) =>

@@ -8,7 +8,7 @@ use crate::commands::settings::CloudSttConfig;
 use crate::events::{emit_recording_state, EventName, RecordingStatus, TranscriptionPartialEvent};
 use crate::services::transcription_finalize::{
     finalize_empty_transcription, finalize_failed_transcription, finalize_silent_recording,
-    finalize_successful_transcription,
+    finalize_successful_transcription_with_delivery,
 };
 use crate::state::app_state::AppState;
 use crate::state::unified_state::StreamingSttState;
@@ -16,7 +16,8 @@ use crate::stt_engine::cloud::StreamingSttClient;
 use crate::stt_engine::traits::RecordingConsumer;
 use crate::utils::AppPaths;
 
-use super::polish::maybe_polish_transcription_text;
+use super::polish::{maybe_polish_transcription_text, PolishProcessingResult};
+use super::postprocess::apply_post_stt_processing;
 use super::shared::{
     apply_finalize_result, discard_canceled_result, emit_recording_error_then_idle,
     recording_chunk_size_samples, should_unregister_cancel_hotkey_after_async_cleanup,
@@ -473,35 +474,40 @@ pub(super) fn start_unified_recording(
             match text_result {
                 Ok(text) => {
                     let raw_text = text.clone();
-                    let correction_memory_enabled = {
+                    let (correction_memory_enabled, user_glossary) = {
                         let state = app_clone.state::<AppState>();
                         let settings = state.settings.lock();
-                        settings.correction_memory_enabled
-                    };
-                    let corrected_text = if correction_memory_enabled {
-                        crate::correction_learning::storage::apply_shared_corrections_best_effort(
-                            &text,
+                        (
+                            settings.correction_memory_enabled,
+                            settings.stt_engine_user_glossary.clone(),
                         )
-                    } else {
-                        text.clone()
                     };
+                    let postprocess = apply_post_stt_processing(
+                        &text,
+                        correction_memory_enabled,
+                        &user_glossary,
+                        task_id,
+                        "recording",
+                    );
                     let state = app_clone.state::<AppState>();
                     if state.is_cancellation_requested(task_id) {
                         discard_canceled_result(&state, task_id, audio_path.as_ref());
                         return;
                     }
-                    let (final_text, polish_time_ms) = if corrected_text.is_empty() {
-                        (String::new(), 0)
+                    let polish_result = if postprocess.text.is_empty() {
+                        PolishProcessingResult::skipped(String::new(), "empty postprocess text")
                     } else {
                         maybe_polish_transcription_text(
                             &ProcessingEventTarget::Recording(&app_clone),
                             &state,
                             task_id,
-                            corrected_text,
+                            postprocess.text,
                             resolved_polish_template_id_clone.clone(),
                         )
                         .await
                     };
+                    let polish_time_ms = polish_result.polish_ms;
+                    let final_text = polish_result.text;
 
                     if state.is_cancellation_requested(task_id) {
                         discard_canceled_result(&state, task_id, audio_path.as_ref());
@@ -511,17 +517,32 @@ pub(super) fn start_unified_recording(
                     info!(
                         task_id,
                         text_len = final_text.len(),
+                        postprocess_ms = postprocess.postprocess_ms,
+                        normalization_applied = postprocess.normalization_applied,
+                        corrections_applied = postprocess.corrections_applied,
+                        glossary_applied = postprocess.glossary_applied,
+                        polish_ms = polish_time_ms,
+                        polish_wall_ms = polish_result.polish_wall_ms,
+                        polish_queue_ms = polish_result.polish_queue_ms,
+                        model_load_ms = polish_result.model_load_ms,
+                        context_create_ms = polish_result.context_create_ms,
+                        prefill_ms = polish_result.prefill_ms,
+                        inference_ms = polish_result.inference_ms,
+                        time_to_first_token_ms = polish_result.time_to_first_token_ms,
+                        generation_ms = polish_result.generation_ms,
+                        fallback_reason = polish_result.fallback_reason.unwrap_or(""),
                         audio_saved = audio_path.is_some(),
                         "transcription_final_received"
                     );
 
                     let action = if !final_text.is_empty() {
-                        finalize_successful_transcription(
+                        finalize_successful_transcription_with_delivery(
                             &state,
                             &raw_text,
                             &final_text,
                             polish_time_ms,
                             audio_path.clone(),
+                            polish_result.direct_stream_inserted,
                         )
                     } else {
                         finalize_empty_transcription(&state, audio_path)

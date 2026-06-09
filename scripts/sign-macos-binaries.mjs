@@ -4,9 +4,9 @@
  * Must run before `tauri build` so notarization doesn't reject them.
  */
 import { execSync } from 'child_process';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
+import { existsSync, lstatSync, readdirSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -19,9 +19,38 @@ if (!signingIdentity) {
 
 const entitlements = resolve(root, 'apps/desktop/src-tauri/entitlements.plist');
 
-const binaries = [
+const fixedBinaries = [
   resolve(root, 'apps/desktop/src-tauri/bin/apple-silicon/sense-voice-main-aarch64-apple-darwin'),
 ];
+
+const runtimeDirs = [
+  resolve(root, 'apps/desktop/src-tauri/bin/apple-silicon'),
+  resolve(root, 'apps/desktop/src-tauri/bin/intel'),
+  resolve(root, 'apps/desktop/src-tauri/bin/universal'),
+  resolve(root, 'apps/desktop/src-tauri/bin/macos'),
+];
+
+function runtimeFilesIn(dir) {
+  if (!existsSync(dir)) {
+    return [];
+  }
+
+  return readdirSync(dir)
+    .map((entry) => join(dir, entry))
+    .filter((path) => {
+      const stats = lstatSync(path);
+      if (!stats.isFile()) {
+        return false;
+      }
+
+      return path.endsWith('/llama-server') || path.endsWith('.dylib');
+    });
+}
+
+const binaries = Array.from(new Set([
+  ...fixedBinaries,
+  ...runtimeDirs.flatMap(runtimeFilesIn),
+]));
 
 for (const bin of binaries) {
   if (!existsSync(bin)) {

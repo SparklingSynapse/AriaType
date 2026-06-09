@@ -1,8 +1,8 @@
 import { test, expect } from '../fixtures';
-import { openRoute } from '../utils/helpers';
+import { openRouteWithOnboarding } from '../utils/helpers';
 
 test('Polish Templates page renders', async ({ tauriPage }) => {
-  await openRoute(tauriPage, '/polish-templates');
+  await openRouteWithOnboarding(tauriPage, '/polish-templates');
 
   const templatesPage = tauriPage.locator('[data-testid="polish-templates-page"]');
 

@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Polish engine type enumeration
@@ -105,14 +107,55 @@ impl SystemContext {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolishPreviewUpdate {
+    pub text: String,
+    pub delta: String,
+    pub is_final: bool,
+}
+
+impl PolishPreviewUpdate {
+    pub fn chunk(text: impl Into<String>, delta: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            delta: delta.into(),
+            is_final: false,
+        }
+    }
+
+    pub fn final_text(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            delta: String::new(),
+            is_final: true,
+        }
+    }
+}
+
+pub type PolishPreviewCallback = Arc<dyn Fn(PolishPreviewUpdate) + Send + Sync + 'static>;
+
 /// Polish request parameters
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PolishRequest {
     pub text: String,
     pub system_context: SystemContext,
     pub language: String,
     pub model_name: Option<String>,
     pub timeout: Option<Duration>,
+    pub preview_callback: Option<PolishPreviewCallback>,
+}
+
+impl fmt::Debug for PolishRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PolishRequest")
+            .field("text", &self.text)
+            .field("system_context", &self.system_context)
+            .field("language", &self.language)
+            .field("model_name", &self.model_name)
+            .field("timeout", &self.timeout)
+            .field("preview_callback", &self.preview_callback.is_some())
+            .finish()
+    }
 }
 
 impl PolishRequest {
@@ -127,6 +170,7 @@ impl PolishRequest {
             language: language.into(),
             model_name: None,
             timeout: None,
+            preview_callback: None,
         }
     }
 
@@ -144,6 +188,11 @@ impl PolishRequest {
         self.timeout = Some(timeout);
         self
     }
+
+    pub fn with_preview_callback(mut self, callback: PolishPreviewCallback) -> Self {
+        self.preview_callback = Some(callback);
+        self
+    }
 }
 
 /// Polish result
@@ -155,8 +204,16 @@ pub struct PolishResult {
     pub total_ms: u64,
     /// Model load time in milliseconds
     pub model_load_ms: Option<u64>,
+    /// Local runtime context creation time in milliseconds
+    pub context_create_ms: Option<u64>,
+    /// Prompt prefill time in milliseconds
+    pub prefill_ms: Option<u64>,
     /// Inference time in milliseconds
     pub inference_ms: Option<u64>,
+    /// Time until the first streamed token/chunk became available
+    pub time_to_first_token_ms: Option<u64>,
+    /// Streaming/generation duration in milliseconds
+    pub generation_ms: Option<u64>,
 }
 
 impl PolishResult {
@@ -167,7 +224,11 @@ impl PolishResult {
             engine,
             total_ms,
             model_load_ms: None,
+            context_create_ms: None,
+            prefill_ms: None,
             inference_ms: None,
+            time_to_first_token_ms: None,
+            generation_ms: None,
         }
     }
 
@@ -184,8 +245,36 @@ impl PolishResult {
             engine,
             total_ms,
             model_load_ms,
+            context_create_ms: None,
+            prefill_ms: None,
             inference_ms,
+            time_to_first_token_ms: None,
+            generation_ms: None,
         }
+    }
+
+    pub fn with_runtime_metrics(
+        mut self,
+        model_load_ms: Option<u64>,
+        context_create_ms: Option<u64>,
+        prefill_ms: Option<u64>,
+        inference_ms: Option<u64>,
+    ) -> Self {
+        self.model_load_ms = model_load_ms;
+        self.context_create_ms = context_create_ms;
+        self.prefill_ms = prefill_ms;
+        self.inference_ms = inference_ms;
+        self
+    }
+
+    pub fn with_streaming_metrics(
+        mut self,
+        time_to_first_token_ms: Option<u64>,
+        generation_ms: Option<u64>,
+    ) -> Self {
+        self.time_to_first_token_ms = time_to_first_token_ms;
+        self.generation_ms = generation_ms;
+        self
     }
 }
 
@@ -294,6 +383,7 @@ mod tests {
         assert!(request.model_name.is_none());
         assert!(request.system_context.window_context.is_none());
         assert!(request.timeout.is_none());
+        assert!(request.preview_callback.is_none());
     }
 
     #[test]
@@ -317,6 +407,14 @@ mod tests {
         let request =
             PolishRequest::new("test", "prompt", "en").with_timeout(Duration::from_secs(12));
         assert_eq!(request.timeout, Some(Duration::from_secs(12)));
+    }
+
+    #[test]
+    fn test_polish_request_with_preview_callback() {
+        let callback: PolishPreviewCallback = Arc::new(|_| {});
+        let request = PolishRequest::new("test", "prompt", "en").with_preview_callback(callback);
+
+        assert!(request.preview_callback.is_some());
     }
 
     #[test]
@@ -347,7 +445,11 @@ mod tests {
         assert_eq!(result.engine, PolishEngineType::Qwen);
         assert_eq!(result.total_ms, 1500);
         assert!(result.model_load_ms.is_none());
+        assert!(result.context_create_ms.is_none());
+        assert!(result.prefill_ms.is_none());
         assert!(result.inference_ms.is_none());
+        assert!(result.time_to_first_token_ms.is_none());
+        assert!(result.generation_ms.is_none());
     }
 
     #[test]
@@ -363,6 +465,18 @@ mod tests {
         assert_eq!(result.engine, PolishEngineType::Lfm);
         assert_eq!(result.total_ms, 2000);
         assert_eq!(result.model_load_ms, Some(500));
+        assert!(result.context_create_ms.is_none());
+        assert!(result.prefill_ms.is_none());
         assert_eq!(result.inference_ms, Some(1500));
+
+        let result = result.with_runtime_metrics(Some(500), Some(100), Some(300), Some(1200));
+        assert_eq!(result.model_load_ms, Some(500));
+        assert_eq!(result.context_create_ms, Some(100));
+        assert_eq!(result.prefill_ms, Some(300));
+        assert_eq!(result.inference_ms, Some(1200));
+
+        let result = result.with_streaming_metrics(Some(25), Some(700));
+        assert_eq!(result.time_to_first_token_ms, Some(25));
+        assert_eq!(result.generation_ms, Some(700));
     }
 }

@@ -29,8 +29,23 @@ playwright-report/
 **/*-screenshot.png
 **/*-trace.zip
 apps/desktop/src-tauri/capabilities/e2e.json
+apps/desktop/src-tauri/tauri.runtime.generated.conf.json
 apps/desktop/tests/e2e/.runtime/
 apps/desktop/.build-diagnostics/
+
+# Release-time local polish runtime sidecars
+apps/desktop/src-tauri/bin/apple-silicon/llama-server
+apps/desktop/src-tauri/bin/apple-silicon/*.dylib
+apps/desktop/src-tauri/bin/intel/llama-server
+apps/desktop/src-tauri/bin/intel/*.dylib
+apps/desktop/src-tauri/bin/universal/llama-server
+apps/desktop/src-tauri/bin/universal/*.dylib
+apps/desktop/src-tauri/bin/macos/llama-server
+apps/desktop/src-tauri/bin/macos/*.dylib
+apps/desktop/src-tauri/bin/windows/llama-server.exe
+apps/desktop/src-tauri/bin/windows/*.dll
+apps/desktop/src-tauri/bin/linux/llama-server
+apps/desktop/src-tauri/bin/linux/*.so*
 
 # Next.js
 .next/

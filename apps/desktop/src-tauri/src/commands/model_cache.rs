@@ -62,6 +62,8 @@ pub fn get_polish_model_status(state: State<'_, AppState>) -> Result<serde_json:
     if polish_model_id.is_empty() {
         return Ok(serde_json::json!({
             "is_loaded": false,
+            "is_downloaded": false,
+            "runtime_ready": false,
             "current_model": "",
             "engine_type": "",
         }));
@@ -79,9 +81,12 @@ pub fn get_polish_model_status(state: State<'_, AppState>) -> Result<serde_json:
     } else {
         false
     };
+    let runtime_ready = state.polish_manager.is_local_runtime_ready();
 
     Ok(serde_json::json!({
-        "is_loaded": is_downloaded,
+        "is_loaded": is_downloaded && runtime_ready,
+        "is_downloaded": is_downloaded,
+        "runtime_ready": runtime_ready,
         "current_model": polish_model_id,
         "engine_type": engine_type.map(|et| et.as_str()).unwrap_or(""),
     }))

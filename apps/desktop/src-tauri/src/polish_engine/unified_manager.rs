@@ -12,6 +12,7 @@ pub struct UnifiedPolishManager {
     engines: HashMap<PolishEngineType, Arc<dyn PolishEngine>>,
     /// Cache for engine instances (engine_type, model_filename) -> instance
     engine_cache: Arc<Mutex<HashMap<EngineCacheKey, Arc<PolishEngineInstance>>>>,
+    local_runtime: Arc<crate::polish_engine::local_runtime::LocalPolishRuntimeManager>,
 }
 
 impl UnifiedPolishManager {
@@ -40,6 +41,9 @@ impl UnifiedPolishManager {
         Self {
             engines,
             engine_cache: Arc::new(Mutex::new(HashMap::new())),
+            local_runtime: Arc::new(
+                crate::polish_engine::local_runtime::LocalPolishRuntimeManager::new(),
+            ),
         }
     }
 
@@ -90,6 +94,7 @@ impl UnifiedPolishManager {
     pub fn clear_cache(&self) {
         let mut cache = self.engine_cache.lock().unwrap();
         cache.clear();
+        self.local_runtime.stop();
         info!("polish_engine_cache_cleared");
     }
 
@@ -101,6 +106,9 @@ impl UnifiedPolishManager {
             // Clear specific model
             let cache_key = (engine_type, filename.to_string());
             if cache.remove(&cache_key).is_some() {
+                if let Some(model_id) = polish_model_id_from_filename(filename) {
+                    self.local_runtime.stop_model(&model_id);
+                }
                 info!(
                     engine = ?engine_type,
                     model = %filename,
@@ -118,6 +126,7 @@ impl UnifiedPolishManager {
             for key in keys_to_remove {
                 cache.remove(&key);
             }
+            self.local_runtime.stop();
 
             info!(
                 engine = ?engine_type,
@@ -141,6 +150,7 @@ impl UnifiedPolishManager {
 
         // Create instance (will be cached)
         self.get_or_create_engine_instance(engine_type, &model_filename)?;
+        self.ensure_local_runtime_ready(engine_type, model_id, &model_filename)?;
         info!(
             engine = ?engine_type,
             model = %model_id,
@@ -178,6 +188,9 @@ impl UnifiedPolishManager {
         // If model_name is provided, use cached instance
         if let Some(ref model_filename) = request.model_name {
             let _instance = self.get_or_create_engine_instance(engine_type, model_filename)?;
+            let model_id = polish_model_id_from_filename(model_filename)
+                .unwrap_or_else(|| model_filename.to_string());
+            self.ensure_local_runtime_ready(engine_type, &model_id, model_filename)?;
             // Instance is now cached, proceed with polish
         }
 
@@ -253,6 +266,40 @@ impl UnifiedPolishManager {
         self.engines.keys().copied().collect()
     }
 
+    pub fn is_local_runtime_ready(&self) -> bool {
+        self.local_runtime.is_ready()
+    }
+
+    pub fn configure_local_runtime(
+        &self,
+        settings: &crate::commands::settings::LocalPolishRuntimeSettings,
+    ) -> Result<(), String> {
+        self.local_runtime.configure_from_settings(settings)
+    }
+
+    pub fn check_local_runtime_config(
+        &self,
+        settings: &crate::commands::settings::LocalPolishRuntimeSettings,
+        timeout: std::time::Duration,
+    ) -> Result<(), String> {
+        let config =
+            crate::polish_engine::local_runtime::LocalPolishRuntimeConfig::from_settings(settings)?;
+        self.local_runtime.check_config(config, timeout)
+    }
+
+    fn ensure_local_runtime_ready(
+        &self,
+        engine_type: PolishEngineType,
+        model_id: &str,
+        model_filename: &str,
+    ) -> Result<(), String> {
+        if engine_type == PolishEngineType::Cloud {
+            return Ok(());
+        }
+
+        self.local_runtime.ensure_ready(model_id, model_filename)
+    }
+
     /// Polish using cloud provider
     #[instrument(skip(self, request, api_key), fields(provider = %provider_type, model = %model))]
     pub async fn polish_cloud(
@@ -288,6 +335,11 @@ pub(crate) struct PolishEngineInstance {}
 
 impl PolishEngineInstance {
     fn new(_engine_type: PolishEngineType, model_filename: &str) -> Result<Self, String> {
+        let model_path = AppPaths::models_dir().join(model_filename);
+        if !model_path.exists() {
+            return Err(format!("Model file not found: {}", model_filename));
+        }
+
         if !polish_model_file_is_complete(model_filename) {
             return Err(format!(
                 "Model file not fully downloaded: {}",
@@ -309,6 +361,20 @@ fn polish_model_file_is_complete(model_filename: &str) -> bool {
 
     let path = AppPaths::models_dir().join(model_filename);
     downloaded_file_is_complete(&path, model.map(|model| model.minimum_file_bytes()))
+}
+
+fn polish_model_id_from_filename(model_filename: &str) -> Option<String> {
+    qwen::QwenModelDef::from_filename(model_filename)
+        .map(|model| model.id.to_string())
+        .or_else(|| {
+            lfm::LfmModelDef::from_filename(model_filename).map(|model| model.id.to_string())
+        })
+        .or_else(|| {
+            gemma::GemmaModelDef::from_filename(model_filename).map(|model| model.id.to_string())
+        })
+        .or_else(|| {
+            glm::GlmModelDef::from_filename(model_filename).map(|model| model.id.to_string())
+        })
 }
 
 fn polish_model_file_is_downloaded(model_id: &str, model_filename: &str) -> bool {

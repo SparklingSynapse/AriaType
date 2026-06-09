@@ -365,6 +365,22 @@ async function waitForProcessSocket(child, socketPath, timeoutSeconds = 120) {
   });
 }
 
+function stopProcessGroup(child, label) {
+  if (!child) {
+    return;
+  }
+
+  logStep(`stop ${label} process group: pid ${child.pid ?? 'unknown'}`);
+  if (child.pid) {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+      return;
+    } catch {}
+  }
+
+  child.kill('SIGTERM');
+}
+
 function prepareDevServer(config) {
   cleanupPaths(config.devServerResetPaths ?? [], 'dev server reset');
 
@@ -398,9 +414,16 @@ async function startDevServer(config) {
     cwd: config.projectRoot,
     stdio: 'inherit',
     env: process.env,
+    detached: true,
   });
 
-  await waitForHttpReady(config.devServerUrl, config.devServerReadyTimeoutMs);
+  try {
+    await waitForHttpReady(config.devServerUrl, config.devServerReadyTimeoutMs);
+  } catch (error) {
+    stopProcessGroup(devServer, 'dev server');
+    throw error;
+  }
+
   return devServer;
 }
 
@@ -425,7 +448,7 @@ export async function runOrderedTauriSuite(config, extraArgs) {
     logStep('cleanup start');
     cleanupDone = true;
     processManager?.stop();
-    devServer?.kill('SIGTERM');
+    stopProcessGroup(devServer, 'dev server');
     cleanupExternalRuntime(config);
     logStep('cleanup complete');
   };

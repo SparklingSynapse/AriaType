@@ -1,8 +1,8 @@
 import { test, expect } from '../fixtures';
-import { clearTranscriptionHistory, openRoute, remountRoute } from '../utils/helpers';
+import { clearTranscriptionHistory, openRouteWithOnboarding, remountRoute } from '../utils/helpers';
 
 test('Dashboard renders with backend data', async ({ tauriPage }) => {
-  await openRoute(tauriPage, '/');
+  await openRouteWithOnboarding(tauriPage, '/');
   await clearTranscriptionHistory(tauriPage);
   await remountRoute(tauriPage, '/');
 

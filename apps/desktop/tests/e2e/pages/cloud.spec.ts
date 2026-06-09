@@ -1,8 +1,8 @@
 import { test, expect } from '../fixtures';
-import { openRoute, remountRoute } from '../utils/helpers';
+import { openRouteWithOnboarding, remountRoute } from '../utils/helpers';
 
 test('Cloud Service page renders with STT and Polish sections', async ({ tauriPage }) => {
-  await openRoute(tauriPage, '/cloud');
+  await openRouteWithOnboarding(tauriPage, '/cloud');
 
   await expect(tauriPage.locator('[data-testid="cloud-page"]')).toBeVisible({ timeout: 10000 });
   await expect(tauriPage.getByText('Cloud STT')).toBeVisible();
@@ -11,12 +11,14 @@ test('Cloud Service page renders with STT and Polish sections', async ({ tauriPa
 });
 
 test('Cloud STT enable toggle present', async ({ tauriPage }) => {
+  await openRouteWithOnboarding(tauriPage, '/cloud');
   await remountRoute(tauriPage, '/cloud');
 
   await expect(tauriPage.locator('#cloud-stt')).toBeVisible();
 });
 
 test('Cloud Polish enable toggle present', async ({ tauriPage }) => {
+  await openRouteWithOnboarding(tauriPage, '/cloud');
   await remountRoute(tauriPage, '/cloud');
   await tauriPage.getByText('Cloud Polish').click();
 
@@ -24,6 +26,7 @@ test('Cloud Polish enable toggle present', async ({ tauriPage }) => {
 });
 
 test('Cloud STT toggle is on with seeded settings', async ({ tauriPage }) => {
+  await openRouteWithOnboarding(tauriPage, '/cloud');
   await remountRoute(tauriPage, '/cloud');
 
   const sttToggle = tauriPage.locator('#cloud-stt');
@@ -32,6 +35,7 @@ test('Cloud STT toggle is on with seeded settings', async ({ tauriPage }) => {
 });
 
 test('Cloud Polish toggle is on with seeded settings', async ({ tauriPage }) => {
+  await openRouteWithOnboarding(tauriPage, '/cloud');
   await remountRoute(tauriPage, '/cloud');
 
   await tauriPage.getByText('Cloud Polish').click();
@@ -41,6 +45,7 @@ test('Cloud Polish toggle is on with seeded settings', async ({ tauriPage }) => 
 });
 
 test('Cloud STT shows provider and fields when enabled', async ({ tauriPage }) => {
+  await openRouteWithOnboarding(tauriPage, '/cloud');
   await remountRoute(tauriPage, '/cloud');
 
   await expect(tauriPage.locator('#cloud-stt')).toHaveAttribute('aria-checked', 'true');
@@ -49,6 +54,7 @@ test('Cloud STT shows provider and fields when enabled', async ({ tauriPage }) =
 });
 
 test('Cloud Polish shows provider and fields when enabled', async ({ tauriPage }) => {
+  await openRouteWithOnboarding(tauriPage, '/cloud');
   await remountRoute(tauriPage, '/cloud');
 
   await tauriPage.getByText('Cloud Polish').click();

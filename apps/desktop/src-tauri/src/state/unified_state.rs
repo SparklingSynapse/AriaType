@@ -224,6 +224,9 @@ impl AppState {
 
         // Initialize unified polish manager
         let polish_manager = Arc::new(crate::polish_engine::UnifiedPolishManager::new());
+        if let Err(e) = polish_manager.configure_local_runtime(&settings.local_polish_runtime) {
+            tracing::warn!(error = %e, "local_polish_runtime_configure_failed-startup");
+        }
 
         Self {
             recording_state: UnifiedRecordingState::new(),
