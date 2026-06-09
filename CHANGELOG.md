@@ -2,12 +2,6 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## Unreleased
-
-### Features
-
-- Keep local polish bounded after install (9f3ac26)
-
 ## v0.6.5 (2026-06-08)
 
 ### Features
@@ -16,7 +10,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
-- Keep local polish bounded and downloads complete (105e6e2)
+- Keep local polish bounded and downloads complete (d2b4c59)
 
 ## v0.6.4 (2026-06-02)
 

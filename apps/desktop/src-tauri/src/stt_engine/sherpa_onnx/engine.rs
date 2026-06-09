@@ -2,8 +2,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use sherpa_onnx::{
-    OfflineRecognizer, OfflineRecognizerConfig, OfflineSenseVoiceModelConfig,
-    OfflineWhisperModelConfig,
+    OfflineQwen3ASRModelConfig, OfflineRecognizer, OfflineRecognizerConfig,
+    OfflineSenseVoiceModelConfig, OfflineWhisperModelConfig,
 };
 use tracing::{debug, info};
 
@@ -147,6 +147,80 @@ impl SherpaOnnxEngine {
                         .ok_or("Invalid tokens path encoding")?
                         .to_string(),
                 );
+            }
+            EngineType::Qwen3Asr => {
+                let conv_frontend_path = model_subdir.join("conv_frontend.onnx");
+                let encoder_path = model_subdir.join("encoder.int8.onnx");
+                let decoder_path = model_subdir.join("decoder.int8.onnx");
+                let tokenizer_path = model_subdir.join("tokenizer");
+
+                if !conv_frontend_path.exists() {
+                    return Err(format!(
+                        "Qwen3-ASR conv frontend not found at: {}",
+                        conv_frontend_path.display()
+                    ));
+                }
+                if !encoder_path.exists() {
+                    return Err(format!(
+                        "Qwen3-ASR encoder not found at: {}",
+                        encoder_path.display()
+                    ));
+                }
+                if !decoder_path.exists() {
+                    return Err(format!(
+                        "Qwen3-ASR decoder not found at: {}",
+                        decoder_path.display()
+                    ));
+                }
+                if !tokenizer_path.exists() {
+                    return Err(format!(
+                        "Qwen3-ASR tokenizer not found at: {}",
+                        tokenizer_path.display()
+                    ));
+                }
+
+                info!(
+                    engine = "qwen3-asr",
+                    conv_frontend = %conv_frontend_path.display(),
+                    encoder = %encoder_path.display(),
+                    decoder = %decoder_path.display(),
+                    tokenizer = %tokenizer_path.display(),
+                    threads = num_threads,
+                    "loading_model"
+                );
+
+                config.model_config.qwen3_asr = OfflineQwen3ASRModelConfig {
+                    conv_frontend: Some(
+                        conv_frontend_path
+                            .to_str()
+                            .ok_or("Invalid conv frontend path encoding")?
+                            .to_string(),
+                    ),
+                    encoder: Some(
+                        encoder_path
+                            .to_str()
+                            .ok_or("Invalid encoder path encoding")?
+                            .to_string(),
+                    ),
+                    decoder: Some(
+                        decoder_path
+                            .to_str()
+                            .ok_or("Invalid decoder path encoding")?
+                            .to_string(),
+                    ),
+                    tokenizer: Some(
+                        tokenizer_path
+                            .to_str()
+                            .ok_or("Invalid tokenizer path encoding")?
+                            .to_string(),
+                    ),
+                    max_total_len: 512,
+                    max_new_tokens: 512,
+                    temperature: 1e-6,
+                    top_p: 0.8,
+                    seed: 42,
+                    hotwords: None,
+                };
             }
             EngineType::Cloud => {
                 return Err("Cloud engine not supported by SherpaOnnxEngine".to_string());

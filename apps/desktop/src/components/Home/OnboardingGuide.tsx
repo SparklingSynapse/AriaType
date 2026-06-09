@@ -57,6 +57,32 @@ function getRecommendedModelName(lang: string): string {
   return "whisper-base";
 }
 
+function getEngineTypeForModelName(modelName: string): string {
+  if (modelName.startsWith("sense-voice")) {
+    return "sensevoice";
+  }
+  if (modelName.startsWith("qwen3-asr")) {
+    return "qwen3-asr";
+  }
+  return "whisper";
+}
+
+function getModelDisplayName(modelName: string): string {
+  if (modelName === "sense-voice-small") {
+    return "SenseVoice Small";
+  }
+  if (modelName === "whisper-base") {
+    return "Whisper Base";
+  }
+  if (modelName === "whisper-small") {
+    return "Whisper Small";
+  }
+  if (modelName === "qwen3-asr-0.6b-int8") {
+    return "Qwen3-ASR 0.6B INT8";
+  }
+  return modelName;
+}
+
 const SUPPORTED_LANGUAGES = [
   "en-US", "zh-CN", "zh-TW", "yue-CN", "es-ES", "fr-FR", "de-DE",
   "ja-JP", "ko-KR", "pt-BR", "ru-RU", "ar-SA", "hi-IN", "it-IT",
@@ -468,10 +494,7 @@ function ModelStep({
               .recommendModelsByLanguage(language || "auto")
               .then(setModels)
               .catch((err: unknown) => logger.error("failed_to_refresh_models_after_download", { error: String(err) }));
-            const displayName = completedModelName === "sense-voice-small" ? "SenseVoice Small"
-              : completedModelName === "whisper-base" ? "Whisper Base"
-              : completedModelName === "whisper-small" ? "Whisper Small"
-              : completedModelName;
+            const displayName = getModelDisplayName(completedModelName);
             showToast(`${displayName} download complete`);
           }),
         );
@@ -528,11 +551,7 @@ function ModelStep({
           <div className="flex items-center gap-3">
             <div>
               <p className="text-sm font-medium">
-                {recommendedModelName === "sense-voice-small"
-                  ? "SenseVoice Small"
-                  : recommendedModelName === "whisper-base"
-                    ? "Whisper Base"
-                    : recommendedModelName}
+                {getModelDisplayName(recommendedModelName)}
               </p>
               <p className="text-xs text-muted-foreground">
                 {models.find((m) => m.model_name === recommendedModelName)?.size_mb ?? "..."}MB
@@ -910,9 +929,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
 
   const handleNext = async () => {
     if (current.id === "model" && selectedModel) {
-      const engineType = selectedModel?.startsWith("sense-voice")
-        ? "sensevoice"
-        : "whisper";
+      const engineType = getEngineTypeForModelName(selectedModel);
       await updateSetting("model", selectedModel);
       await updateSetting("stt_engine", engineType);
     }

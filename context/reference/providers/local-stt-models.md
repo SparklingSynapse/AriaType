@@ -3,7 +3,7 @@
 Evaluation of local STT models available via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for AriaType's desktop voice typing use case. Focus: Chinese-English bilingual accuracy, inference speed on consumer hardware, and model size constraints.
 
 **Date**: 2026-04-08
-**Status**: Active research — not yet integrated
+**Status**: Active research — Qwen3-ASR 0.6B INT8 integrated as a manual local STT option
 
 ---
 
@@ -542,7 +542,7 @@ The **best accuracy-efficiency trade-off** in the sub-1B class:
 
 ### 1.7B Variant
 
-Matches or exceeds commercial APIs. Not yet in sherpa-onnx but available via the official Qwen3-ASR repo. Best for server-side deployment where accuracy trumps speed.
+Matches or exceeds commercial APIs. The 1.7B variant is not yet in sherpa-onnx but is available via the official Qwen3-ASR repo. Best for server-side deployment where accuracy trumps speed.
 
 ### Speed (0.6B Variant)
 
@@ -952,7 +952,7 @@ Replace the current SenseVoice CLI sidecar with sherpa-onnx's SenseVoice integra
 
 ### Phase 2: Add Qwen3-ASR 0.6B as alternative
 
-Offer users a choice between speed (SenseVoice) and accuracy/coverage (Qwen3-ASR). Qwen3-ASR covers 30 languages + 22 dialects in a single model.
+Offer users a choice between speed (SenseVoice) and accuracy/coverage (Qwen3-ASR). Qwen3-ASR covers 30 languages + 22 dialects in a single model. This is now available as a manual local model selection; it remains excluded from default onboarding downloads because the archive is large and Windows CPU latency can be slower than real time.
 
 ### Phase 3: Evaluate Paraformer streaming
 

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tracing::{error, info, instrument};
@@ -80,6 +81,14 @@ pub struct RecommendedModel {
 const SENSEVOICE_REPO: &str = "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17";
 const WHISPER_BASE_REPO: &str = "csukuangfj/sherpa-onnx-whisper-base";
 const WHISPER_SMALL_REPO: &str = "csukuangfj/sherpa-onnx-whisper-small";
+const QWEN3_ASR_MODEL_NAME: &str = "qwen3-asr-0.6b-int8";
+const QWEN3_ASR_ARCHIVE_TOP_DIR: &str = "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25";
+const QWEN3_ASR_ARCHIVE_FILE: &str = "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2";
+const QWEN3_ASR_RELEASE_URL: &str = concat!(
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/",
+    "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2"
+);
+const QWEN3_ASR_ARCHIVE_SIZE_BYTES: u64 = 878_702_423;
 const SILERO_VAD_REPO: &str = "onnx-community/silero-vad";
 const SILERO_VAD_REMOTE_FILE: &str = "onnx/model.onnx";
 const SILERO_VAD_LOCAL_FILE: &str = "silero_vad.onnx";
@@ -120,7 +129,7 @@ impl UnifiedEngineManager {
         language: Option<&str>,
     ) -> Result<EngineInstance, String> {
         match engine_type {
-            EngineType::Whisper | EngineType::SenseVoice => {
+            EngineType::Whisper | EngineType::SenseVoice | EngineType::Qwen3Asr => {
                 let model_def = models::find_by_name(version)
                     .ok_or_else(|| format!("Unknown model: {}", version))?;
                 if model_def.engine_type != engine_type {
@@ -366,6 +375,12 @@ impl UnifiedEngineManager {
             ));
         }
 
+        if engine_type == EngineType::Qwen3Asr {
+            return self
+                .download_qwen3_asr_model(model_name, cancel_flag, progress_callback)
+                .await;
+        }
+
         let repo = match engine_type {
             EngineType::SenseVoice => SENSEVOICE_REPO,
             EngineType::Whisper => {
@@ -375,6 +390,7 @@ impl UnifiedEngineManager {
                     WHISPER_BASE_REPO
                 }
             }
+            EngineType::Qwen3Asr => unreachable!("Qwen3-ASR archive download handled above"),
             EngineType::Cloud => {
                 return Err("Cloud models do not need to be downloaded".to_string());
             }
@@ -451,6 +467,113 @@ impl UnifiedEngineManager {
         info!(engine = ?engine_type, model = %model_name, path = ?output_path, "model_download_completed");
 
         Ok(output_path)
+    }
+
+    async fn download_qwen3_asr_model<F>(
+        &self,
+        model_name: &str,
+        cancel_flag: Arc<AtomicBool>,
+        progress_callback: F,
+    ) -> Result<PathBuf, String>
+    where
+        F: Fn(u64, u64) + Send + Sync + 'static,
+    {
+        if model_name != QWEN3_ASR_MODEL_NAME {
+            return Err(format!("Unknown Qwen3-ASR model: {}", model_name));
+        }
+
+        let model_subdir = self.models_dir.join(model_name);
+        let total_size_bytes = QWEN3_ASR_ARCHIVE_SIZE_BYTES;
+        let progress_cb = Arc::new(progress_callback) as Arc<dyn Fn(u64, u64) + Send + Sync>;
+
+        if self.is_model_downloaded(EngineType::Qwen3Asr, model_name) {
+            progress_cb(total_size_bytes, total_size_bytes);
+            info!(model = %model_name, "qwen3_asr_model_already_downloaded");
+            return Ok(model_subdir);
+        }
+
+        std::fs::create_dir_all(&self.models_dir)
+            .map_err(|e| format!("Failed to create models directory: {}", e))?;
+
+        let archive_path = self.models_dir.join(QWEN3_ASR_ARCHIVE_FILE);
+        let staging_dir = self.models_dir.join(format!("{}.extracting", model_name));
+
+        if model_subdir.exists() {
+            info!(model = %model_name, path = ?model_subdir, "incomplete_qwen3_asr_model_redownloading");
+            std::fs::remove_dir_all(&model_subdir)
+                .map_err(|e| format!("Failed to remove incomplete Qwen3-ASR model: {}", e))?;
+        }
+        if staging_dir.exists() {
+            std::fs::remove_dir_all(&staging_dir)
+                .map_err(|e| format!("Failed to remove stale Qwen3-ASR staging dir: {}", e))?;
+        }
+        std::fs::create_dir_all(&staging_dir)
+            .map_err(|e| format!("Failed to create Qwen3-ASR staging dir: {}", e))?;
+
+        let cb = progress_cb.clone();
+        let options = DownloadOptions::new(QWEN3_ASR_RELEASE_URL, &archive_path)
+            .with_cancel_flag(cancel_flag.clone())
+            .with_progress_callback(Arc::new(move |downloaded, total| {
+                cb(downloaded, if total > 0 { total } else { total_size_bytes });
+            }))
+            .with_minimum_bytes(QWEN3_ASR_ARCHIVE_SIZE_BYTES)
+            .with_model_name(model_name);
+
+        let result = download(options).await?;
+        info!(
+            model = %model_name,
+            archive = ?result.path,
+            bytes = result.bytes,
+            "qwen3_asr_archive_downloaded"
+        );
+
+        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            remove_download_artifacts(&archive_path);
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            return Err("cancelled".to_string());
+        }
+
+        let archive_for_extract = archive_path.clone();
+        let staging_for_extract = staging_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            extract_tar_bz2_archive(&archive_for_extract, &staging_for_extract)
+        })
+        .await
+        .map_err(|e| format!("Qwen3-ASR extraction task failed: {}", e))??;
+
+        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            remove_download_artifacts(&archive_path);
+            return Err("cancelled".to_string());
+        }
+
+        let extracted_root = staging_dir.join(QWEN3_ASR_ARCHIVE_TOP_DIR);
+        if !extracted_root.exists() {
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            return Err(format!(
+                "Qwen3-ASR archive did not contain expected directory: {}",
+                QWEN3_ASR_ARCHIVE_TOP_DIR
+            ));
+        }
+
+        std::fs::rename(&extracted_root, &model_subdir).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            format!("Failed to install Qwen3-ASR model: {}", e)
+        })?;
+        let _ = std::fs::remove_dir_all(model_subdir.join("test_wavs"));
+        let _ = std::fs::remove_dir_all(&staging_dir);
+
+        remove_download_artifacts(&archive_path);
+
+        if !self.is_model_downloaded(EngineType::Qwen3Asr, model_name) {
+            return Err(
+                "Qwen3-ASR archive extracted but required files are incomplete".to_string(),
+            );
+        }
+
+        progress_cb(total_size_bytes, total_size_bytes);
+        info!(model = %model_name, path = ?model_subdir, "qwen3_asr_model_installed");
+        Ok(model_subdir)
     }
 
     #[instrument(skip(self), fields(engine = ?engine_type, model = %model_name), ret, err)]
@@ -612,6 +735,35 @@ impl UnifiedEngineManager {
     }
 }
 
+fn extract_tar_bz2_archive(archive_path: &Path, output_dir: &Path) -> Result<(), String> {
+    let output = Command::new("tar")
+        .arg("-xjf")
+        .arg(archive_path)
+        .arg("-C")
+        .arg(output_dir)
+        .output()
+        .map_err(|e| {
+            format!(
+                "Failed to run tar for Qwen3-ASR archive extraction: {}. \
+                 Install a system tar/bsdtar command and retry.",
+                e
+            )
+        })?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Err(format!(
+        "Qwen3-ASR archive extraction failed with status {}. stdout: {} stderr: {}",
+        output.status,
+        stdout.trim(),
+        stderr.trim()
+    ))
+}
+
 #[derive(Clone)]
 pub(crate) enum EngineInstance {
     Local(SherpaOnnxEngine),
@@ -646,24 +798,30 @@ mod tests {
             "WHISPER".parse::<EngineType>().unwrap(),
             EngineType::Whisper
         );
+        assert_eq!(
+            "qwen3-asr".parse::<EngineType>().unwrap(),
+            EngineType::Qwen3Asr
+        );
         assert!("unknown".parse::<EngineType>().is_err());
     }
 
     #[test]
     fn test_available_engines() {
         let engines = UnifiedEngineManager::available_engines();
-        assert_eq!(engines.len(), 3);
+        assert_eq!(engines.len(), 4);
         assert!(engines.contains(&EngineType::Whisper));
         assert!(engines.contains(&EngineType::SenseVoice));
+        assert!(engines.contains(&EngineType::Qwen3Asr));
         assert!(engines.contains(&EngineType::Cloud));
     }
 
     #[test]
     fn test_model_definitions() {
-        assert_eq!(models::ALL.len(), 3);
+        assert_eq!(models::ALL.len(), 4);
         assert_eq!(models::SENSE_VOICE_SMALL.name, "sense-voice-small");
         assert_eq!(models::WHISPER_BASE.name, "whisper-base");
         assert_eq!(models::WHISPER_SMALL.name, "whisper-small");
+        assert_eq!(models::QWEN3_ASR_0_6B_INT8.name, "qwen3-asr-0.6b-int8");
     }
 
     #[test]
@@ -679,6 +837,10 @@ mod tests {
         assert_eq!(
             UnifiedEngineManager::get_engine_by_model_name("whisper-small"),
             Some(EngineType::Whisper)
+        );
+        assert_eq!(
+            UnifiedEngineManager::get_engine_by_model_name("qwen3-asr-0.6b-int8"),
+            Some(EngineType::Qwen3Asr)
         );
         assert_eq!(
             UnifiedEngineManager::get_engine_by_model_name("cloud"),
@@ -779,10 +941,7 @@ mod tests {
         let temp_dir = std::env::temp_dir().join("test_resolve_model_fallback");
         let _ = std::fs::create_dir_all(&temp_dir);
 
-        let sensevoice_dir = temp_dir.join("sense-voice-small");
-        let _ = std::fs::create_dir_all(&sensevoice_dir);
-        std::fs::File::create(sensevoice_dir.join("model.int8.onnx")).unwrap();
-        std::fs::File::create(sensevoice_dir.join("tokens.txt")).unwrap();
+        write_sparse_model_files(&temp_dir, &models::SENSE_VOICE_SMALL);
 
         let manager = UnifiedEngineManager::new(temp_dir.clone());
 
@@ -804,6 +963,24 @@ mod tests {
     }
 
     #[test]
+    fn test_qwen3_asr_model_download_detection() {
+        let temp_dir = std::env::temp_dir().join("test_qwen3_asr_model_downloaded");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let manager = UnifiedEngineManager::new(temp_dir.clone());
+
+        assert!(
+            !manager.is_model_downloaded(EngineType::Qwen3Asr, models::QWEN3_ASR_0_6B_INT8.name)
+        );
+
+        write_sparse_model_files(&temp_dir, &models::QWEN3_ASR_0_6B_INT8);
+
+        assert!(manager.is_model_downloaded(EngineType::Qwen3Asr, models::QWEN3_ASR_0_6B_INT8.name));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn test_resolve_available_model_nothing_downloaded() {
         let temp_dir = std::env::temp_dir().join("test_resolve_model_nothing");
         let _ = std::fs::create_dir_all(&temp_dir);
@@ -813,5 +990,19 @@ mod tests {
         assert_eq!(model_name, models::DEFAULT.name);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    fn write_sparse_model_files(base_dir: &std::path::Path, model: &models::ModelDefinition) {
+        let model_dir = base_dir.join(model.name);
+        std::fs::create_dir_all(&model_dir).unwrap();
+
+        for file in model.files {
+            let path = model_dir.join(file.filename);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            let handle = std::fs::File::create(&path).unwrap();
+            handle.set_len(file.minimum_complete_bytes()).unwrap();
+        }
     }
 }

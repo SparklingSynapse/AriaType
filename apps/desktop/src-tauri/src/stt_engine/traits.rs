@@ -23,6 +23,8 @@ pub struct SttContext {
 pub enum EngineType {
     Whisper,
     SenseVoice,
+    #[serde(rename = "qwen3-asr")]
+    Qwen3Asr,
     Cloud,
 }
 
@@ -31,6 +33,7 @@ impl EngineType {
         match self {
             EngineType::Whisper => "whisper",
             EngineType::SenseVoice => "sensevoice",
+            EngineType::Qwen3Asr => "qwen3-asr",
             EngineType::Cloud => "cloud",
         }
     }
@@ -39,6 +42,7 @@ impl EngineType {
         vec![
             EngineType::Whisper,
             EngineType::SenseVoice,
+            EngineType::Qwen3Asr,
             EngineType::Cloud,
         ]
     }
@@ -51,6 +55,7 @@ impl std::str::FromStr for EngineType {
         match s.to_lowercase().as_str() {
             "whisper" => Ok(EngineType::Whisper),
             "sensevoice" => Ok(EngineType::SenseVoice),
+            "qwen3-asr" | "qwen3_asr" | "qwen3asr" => Ok(EngineType::Qwen3Asr),
             "cloud" => Ok(EngineType::Cloud),
             _ => Err(format!("Unknown engine type: {}", s)),
         }
@@ -259,12 +264,14 @@ mod tests {
     fn test_engine_type_values() {
         assert_eq!(EngineType::Whisper.as_str(), "whisper");
         assert_eq!(EngineType::SenseVoice.as_str(), "sensevoice");
+        assert_eq!(EngineType::Qwen3Asr.as_str(), "qwen3-asr");
         assert_eq!(EngineType::Cloud.as_str(), "cloud");
 
         let all = EngineType::all();
-        assert_eq!(all.len(), 3);
+        assert_eq!(all.len(), 4);
         assert!(all.contains(&EngineType::Whisper));
         assert!(all.contains(&EngineType::SenseVoice));
+        assert!(all.contains(&EngineType::Qwen3Asr));
         assert!(all.contains(&EngineType::Cloud));
 
         // Test FromStr
@@ -275,6 +282,10 @@ mod tests {
         assert_eq!(
             "SENSEVOICE".parse::<EngineType>().unwrap(),
             EngineType::SenseVoice
+        );
+        assert_eq!(
+            "qwen3-asr".parse::<EngineType>().unwrap(),
+            EngineType::Qwen3Asr
         );
         assert!("unknown".parse::<EngineType>().is_err());
     }

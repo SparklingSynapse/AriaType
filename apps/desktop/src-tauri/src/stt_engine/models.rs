@@ -117,11 +117,54 @@ pub const WHISPER_SMALL: ModelDefinition = ModelDefinition {
     description: "Whisper Small for all languages, better accuracy than Base",
 };
 
+/// Qwen3-ASR 0.6B INT8 - high accuracy multilingual ASR via sherpa-onnx
+pub const QWEN3_ASR_0_6B_INT8: ModelDefinition = ModelDefinition {
+    name: "qwen3-asr-0.6b-int8",
+    display_name: "Qwen3-ASR 0.6B INT8 (838M)",
+    size_mb: 838,
+    speed_score: 6,
+    accuracy_score: 9,
+    engine_type: EngineType::Qwen3Asr,
+    files: &[
+        &ModelFile {
+            filename: "conv_frontend.onnx",
+            size_mb: 43,
+        },
+        &ModelFile {
+            filename: "encoder.int8.onnx",
+            size_mb: 174,
+        },
+        &ModelFile {
+            filename: "decoder.int8.onnx",
+            size_mb: 520,
+        },
+        &ModelFile {
+            filename: "tokenizer/vocab.json",
+            size_mb: 3,
+        },
+        &ModelFile {
+            filename: "tokenizer/tokenizer_config.json",
+            size_mb: 1,
+        },
+        &ModelFile {
+            filename: "tokenizer/merges.txt",
+            size_mb: 2,
+        },
+    ],
+    prefer_lang: &[],
+    description: "Qwen3-ASR 0.6B INT8 for high-accuracy multilingual transcription",
+};
+
 /// Default model for general use
 pub const DEFAULT: &ModelDefinition = &SENSE_VOICE_SMALL;
 
 /// All available local models
-pub const ALL: &[&ModelDefinition] = &[&SENSE_VOICE_SMALL, &WHISPER_BASE, &WHISPER_SMALL];
+pub const ALL: &[&ModelDefinition] = &[
+    &SENSE_VOICE_SMALL,
+    &WHISPER_BASE,
+    &WHISPER_SMALL,
+    &QWEN3_ASR_0_6B_INT8,
+];
 
 // ============================================================================
 // Helper Functions
@@ -204,7 +247,11 @@ mod tests {
         assert_eq!(WHISPER_SMALL.engine_type, EngineType::Whisper);
         assert_eq!(WHISPER_SMALL.files.len(), 3);
 
-        assert_eq!(ALL.len(), 3);
+        assert_eq!(QWEN3_ASR_0_6B_INT8.name, "qwen3-asr-0.6b-int8");
+        assert_eq!(QWEN3_ASR_0_6B_INT8.engine_type, EngineType::Qwen3Asr);
+        assert_eq!(QWEN3_ASR_0_6B_INT8.files.len(), 6);
+
+        assert_eq!(ALL.len(), 4);
     }
 
     #[test]
@@ -212,6 +259,7 @@ mod tests {
         assert!(find_by_name("sense-voice-small").is_some());
         assert!(find_by_name("whisper-base").is_some());
         assert!(find_by_name("whisper-small").is_some());
+        assert!(find_by_name("qwen3-asr-0.6b-int8").is_some());
         assert!(find_by_name("unknown").is_none());
 
         let model = find_by_name("sense-voice-small").unwrap();
@@ -288,10 +336,11 @@ mod tests {
     #[test]
     fn test_recommend_by_language_auto() {
         let auto_models = recommend_by_language("auto");
-        assert_eq!(auto_models.len(), 3);
+        assert_eq!(auto_models.len(), 4);
         // Should be sorted by accuracy descending
         assert!(auto_models[0].accuracy_score >= auto_models[1].accuracy_score);
         assert!(auto_models[1].accuracy_score >= auto_models[2].accuracy_score);
+        assert!(auto_models[2].accuracy_score >= auto_models[3].accuracy_score);
     }
 
     #[test]
