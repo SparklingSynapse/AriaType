@@ -15,4 +15,8 @@ export type PresetPosition =
   | "bottom-center"
   | "bottom-right";
 
-export type LocalSttModel = "sense-voice-small" | "whisper-base" | "whisper-small";
+export type LocalSttModel =
+  | "sense-voice-small"
+  | "whisper-base"
+  | "whisper-small"
+  | "qwen3-asr-0.6b-int8";

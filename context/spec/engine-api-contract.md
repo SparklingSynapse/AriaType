@@ -39,6 +39,7 @@ For drag-drop and file import, `UnifiedEngineManager::transcribe()` provides a b
 |------------|---------------|-------------|----------|
 | `SenseVoice` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → sherpa-onnx transcribe |
 | `Whisper` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → sherpa-onnx transcribe |
+| `Qwen3Asr` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → sherpa-onnx transcribe |
 | `Cloud` | `StreamingSttClient` | Forward to WebSocket | Await WebSocket final result |
 
 ## Audio Source (for file-based transcription)
@@ -61,8 +62,9 @@ All local STT models are defined in `stt_engine/models.rs`:
 | SenseVoice Small | `sense-voice-small` | SenseVoice | 234M | zh, yue, ja, ko, en |
 | Whisper Base | `whisper-base` | Whisper | 74M | All languages |
 | Whisper Small | `whisper-small` | Whisper | 244M | All languages |
+| Qwen3-ASR 0.6B INT8 | `qwen3-asr-0.6b-int8` | Qwen3Asr | 838M | Manual selection |
 
-Model recommendation: `is_sensevoice_preferred(lang)` returns true for zh/yue/ja/ko/en — these languages get SenseVoice Small. All others get Whisper Base.
+Model recommendation: `is_sensevoice_preferred(lang)` returns true for zh/yue/ja/ko/en — these languages get SenseVoice Small. All others get Whisper Base. Qwen3-ASR is available as a higher-accuracy, larger manual choice and is not auto-downloaded during onboarding.
 
 ## Auth Error Verification Pattern
 
