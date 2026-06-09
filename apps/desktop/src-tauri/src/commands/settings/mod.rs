@@ -45,6 +45,17 @@ pub struct CloudConnectionCheckResult {
     pub duration_ms: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct LocalPolishRuntimeSettings {
+    pub provider_type: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub server_command: String,
+    pub server_args_json: String,
+    pub ready_timeout_secs: u64,
+}
+
 /// User-defined custom polish template
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CustomPolishTemplate {
@@ -111,6 +122,8 @@ pub struct AppSettings {
     pub cloud_polish_enabled: bool,
     pub active_cloud_polish_provider: String,
     pub cloud_polish_configs: HashMap<String, CloudProviderConfig>,
+    pub local_polish_runtime: LocalPolishRuntimeSettings,
+    pub polish_stream_direct_typing_enabled: bool,
     pub vad_enabled: bool,
     #[serde(default = "default_stay_in_tray")]
     pub stay_in_tray: bool,
@@ -153,12 +166,35 @@ fn default_stay_in_tray() -> bool {
     true
 }
 
+impl Default for LocalPolishRuntimeSettings {
+    fn default() -> Self {
+        Self {
+            provider_type: "llama-server".to_string(),
+            base_url: "http://127.0.0.1:8000/v1".to_string(),
+            api_key: String::new(),
+            server_command: String::new(),
+            server_args_json: String::new(),
+            ready_timeout_secs: 20,
+        }
+    }
+}
+
 const CLOUD_CONFIG_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
+const LOCAL_POLISH_RUNTIME_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug)]
 struct CloudConfigValidationError {
     kind: &'static str,
     message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LocalRuntimeCheckMode {
+    HealthOnly,
+    SelectedModelReady {
+        engine_type: crate::polish_engine::PolishEngineType,
+        model_id: String,
+    },
 }
 
 impl CloudConnectionCheckResult {
@@ -187,6 +223,10 @@ fn elapsed_ms(started_at: Instant) -> u64 {
 
 fn validate_cloud_url(url: &str) -> bool {
     url.trim().is_empty() || reqwest::Url::parse(url.trim()).is_ok()
+}
+
+fn validate_required_url(url: &str) -> bool {
+    !url.trim().is_empty() && reqwest::Url::parse(url.trim()).is_ok()
 }
 
 fn stt_config_field_value<'a>(config: &'a CloudSttConfig, key: &str) -> Option<&'a str> {
@@ -392,6 +432,8 @@ impl Default for AppSettings {
             cloud_polish_enabled: false,
             active_cloud_polish_provider: "anthropic".to_string(),
             cloud_polish_configs: HashMap::new(),
+            local_polish_runtime: LocalPolishRuntimeSettings::default(),
+            polish_stream_direct_typing_enabled: false,
             vad_enabled: false,
             stay_in_tray: default_stay_in_tray(),
             polish_custom_templates: Vec::new(),
@@ -960,6 +1002,7 @@ pub fn update_settings(
     let mut model_to_preload: Option<String> = None;
     let mut hotkey_to_register: Option<String> = None;
     let mut stay_in_tray_to_apply: Option<bool> = None;
+    let mut local_polish_runtime_to_apply: Option<LocalPolishRuntimeSettings> = None;
     let preset_to_apply: Option<String>;
     let indicator_mode_to_apply: Option<String>;
 
@@ -1174,6 +1217,22 @@ pub fn update_settings(
                     }
                 }
             }
+            "local_polish_runtime" => {
+                match serde_json::from_value::<LocalPolishRuntimeSettings>(value.clone()) {
+                    Ok(v) => {
+                        settings.local_polish_runtime = v.clone();
+                        local_polish_runtime_to_apply = Some(v);
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, value = ?value, "local_polish_runtime_parse_failed");
+                    }
+                }
+            }
+            "polish_stream_direct_typing_enabled" => {
+                if let Some(v) = value.as_bool() {
+                    settings.polish_stream_direct_typing_enabled = v;
+                }
+            }
             "window_context_enabled" => {
                 if let Some(v) = value.as_bool() {
                     settings.window_context_enabled = v;
@@ -1232,6 +1291,15 @@ pub fn update_settings(
         info!(key = %key, "settings_updated");
         let _ = app.emit(EventName::SETTINGS_CHANGED, settings.clone());
     } // lock released here
+
+    if let Some(runtime_settings) = local_polish_runtime_to_apply {
+        if let Err(e) = state
+            .polish_manager
+            .configure_local_runtime(&runtime_settings)
+        {
+            tracing::warn!(error = %e, "local_polish_runtime_configure_failed-settings_update");
+        }
+    }
 
     if let Some(preset) = preset_to_apply {
         position_pill_window(&app, &preset);
@@ -1523,6 +1591,118 @@ pub async fn check_active_cloud_polish_config(
                 elapsed_ms(started_at),
             ))
         }
+    }
+}
+
+#[tauri::command]
+pub async fn check_local_polish_runtime_config(
+    state: State<'_, AppState>,
+) -> Result<CloudConnectionCheckResult, String> {
+    let started_at = Instant::now();
+    let (runtime_settings, polish_model_id) = {
+        let settings = state.settings.lock();
+        (
+            settings.local_polish_runtime.clone(),
+            settings.polish_model.clone(),
+        )
+    };
+
+    if !validate_required_url(&runtime_settings.base_url) {
+        return Ok(CloudConnectionCheckResult::failure(
+            "invalid_url",
+            "Invalid local polish runtime URL.",
+            elapsed_ms(started_at),
+        ));
+    }
+
+    let check_mode = local_runtime_check_mode(&state.polish_manager, &polish_model_id);
+    let polish_manager = state.polish_manager.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || match check_mode {
+        LocalRuntimeCheckMode::HealthOnly => polish_manager
+            .check_local_runtime_config(&runtime_settings, LOCAL_POLISH_RUNTIME_CHECK_TIMEOUT)
+            .map(|_| LocalRuntimeCheckMode::HealthOnly),
+        LocalRuntimeCheckMode::SelectedModelReady {
+            engine_type,
+            model_id,
+        } => {
+            polish_manager.configure_local_runtime(&runtime_settings)?;
+            polish_manager.load_model(engine_type, &model_id).map(|_| {
+                LocalRuntimeCheckMode::SelectedModelReady {
+                    engine_type,
+                    model_id,
+                }
+            })
+        }
+    })
+    .await
+    .map_err(|e| format!("Local polish runtime check task failed: {e}"))?;
+
+    match result {
+        Ok(mode) => {
+            let message = match mode {
+                LocalRuntimeCheckMode::HealthOnly => "Local polish runtime is reachable.",
+                LocalRuntimeCheckMode::SelectedModelReady { .. } => {
+                    "Local polish runtime is ready for the selected model."
+                }
+            };
+            info!(
+                mode = ?mode,
+                duration_ms = elapsed_ms(started_at),
+                "local_polish_runtime_config_check_ok"
+            );
+            Ok(CloudConnectionCheckResult::success(
+                message,
+                elapsed_ms(started_at),
+            ))
+        }
+        Err(error) => {
+            let kind = classify_cloud_check_error(&error);
+            warn!(
+                kind,
+                error = %error,
+                "local_polish_runtime_config_check_failed"
+            );
+            Ok(CloudConnectionCheckResult::failure(
+                kind,
+                cloud_check_user_message(kind),
+                elapsed_ms(started_at),
+            ))
+        }
+    }
+}
+
+fn local_runtime_check_mode(
+    polish_manager: &crate::polish_engine::UnifiedPolishManager,
+    polish_model_id: &str,
+) -> LocalRuntimeCheckMode {
+    selected_local_runtime_check_mode(
+        polish_model_id,
+        crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(polish_model_id),
+        |engine_type, model_id| polish_manager.is_model_downloaded(engine_type, model_id),
+    )
+}
+
+fn selected_local_runtime_check_mode(
+    polish_model_id: &str,
+    engine_type: Option<crate::polish_engine::PolishEngineType>,
+    is_model_downloaded: impl FnOnce(crate::polish_engine::PolishEngineType, &str) -> bool,
+) -> LocalRuntimeCheckMode {
+    let model_id = polish_model_id.trim();
+    if model_id.is_empty() {
+        return LocalRuntimeCheckMode::HealthOnly;
+    }
+
+    let Some(engine_type) = engine_type else {
+        return LocalRuntimeCheckMode::HealthOnly;
+    };
+
+    if !is_model_downloaded(engine_type, model_id) {
+        return LocalRuntimeCheckMode::HealthOnly;
+    }
+
+    LocalRuntimeCheckMode::SelectedModelReady {
+        engine_type,
+        model_id: model_id.to_string(),
     }
 }
 

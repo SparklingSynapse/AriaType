@@ -33,6 +33,76 @@ async fn waiting_for_streaming_task_does_not_block_the_active_runtime() {
 }
 
 #[tokio::test]
+async fn no_template_polish_path_does_not_call_provider() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "choices": [{"message": {"content": "Unexpected polish"}}]
+            })),
+        )
+        .expect(0)
+        .mount(&mock_server)
+        .await;
+
+    let state = AppState::new();
+    state.start_session(11, None);
+    {
+        let mut settings = state.settings.lock();
+        settings.cloud_polish_enabled = true;
+        settings.active_cloud_polish_provider = "openai".to_string();
+        settings.cloud_polish_configs.insert(
+            "openai".to_string(),
+            CloudProviderConfig {
+                enabled: true,
+                provider_type: "openai".to_string(),
+                api_key: "test_openai_api_key".to_string(),
+                base_url: mock_server.uri(),
+                model: "gpt-4o-mini".to_string(),
+                enable_thinking: false,
+            },
+        );
+    }
+
+    let result = maybe_polish_transcription_text(
+        &ProcessingEventTarget::None,
+        &state,
+        11,
+        "Fast path text".to_string(),
+        None,
+    )
+    .await;
+
+    assert_eq!(result.text, "Fast path text");
+    assert_eq!(result.fallback_reason, Some("no polish template"));
+}
+
+#[tokio::test]
+async fn template_selection_without_model_does_not_pick_local_model_implicitly() {
+    let state = AppState::new();
+    state.start_session(12, None);
+    {
+        let mut settings = state.settings.lock();
+        settings.cloud_polish_enabled = false;
+        settings.polish_model.clear();
+    }
+
+    let result = maybe_polish_transcription_text(
+        &ProcessingEventTarget::None,
+        &state,
+        12,
+        "Text that asked for a template".to_string(),
+        Some("filler".to_string()),
+    )
+    .await;
+
+    assert_eq!(result.text, "Text that asked for a template");
+    assert_eq!(result.fallback_reason, Some("no polish model selected"));
+}
+
+#[tokio::test]
 async fn streaming_finalization_honors_cloud_polish_settings() {
     let mock_server = MockServer::start().await;
 
@@ -73,7 +143,7 @@ async fn streaming_finalization_honors_cloud_polish_settings() {
         );
     }
 
-    let (final_text, _polish_time_ms) = maybe_polish_transcription_text(
+    let result = maybe_polish_transcription_text(
         &ProcessingEventTarget::None,
         &state,
         1,
@@ -82,7 +152,8 @@ async fn streaming_finalization_honors_cloud_polish_settings() {
     )
     .await;
 
-    assert_eq!(final_text, "Polished streaming text");
+    assert_eq!(result.text, "Polished streaming text");
+    assert!(result.fallback_reason.is_none());
 }
 
 #[tokio::test]
@@ -133,7 +204,7 @@ async fn window_context_is_injected_into_polish_prompt() {
         );
     }
 
-    let (final_text, _) = maybe_polish_transcription_text(
+    let result = maybe_polish_transcription_text(
         &ProcessingEventTarget::None,
         &state,
         2,
@@ -142,7 +213,8 @@ async fn window_context_is_injected_into_polish_prompt() {
     )
     .await;
 
-    assert_eq!(final_text, "Polished");
+    assert_eq!(result.text, "Polished");
+    assert!(result.fallback_reason.is_none());
 }
 
 #[tokio::test]

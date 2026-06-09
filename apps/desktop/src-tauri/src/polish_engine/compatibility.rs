@@ -26,6 +26,23 @@ pub struct PolishModelCompatibility {
     pub logical_cpu_count: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PolishModelLatencyClass {
+    Fast,
+    Balanced,
+    Slow,
+    Heavy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PolishModelLatencyProfile {
+    pub class: PolishModelLatencyClass,
+    pub code: &'static str,
+    pub recommended_templates: Vec<&'static str>,
+    pub caution_templates: Vec<&'static str>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PolishModelRequirement {
     minimum_memory_mb: u64,
@@ -73,6 +90,41 @@ pub fn assess_polish_model_compatibility(
         recommended_memory_mb: requirement.recommended_memory_mb,
         device_memory_mb: device.total_memory_mb,
         logical_cpu_count: device.logical_cpu_count,
+    }
+}
+
+pub fn polish_model_latency_profile(model_id: &str) -> PolishModelLatencyProfile {
+    match model_id {
+        "qwen3.5-0.8b" | "lfm2.5-1.2b" => PolishModelLatencyProfile {
+            class: PolishModelLatencyClass::Fast,
+            code: "fast_transcript_preserving",
+            recommended_templates: vec!["filler", "chat"],
+            caution_templates: vec!["document", "agent"],
+        },
+        "qwen3.5-2b" | "gemma-2b-it" | "gemma-4-e2b" | "lfm2-2.6b" => PolishModelLatencyProfile {
+            class: PolishModelLatencyClass::Balanced,
+            code: "balanced_rewrite",
+            recommended_templates: vec!["filler", "chat", "formal", "concise"],
+            caution_templates: vec!["document", "agent"],
+        },
+        "qwen3-4b" => PolishModelLatencyProfile {
+            class: PolishModelLatencyClass::Slow,
+            code: "accurate_rewrite",
+            recommended_templates: vec!["formal", "document", "agent"],
+            caution_templates: vec!["filler", "chat"],
+        },
+        "glm-4.7-flash-reap-23b-a3b" => PolishModelLatencyProfile {
+            class: PolishModelLatencyClass::Heavy,
+            code: "heavy_long_context",
+            recommended_templates: vec!["document", "agent"],
+            caution_templates: vec!["filler", "chat", "concise", "formal"],
+        },
+        _ => PolishModelLatencyProfile {
+            class: PolishModelLatencyClass::Balanced,
+            code: "balanced_rewrite",
+            recommended_templates: vec!["filler", "chat", "formal"],
+            caution_templates: vec!["document", "agent"],
+        },
     }
 }
 
@@ -256,5 +308,26 @@ mod tests {
             PolishModelCompatibilityLevel::Unsupported
         );
         assert_eq!(compatibility.code, "memory_below_minimum");
+    }
+
+    #[test]
+    fn marks_small_models_as_fast_transcript_preserving() {
+        let profile = polish_model_latency_profile("qwen3.5-0.8b");
+
+        assert_eq!(profile.class, PolishModelLatencyClass::Fast);
+        assert_eq!(profile.code, "fast_transcript_preserving");
+        assert!(profile.recommended_templates.contains(&"filler"));
+        assert!(profile.recommended_templates.contains(&"chat"));
+        assert!(profile.caution_templates.contains(&"document"));
+    }
+
+    #[test]
+    fn marks_glm_as_heavy_long_context_model() {
+        let profile = polish_model_latency_profile("glm-4.7-flash-reap-23b-a3b");
+
+        assert_eq!(profile.class, PolishModelLatencyClass::Heavy);
+        assert_eq!(profile.code, "heavy_long_context");
+        assert!(profile.recommended_templates.contains(&"document"));
+        assert!(profile.caution_templates.contains(&"filler"));
     }
 }

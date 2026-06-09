@@ -1,9 +1,11 @@
 use super::{
     classify_cloud_check_error, migrate_platform_shortcut_defaults_for_test,
     migrate_to_profiles_map_for_test, normalize_pill_background_color,
-    normalize_pill_background_opacity, validate_cloud_polish_config_for_check,
-    validate_cloud_stt_config_for_check, AppSettings, CloudProviderConfig, CloudSttConfig,
+    normalize_pill_background_opacity, selected_local_runtime_check_mode,
+    validate_cloud_polish_config_for_check, validate_cloud_stt_config_for_check, AppSettings,
+    CloudProviderConfig, CloudSttConfig, LocalRuntimeCheckMode,
 };
+use crate::polish_engine::PolishEngineType;
 use serde_json::json;
 
 #[test]
@@ -217,6 +219,63 @@ fn stay_in_tray_defaults_enabled() {
     let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
 
     assert!(settings.stay_in_tray);
+}
+
+#[test]
+fn local_polish_runtime_uses_default_when_missing() {
+    let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
+
+    assert_eq!(settings.local_polish_runtime.provider_type, "llama-server");
+    assert_eq!(
+        settings.local_polish_runtime.base_url,
+        "http://127.0.0.1:8000/v1"
+    );
+    assert_eq!(settings.local_polish_runtime.ready_timeout_secs, 20);
+}
+
+#[test]
+fn local_runtime_check_uses_health_only_without_selected_model() {
+    let mode = selected_local_runtime_check_mode("", None, |_, _| true);
+
+    assert_eq!(mode, LocalRuntimeCheckMode::HealthOnly);
+}
+
+#[test]
+fn local_runtime_check_uses_health_only_when_selected_model_is_not_downloaded() {
+    let mode =
+        selected_local_runtime_check_mode("qwen3.5-0.8b", Some(PolishEngineType::Qwen), |_, _| {
+            false
+        });
+
+    assert_eq!(mode, LocalRuntimeCheckMode::HealthOnly);
+}
+
+#[test]
+fn local_runtime_check_prepares_selected_downloaded_model() {
+    let mode = selected_local_runtime_check_mode(
+        " qwen3.5-0.8b ",
+        Some(PolishEngineType::Qwen),
+        |engine_type, model_id| {
+            assert_eq!(engine_type, PolishEngineType::Qwen);
+            assert_eq!(model_id, "qwen3.5-0.8b");
+            true
+        },
+    );
+
+    assert_eq!(
+        mode,
+        LocalRuntimeCheckMode::SelectedModelReady {
+            engine_type: PolishEngineType::Qwen,
+            model_id: "qwen3.5-0.8b".to_string(),
+        }
+    );
+}
+
+#[test]
+fn direct_stream_typing_defaults_disabled() {
+    let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
+
+    assert!(!settings.polish_stream_direct_typing_enabled);
 }
 
 #[test]

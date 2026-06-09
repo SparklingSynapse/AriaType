@@ -24,6 +24,7 @@ const DEFAULT_PILL_BACKGROUND_COLOR = "#1d1d1d";
 const DEFAULT_PILL_BACKGROUND_OPACITY = 1;
 const DEFAULT_ERROR_TOOLTIP_MESSAGE = "Transcription failed. Please try again.";
 const DEFAULT_ERROR_TOOLTIP_DURATION_MS = 4000;
+const POLISH_PREVIEW_TOOLTIP_PREFIX = "Polishing preview:\n";
 
 function normalizePillBackgroundColor(color: string | undefined): string {
   if (!color || !/^#[0-9a-f]{6}$/i.test(color)) {
@@ -70,6 +71,30 @@ function fallbackErrorTooltip(taskId: number): PillTooltipEvent {
     duration_ms: DEFAULT_ERROR_TOOLTIP_DURATION_MS,
     task_id: taskId,
   };
+}
+
+function isPolishPreviewTooltip(tooltip: PillTooltipEvent | null): boolean {
+  return tooltip?.message.startsWith(POLISH_PREVIEW_TOOLTIP_PREFIX) ?? false;
+}
+
+function tooltipAnimationKey(tooltip: PillTooltipEvent): string {
+  if (isPolishPreviewTooltip(tooltip)) {
+    return `${tooltip.task_id ?? "global"}:polish-preview`;
+  }
+
+  return `${tooltip.task_id ?? "global"}:${tooltip.message}`;
+}
+
+function tooltipClassName(showPillBody: boolean, isPolishPreview: boolean): string {
+  const spacing = showPillBody ? "mt-2" : "mt-0";
+  const shared =
+    "pointer-events-none bg-black/60 text-[9.5px] font-medium text-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-white/10 backdrop-blur-md";
+
+  if (isPolishPreview) {
+    return `${spacing} ${shared} max-h-20 max-w-[min(calc(100vw-1rem),22rem)] overflow-hidden whitespace-pre-wrap break-words rounded-lg px-3 py-1.5 text-left leading-snug`;
+  }
+
+  return `${spacing} ${shared} max-w-[calc(100vw-1rem)] truncate rounded-full px-2.5 py-0.5 text-center`;
 }
 
 export function PillWindow() {
@@ -201,6 +226,7 @@ export function PillWindow() {
   const showPillBody = indicatorMode === "always" || isActive;
   const showTooltip = tooltip !== null && (indicatorMode !== "never" || status === "error");
   const showContent = showPillBody || showTooltip;
+  const tooltipIsPolishPreview = isPolishPreviewTooltip(tooltip);
 
   const handleDrag = useCallback(async () => {
     try {
@@ -273,14 +299,14 @@ export function PillWindow() {
               </BorderBeam>
             )}
             <AnimatePresence mode="wait">
-              {showTooltip && (
+              {showTooltip && tooltip && (
                 <motion.div
-                  key={`${tooltip.task_id ?? "global"}:${tooltip.message}`}
+                  key={tooltipAnimationKey(tooltip)}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.15, ease: "easeOut" }}
-                  className={`pointer-events-none ${showPillBody ? "mt-2" : "mt-0"} max-w-[calc(100vw-1rem)] truncate rounded-full bg-black/60 px-2.5 py-0.5 text-[9.5px] font-medium text-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-white/10 backdrop-blur-md`}
+                  className={tooltipClassName(showPillBody, tooltipIsPolishPreview)}
                 >
                   {tooltip.message}
                 </motion.div>

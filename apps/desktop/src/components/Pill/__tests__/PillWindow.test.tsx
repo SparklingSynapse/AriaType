@@ -158,6 +158,46 @@ describe("PillWindow backend tooltip", () => {
     expect(tooltip).toHaveClass("max-w-[calc(100vw-1rem)]");
   });
 
+  it("renders streaming polish preview tooltips as multiline in-place updates", async () => {
+    render(<PillWindow />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      mocks.emitRecordingState?.({
+        status: "polishing",
+        task_id: 4,
+      });
+    });
+
+    act(() => {
+      mocks.emitPillTooltip?.({
+        message: "Polishing preview:\nHello",
+        duration_ms: 1600,
+        task_id: 4,
+      });
+    });
+
+    const tooltip = document.querySelector(".whitespace-pre-wrap");
+    expect(tooltip).toBeInstanceOf(HTMLElement);
+    expect(tooltip?.textContent).toBe("Polishing preview:\nHello");
+    expect(tooltip).toHaveClass("whitespace-pre-wrap");
+    expect(tooltip).toHaveClass("break-words");
+    expect(tooltip).not.toHaveClass("truncate");
+
+    act(() => {
+      mocks.emitPillTooltip?.({
+        message: "Polishing preview:\nHello world",
+        duration_ms: 1600,
+        task_id: 4,
+      });
+    });
+
+    expect(tooltip?.textContent).toBe("Polishing preview:\nHello world");
+  });
+
   it("renders idle backend tooltip messages without rendering the pill body", async () => {
     render(<PillWindow />);
 

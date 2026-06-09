@@ -8,7 +8,8 @@ use crate::services::retry_transcription::{
 };
 use crate::state::app_state::AppState;
 
-use super::polish::maybe_polish_transcription_text;
+use super::polish::{maybe_polish_transcription_text, PolishProcessingResult};
+use super::postprocess::apply_post_stt_processing;
 use super::shared::{apply_retry_error, apply_retry_success, ProcessingEventTarget};
 
 pub async fn retry_transcription_internal(
@@ -47,19 +48,22 @@ pub async fn retry_transcription_internal(
     match text_result {
         Ok(output) => {
             let app_clone = app.clone();
-            let correction_memory_enabled = {
+            let (correction_memory_enabled, user_glossary) = {
                 let settings = state.settings.lock();
-                settings.correction_memory_enabled
-            };
-            let corrected_text = if correction_memory_enabled {
-                crate::correction_learning::storage::apply_shared_corrections_best_effort(
-                    &output.raw_text,
+                (
+                    settings.correction_memory_enabled,
+                    settings.stt_engine_user_glossary.clone(),
                 )
-            } else {
-                output.raw_text.clone()
             };
-            let (final_text, polish_time_ms) = if corrected_text.is_empty() {
-                (String::new(), 0)
+            let postprocess = apply_post_stt_processing(
+                &output.raw_text,
+                correction_memory_enabled,
+                &user_glossary,
+                retry_task_id,
+                "retry",
+            );
+            let polish_result = if postprocess.text.is_empty() {
+                PolishProcessingResult::skipped(String::new(), "empty postprocess text")
             } else {
                 maybe_polish_transcription_text(
                     &ProcessingEventTarget::Retry {
@@ -68,11 +72,13 @@ pub async fn retry_transcription_internal(
                     },
                     &state,
                     retry_task_id,
-                    corrected_text,
+                    postprocess.text,
                     None,
                 )
                 .await
             };
+            let polish_time_ms = polish_result.polish_ms;
+            let final_text = polish_result.text;
 
             if final_text.is_empty() {
                 mark_retry_entry_error(&state, &entry_id, "Retry produced empty transcription")?;
@@ -93,6 +99,20 @@ pub async fn retry_transcription_internal(
             info!(
                 entry_id = %entry_id,
                 text_len = final_text.len(),
+                postprocess_ms = postprocess.postprocess_ms,
+                normalization_applied = postprocess.normalization_applied,
+                corrections_applied = postprocess.corrections_applied,
+                glossary_applied = postprocess.glossary_applied,
+                polish_ms = polish_time_ms,
+                polish_wall_ms = polish_result.polish_wall_ms,
+                polish_queue_ms = polish_result.polish_queue_ms,
+                model_load_ms = polish_result.model_load_ms,
+                context_create_ms = polish_result.context_create_ms,
+                prefill_ms = polish_result.prefill_ms,
+                inference_ms = polish_result.inference_ms,
+                time_to_first_token_ms = polish_result.time_to_first_token_ms,
+                generation_ms = polish_result.generation_ms,
+                fallback_reason = polish_result.fallback_reason.unwrap_or(""),
                 "retry_transcription_completed"
             );
 

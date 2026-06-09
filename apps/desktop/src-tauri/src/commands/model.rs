@@ -331,13 +331,15 @@ pub fn get_polish_models(_state: State<'_, AppState>) -> Vec<serde_json::Value> 
                 .map(polish::is_polish_model_downloaded_for)
                 .unwrap_or(false);
             let compatibility = polish::assess_polish_model_compatibility(&id, &device);
+            let latency_profile = polish::polish_model_latency_profile(&id);
 
             serde_json::json!({
                 "id": id,
                 "name": name,
                 "size": size,
                 "downloaded": downloaded,
-                "compatibility": compatibility
+                "compatibility": compatibility,
+                "latency_profile": latency_profile
             })
         })
         .collect()

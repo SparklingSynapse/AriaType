@@ -5,6 +5,9 @@ import { readFileSync } from 'node:fs';
 const {
   WINDOWS_CROSS_BUILD_COMMAND,
   checkRequiredBuildTools,
+  detachRepoDmgMounts,
+  findRepoDmgMounts,
+  parseHdiutilMountedImages,
   runCommand,
   windowsCrossBuildEnv,
 } = await import('./build-all-platforms-lib.mjs');
@@ -178,15 +181,27 @@ test('preflight passes when all required build tools exist', () => {
 test('windows cross-build preflight documents ninja as a required tool', () => {
   const script = readFileSync(new URL('./build-all-platforms.mjs', import.meta.url), 'utf8');
 
-  assert.match(script, /brew install cmake ninja llvm nsis/);
-  assert.match(script, /Ninja \(required by Windows cargo-xwin CMake builds\)/);
+  assert.match(script, /brew install ninja llvm nsis/);
+  assert.match(script, /Ninja \(required by Windows cargo-xwin builds\)/);
+  assert.doesNotMatch(script, /llama-cpp-sys-2/);
 });
 
 test('windows cross-build command uses the dedicated Windows Tauri config', () => {
   assert.equal(
     WINDOWS_CROSS_BUILD_COMMAND,
-    'cargo tauri build --config src-tauri/tauri.windows.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc',
+    'node ../../scripts/prepare-tauri-runtime-resources.mjs --platform windows --require-runtime && cargo tauri build --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc',
   );
+});
+
+test('platform build commands merge generated runtime resources config', () => {
+  const script = readFileSync(new URL('./build-all-platforms.mjs', import.meta.url), 'utf8');
+
+  assert.match(script, /prepare-tauri-runtime-resources\.mjs --platform macos --require-runtime/);
+  assert.match(script, /prepare-tauri-runtime-resources\.mjs --platform windows --require-runtime/);
+  assert.match(script, /detachRepoDmgMounts\(\{ repoRoot: root \}\);/);
+  assert.match(script, /--config \$\{runtimeConfig\} --target aarch64-apple-darwin/);
+  assert.match(script, /--config \$\{runtimeConfig\} --target x86_64-apple-darwin/);
+  assert.match(script, /tauri\.windows\.conf\.json --config \$\{runtimeConfig\}/);
 });
 
 test('windows cross-build env preserves existing env and enables static CRT flags', () => {
@@ -207,4 +222,85 @@ test('windows cross-build env does not duplicate crt-static rustflag', () => {
   });
 
   assert.equal(env.RUSTFLAGS, '-Ctarget-feature=+crt-static');
+});
+
+test('parses hdiutil mounted images with volume mount points', () => {
+  const parsed = parseHdiutilMountedImages(`
+================================================
+image-path      : /repo/packages/website/public/release/AriaType_0.6.4_aarch64.dmg
+/dev/disk8\tGUID_partition_scheme\t
+/dev/disk8s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType
+================================================
+image-path      : /Users/me/Downloads/Other.dmg
+/dev/disk9s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Other
+`);
+
+  assert.deepEqual(parsed, [
+    {
+      imagePath: '/repo/packages/website/public/release/AriaType_0.6.4_aarch64.dmg',
+      mountPoints: ['/Volumes/AriaType'],
+    },
+    {
+      imagePath: '/Users/me/Downloads/Other.dmg',
+      mountPoints: ['/Volumes/Other'],
+    },
+  ]);
+});
+
+test('finds only stale AriaType dmg mounts inside the repo', () => {
+  const info = `
+image-path      : /repo/packages/website/public/release/AriaType_0.6.4_aarch64.dmg
+/dev/disk8s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType
+================================================
+image-path      : /repo/packages/website/public/release/AriaType_0.6.4_aarch64.dmg
+/dev/disk9s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType 1
+================================================
+image-path      : /repo/packages/website/public/release/AriaType Inhouse_0.6.5_aarch64.dmg
+/dev/disk10s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType Inhouse
+================================================
+image-path      : /Users/me/Downloads/AriaType_0.6.5_aarch64.dmg
+/dev/disk11s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType 2
+================================================
+image-path      : /repo/packages/website/public/release/Polywise.dmg
+/dev/disk12s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Polywise
+`;
+
+  const mounts = findRepoDmgMounts(info, {
+    repoRoot: '/repo',
+    volumeNames: ['AriaType', 'AriaType Inhouse'],
+  });
+
+  assert.deepEqual(
+    mounts.map((mount) => mount.mountPoint),
+    ['/Volumes/AriaType', '/Volumes/AriaType 1', '/Volumes/AriaType Inhouse']
+  );
+});
+
+test('detaches stale repo dmg mounts before mac packaging', () => {
+  const commands = [];
+  const warnings = [];
+  const info = `
+image-path      : /repo/packages/website/public/release/AriaType_0.6.4_aarch64.dmg
+/dev/disk8s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType 1
+`;
+
+  const detached = detachRepoDmgMounts({
+    repoRoot: '/repo',
+    exec(command) {
+      commands.push(command);
+      if (command === 'hdiutil info') {
+        return info;
+      }
+      return '';
+    },
+    log: {
+      warn(message) {
+        warnings.push(message);
+      },
+    },
+  });
+
+  assert.deepEqual(commands, ['hdiutil info', "hdiutil detach '/Volumes/AriaType 1'"]);
+  assert.equal(detached.length, 1);
+  assert.ok(warnings[0].includes('Detaching stale AriaType DMG mount'));
 });

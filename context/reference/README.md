@@ -20,6 +20,7 @@ This directory contains stable API reference documentation for external provider
 | **STT (Speech-to-Text)** | [providers/stt.md](./providers/stt.md) | All STT providers: Volcengine, OpenAI, Deepgram, ElevenLabs, Qwen Omni, Custom Endpoint |
 | **Local STT Models** | [providers/local-stt-models.md](./providers/local-stt-models.md) | Local STT model research: SenseVoice, Whisper, Distil-Whisper, Parakeet TDT, Moonshine, Qwen3-ASR, Paraformer, FireRedAsr comparison |
 | **Polish (Text Enhancement)** | [providers/polish.md](./providers/polish.md) | All text polishing providers: Anthropic, OpenAI, Qwen, Custom Endpoint |
+| **Polish Latency Case Study** | [providers/capswriter-polish-latency.md](./providers/capswriter-polish-latency.md) | CapsWriter-Offline polish latency analysis and AriaType architecture recommendations |
 
 ## How These Docs Relate
 
@@ -30,6 +31,7 @@ This directory contains stable API reference documentation for external provider
 | Add a new Polish provider | [guides/adding-polish-provider.md](../guides/adding-polish-provider.md) |
 | Look up provider-specific API details | [providers/](./providers/) |
 | Compare local STT models for sherpa-onnx | [providers/local-stt-models.md](./providers/local-stt-models.md) |
+| Understand why CapsWriter-Offline polish feels fast | [providers/capswriter-polish-latency.md](./providers/capswriter-polish-latency.md) |
 | Understand provider selection logic | [architecture/data-flow.md](../architecture/data-flow.md) |
 
 ## Maintenance

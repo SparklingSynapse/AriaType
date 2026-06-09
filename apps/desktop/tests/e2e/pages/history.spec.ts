@@ -1,8 +1,8 @@
 import { test, expect } from '../fixtures';
-import { clearTranscriptionHistory, navigateViaSidebar, openRoute } from '../utils/helpers';
+import { clearTranscriptionHistory, navigateViaSidebar, openRouteWithOnboarding } from '../utils/helpers';
 
 test('History page renders with entries or empty state', async ({ tauriPage }) => {
-  await openRoute(tauriPage, '/');
+  await openRouteWithOnboarding(tauriPage, '/');
   await clearTranscriptionHistory(tauriPage);
   await navigateViaSidebar(tauriPage, 'History');
 

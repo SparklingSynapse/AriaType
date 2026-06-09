@@ -5,6 +5,7 @@ use crate::state::app_state::AppState;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FinalizeResult {
     DeliverText(String),
+    TextAlreadyInserted(String),
     TransitionToIdle,
     TransitionToErrorThenIdle,
 }
@@ -24,6 +25,24 @@ pub fn finalize_successful_transcription(
     polish_time_ms: u64,
     audio_path: Option<String>,
 ) -> FinalizeResult {
+    finalize_successful_transcription_with_delivery(
+        state,
+        raw_text,
+        final_text,
+        polish_time_ms,
+        audio_path,
+        false,
+    )
+}
+
+pub fn finalize_successful_transcription_with_delivery(
+    state: &AppState,
+    raw_text: &str,
+    final_text: &str,
+    polish_time_ms: u64,
+    audio_path: Option<String>,
+    text_already_inserted: bool,
+) -> FinalizeResult {
     crate::history::commands::save_to_history(
         state,
         raw_text,
@@ -36,7 +55,11 @@ pub fn finalize_successful_transcription(
 
     cleanup_audio_file(audio_path.as_deref());
 
-    FinalizeResult::DeliverText(final_text.to_string())
+    if text_already_inserted {
+        FinalizeResult::TextAlreadyInserted(final_text.to_string())
+    } else {
+        FinalizeResult::DeliverText(final_text.to_string())
+    }
 }
 
 pub fn finalize_silent_recording(audio_path: Option<String>) -> FinalizeResult {
@@ -65,7 +88,8 @@ pub fn finalize_failed_transcription(
 mod tests {
     use super::{
         finalize_empty_transcription, finalize_failed_transcription, finalize_silent_recording,
-        finalize_successful_transcription, FinalizeResult,
+        finalize_successful_transcription, finalize_successful_transcription_with_delivery,
+        FinalizeResult,
     };
     use crate::history::models::HistoryFilter;
     use crate::state::app_state::AppState;
@@ -100,6 +124,28 @@ mod tests {
         assert_eq!(
             action,
             FinalizeResult::DeliverText("final text".to_string())
+        );
+        assert!(!audio_path.exists());
+    }
+
+    #[test]
+    fn finalize_successful_transcription_skips_delivery_when_text_was_already_inserted() {
+        let state = AppState::new();
+        let audio = NamedTempFile::new().unwrap();
+        let audio_path = audio.path().to_path_buf();
+
+        let action = finalize_successful_transcription_with_delivery(
+            &state,
+            "raw text",
+            "streamed final text",
+            123,
+            Some(audio_path.display().to_string()),
+            true,
+        );
+
+        assert_eq!(
+            action,
+            FinalizeResult::TextAlreadyInserted("streamed final text".to_string())
         );
         assert!(!audio_path.exists());
     }

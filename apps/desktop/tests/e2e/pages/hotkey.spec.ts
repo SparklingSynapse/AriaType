@@ -3,20 +3,18 @@ import { test, expect } from '../fixtures';
 import {
   navigateViaSidebar,
   openRoute,
+  openRouteWithOnboarding,
   seedDefaultShortcutProfiles,
-  setOnboardingCompleted,
 } from '../utils/helpers';
 
 async function openSeededHotkeyPage(tauriPage: TauriFixtures['tauriPage']): Promise<void> {
-  await openRoute(tauriPage, '/');
-  await setOnboardingCompleted(tauriPage, true);
+  await openRouteWithOnboarding(tauriPage, '/');
   await seedDefaultShortcutProfiles(tauriPage);
   await openRoute(tauriPage, '/hotkey');
 }
 
 test('Hotkey Settings page displays profiles', async ({ tauriPage }) => {
-  await openRoute(tauriPage, '/');
-  await setOnboardingCompleted(tauriPage, true);
+  await openRouteWithOnboarding(tauriPage, '/');
   await seedDefaultShortcutProfiles(tauriPage);
   await navigateViaSidebar(tauriPage, 'Hotkey');
 

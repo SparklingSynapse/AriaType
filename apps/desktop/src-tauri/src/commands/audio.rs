@@ -2,6 +2,7 @@ mod cancel;
 mod capture;
 mod level_monitor;
 mod polish;
+mod postprocess;
 mod query;
 mod retry;
 mod shared;

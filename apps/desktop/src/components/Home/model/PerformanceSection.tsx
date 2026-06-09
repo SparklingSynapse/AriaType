@@ -34,6 +34,14 @@ export function PerformanceSection() {
     await updateSetting("idle_unload_minutes", value);
   };
 
+  const handlePolishStreamDirectTypingChange = async (checked: boolean) => {
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, {
+      setting: "polish_stream_direct_typing_enabled",
+      value: String(checked),
+    });
+    await updateSetting("polish_stream_direct_typing_enabled", checked);
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -99,6 +107,22 @@ export function PerformanceSection() {
               />
             </div>
           )}
+
+          <div className="flex items-center justify-between space-x-4 pt-4 border-t border-border">
+            <div>
+              <Label htmlFor="polish-stream-direct-typing">
+                {t("model.performance.polishStreamDirectTyping")}
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {t("model.performance.polishStreamDirectTypingDesc")}
+              </p>
+            </div>
+            <Switch
+              id="polish-stream-direct-typing"
+              checked={settings.polish_stream_direct_typing_enabled}
+              onCheckedChange={handlePolishStreamDirectTypingChange}
+            />
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -86,6 +86,14 @@ const testSettings: AppSettings = {
   hotkey: "Cmd+Slash",
   idle_unload_minutes: 5,
   language: "auto",
+  local_polish_runtime: {
+    provider_type: "llama-server",
+    base_url: "http://127.0.0.1:8000/v1",
+    api_key: "",
+    server_command: "",
+    server_args_json: "",
+    ready_timeout_secs: 20,
+  },
   model: "tiny",
   model_resident: false,
   pill_background_color: "#1d1d1d",
@@ -95,6 +103,7 @@ const testSettings: AppSettings = {
   pill_size: 2,
   polish_custom_templates: [],
   polish_model: "",
+  polish_stream_direct_typing_enabled: false,
   polish_system_prompt: "",
   recording_mode: "hold",
   shortcut_profiles: {

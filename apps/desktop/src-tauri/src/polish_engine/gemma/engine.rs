@@ -1,8 +1,6 @@
-use crate::polish_engine::common::{polish_text_blocking, EngineConfig, PromptFormat};
+use crate::polish_engine::local_http::{polish_via_local_http, LocalHttpPolishConfig};
 use crate::polish_engine::traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
-use crate::utils::AppPaths;
 use async_trait::async_trait;
-use std::path::PathBuf;
 
 pub struct GemmaPolishEngine;
 
@@ -11,8 +9,10 @@ impl GemmaPolishEngine {
         Self
     }
 
-    fn get_model_path(model_name: &str) -> PathBuf {
-        AppPaths::models_dir().join(model_name)
+    fn model_alias(model_name: &str) -> String {
+        super::GemmaModelDef::from_filename(model_name)
+            .map(|model| model.id.to_string())
+            .unwrap_or_else(|| model_name.to_string())
     }
 }
 
@@ -30,46 +30,15 @@ impl PolishEngine for GemmaPolishEngine {
 
     async fn polish(&self, request: PolishRequest) -> Result<PolishResult, String> {
         let model_name = request.model_name.clone().ok_or("Model name required")?;
-        let model_path = Self::get_model_path(&model_name);
-
-        if !model_path.exists() {
-            return Err(format!("Model not found: {}", model_name));
-        }
-
-        let text = request.text.clone();
-        let system_prompt = request.system_context.effective_prompt().into_owned();
-        let language = request.language.clone();
-        let default_prompt = super::DEFAULT_POLISH_PROMPT.to_string();
-        let timeout = request.timeout;
-
-        let config = EngineConfig {
-            log_prefix: "polish:gemma",
-            strip_think_tags: true,
-            prompt_format: PromptFormat::Gemma,
-            disable_thinking: true,
-            no_think_directive: false,
-            // Gemma 2B Q4_K_M ≈ 1.52GB
+        let config = LocalHttpPolishConfig {
+            engine_type: PolishEngineType::Gemma,
+            engine_label: "polish:gemma",
+            model_alias: Self::model_alias(&model_name),
+            model_filename: model_name,
             min_model_size_mb: 1300,
+            no_think_directive: false,
         };
 
-        let t0 = std::time::Instant::now();
-
-        let result = tokio::task::spawn_blocking(move || {
-            polish_text_blocking(
-                &text,
-                &system_prompt,
-                &language,
-                &model_path,
-                &default_prompt,
-                timeout,
-                &config,
-            )
-        })
-        .await
-        .map_err(|e| format!("Task join error: {}", e))??;
-
-        let total_ms = t0.elapsed().as_millis() as u64;
-
-        Ok(PolishResult::new(result, PolishEngineType::Gemma, total_ms))
+        polish_via_local_http(request, config).await
     }
 }

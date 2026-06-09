@@ -1,25 +1,31 @@
 pub mod cloud;
-mod common;
 mod compatibility;
 pub mod gemma;
 pub mod glm;
 pub mod lfm;
+mod local_http;
+mod local_runtime;
 pub mod qwen;
+pub(crate) mod streaming;
 mod templates;
 mod traits;
 mod unified_manager;
 
 pub use cloud::{CloudPolishEngine, CloudProviderConfig, CORE_POLISH_CONSTRAINT};
 pub use compatibility::{
-    assess_polish_model_compatibility, DeviceProfile, PolishModelCompatibility,
-    PolishModelCompatibilityLevel,
+    assess_polish_model_compatibility, polish_model_latency_profile, DeviceProfile,
+    PolishModelCompatibility, PolishModelCompatibilityLevel, PolishModelLatencyClass,
+    PolishModelLatencyProfile,
 };
 pub use gemma::{GemmaModelDef, DEFAULT_POLISH_PROMPT as GEMMA_DEFAULT_PROMPT};
 pub use glm::{GlmModelDef, DEFAULT_POLISH_PROMPT as GLM_DEFAULT_PROMPT};
 pub use lfm::{LfmModelDef, DEFAULT_POLISH_PROMPT as LFM_DEFAULT_PROMPT};
 pub use qwen::{QwenModelDef, DEFAULT_POLISH_PROMPT as QWEN_DEFAULT_PROMPT};
 pub use templates::{get_all_templates, get_template_by_id, PolishTemplate, POLISH_TEMPLATES};
-pub use traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
+pub use traits::{
+    PolishEngine, PolishEngineType, PolishPreviewCallback, PolishPreviewUpdate, PolishRequest,
+    PolishResult,
+};
 pub use unified_manager::{get_all_polish_models, PolishModelInfo, UnifiedPolishManager};
 
 // Use Qwen's default prompt as the global default

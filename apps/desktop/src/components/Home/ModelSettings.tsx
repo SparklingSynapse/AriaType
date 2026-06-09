@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useEventListeners } from "@/hooks/useEventListeners";
 import {
@@ -31,6 +31,11 @@ export function ModelSettings() {
   const [selectedPolishModel, setSelectedPolishModel] = useState<string>("");
   const [polishDownloadingId, setPolishDownloadingId] = useState<string | null>(null);
   const [polishProgress, setPolishProgress] = useState<number | null>(null);
+  const polishDownloadingIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    polishDownloadingIdRef.current = polishDownloadingId;
+  }, [polishDownloadingId]);
 
   const loadModels = useCallback(async () => {
     try {
@@ -47,6 +52,22 @@ export function ModelSettings() {
       setPolishModels(models);
     } catch (err) {
       logger.error("failed_to_load_polish_models", { error: String(err) });
+    }
+  }, []);
+
+  const activateDownloadedPolishModel = useCallback(async (modelId: string) => {
+    try {
+      await settingsCommands.updateSettings("polish_model", modelId);
+      setSelectedPolishModel(modelId);
+    } catch (err) {
+      logger.error("failed_to_update_polish_model", { error: String(err) });
+      return;
+    }
+
+    try {
+      await modelCommands.preloadPolishModel();
+    } catch (err) {
+      logger.error("failed_to_preload_polish_model_after_download", { error: String(err) });
     }
   }, []);
 
@@ -95,35 +116,29 @@ export function ModelSettings() {
       }),
       await events.onModelDeleted(() => loadModels()),
       await events.onPolishModelDownloadProgress((data) => {
-        if (data.model_id === polishDownloadingId) {
+        if (data.model_id === polishDownloadingIdRef.current) {
           setPolishProgress(data.progress);
         }
       }),
       await events.onPolishModelDownloadComplete((modelId) => {
-        if (modelId === polishDownloadingId) {
+        if (modelId === polishDownloadingIdRef.current) {
+          polishDownloadingIdRef.current = null;
           setPolishDownloadingId(null);
           setPolishProgress(null);
-          loadPolishModels();
-          setSelectedPolishModel((prev) => {
-            if (!prev) {
-              settingsCommands
-                .updateSettings("polish_model", modelId)
-                .catch((err: unknown) => logger.error("failed_to_update_polish_model", { error: String(err) }));
-              return modelId;
-            }
-            return prev;
-          });
+          void loadPolishModels();
+          void activateDownloadedPolishModel(modelId).then(loadPolishModels);
         }
       }),
       await events.onPolishModelDownloadCancelled((modelId) => {
-        if (modelId === polishDownloadingId) {
+        if (modelId === polishDownloadingIdRef.current) {
+          polishDownloadingIdRef.current = null;
           setPolishDownloadingId(null);
           setPolishProgress(null);
         }
       }),
       await events.onPolishModelDeleted(() => loadPolishModels()),
     ];
-  }, [loadModels, loadPolishModels, polishDownloadingId]);
+  }, [activateDownloadedPolishModel, loadModels, loadPolishModels]);
 
   const handleDownload = async (modelName: string) => {
     if (downloading.has(modelName)) return;
@@ -172,12 +187,14 @@ export function ModelSettings() {
   };
 
   const handlePolishDownload = async (modelId: string) => {
+    polishDownloadingIdRef.current = modelId;
     setPolishDownloadingId(modelId);
     setPolishProgress(0);
     try {
       await modelCommands.downloadPolishModelById(modelId);
     } catch (err) {
       logger.error("failed_to_download_polish_model", { error: String(err) });
+      polishDownloadingIdRef.current = null;
       setPolishDownloadingId(null);
       setPolishProgress(null);
     }

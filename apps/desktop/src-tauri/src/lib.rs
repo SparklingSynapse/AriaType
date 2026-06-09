@@ -260,6 +260,7 @@ pub fn run() {
             settings::get_cloud_provider_schemas,
             settings::check_active_cloud_stt_config,
             settings::check_active_cloud_polish_config,
+            settings::check_local_polish_runtime_config,
             correction_learning::commands::clear_correction_memory,
             correction_learning::commands::open_correction_memory_directory,
             system::get_audio_devices,
@@ -492,7 +493,11 @@ pub fn run() {
                 drop(settings);
 
                 if model_resident {
-                    if let Some(engine_type) = crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name) {
+                    if let Some(engine_type) =
+                        crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(
+                            &model_name,
+                        )
+                    {
                         if state.engine_manager.is_model_downloaded(engine_type, &model_name) {
                             match state.engine_manager.load_model(engine_type, &model_name) {
                                 Ok(_) => {
@@ -520,30 +525,34 @@ pub fn run() {
                     } else {
                         warn!(model = %model_name, "model_unknown-cannot_determine_engine");
                     }
+                }
 
-                    // Preload polish model if configured
-                    if !polish_model_id.is_empty() {
-                        if let Some(engine_type) = crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&polish_model_id) {
-                            match state.polish_manager.load_model(engine_type, &polish_model_id) {
-                                Ok(_) => {
-                                    info!(
-                                        engine = ?engine_type,
-                                        model_id = %polish_model_id,
-                                        "polish_model_loaded-startup_warmup"
-                                    );
-                                }
-                                Err(e) => {
-                                    warn!(
-                                        engine = ?engine_type,
-                                        model_id = %polish_model_id,
-                                        error = %e,
-                                        "polish_model_load_failed-startup_warmup"
-                                    );
-                                }
+                // Preload the configured polish model independently from STT residency.
+                if !polish_model_id.is_empty() {
+                    if let Some(engine_type) =
+                        crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(
+                            &polish_model_id,
+                        )
+                    {
+                        match state.polish_manager.load_model(engine_type, &polish_model_id) {
+                            Ok(_) => {
+                                info!(
+                                    engine = ?engine_type,
+                                    model_id = %polish_model_id,
+                                    "polish_model_loaded-startup_warmup"
+                                );
                             }
-                        } else {
-                            warn!(model_id = %polish_model_id, "polish_model_unknown-cannot_determine_engine");
+                            Err(e) => {
+                                warn!(
+                                    engine = ?engine_type,
+                                    model_id = %polish_model_id,
+                                    error = %e,
+                                    "polish_model_load_failed-startup_warmup"
+                                );
+                            }
                         }
+                    } else {
+                        warn!(model_id = %polish_model_id, "polish_model_unknown-cannot_determine_engine");
                     }
                 }
             });

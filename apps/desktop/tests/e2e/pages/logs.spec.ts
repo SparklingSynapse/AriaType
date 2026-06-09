@@ -2,14 +2,14 @@ import { test, expect } from '../fixtures';
 import {
   disableAutoSnapshot,
   expectNativeScreenshot,
-  openRoute,
+  openRouteWithOnboarding,
   setScreenshotThreshold,
 } from '../utils/helpers';
 
 test('Log Viewer page renders', async ({ tauriPage }) => {
   disableAutoSnapshot(test.info());
   setScreenshotThreshold(test.info(), 0.5);
-  await openRoute(tauriPage, '/logs');
+  await openRouteWithOnboarding(tauriPage, '/logs');
 
   const logsPage = tauriPage.locator('[data-testid="logs-page"]');
   const filterInput = logsPage.locator('input[type="text"]');

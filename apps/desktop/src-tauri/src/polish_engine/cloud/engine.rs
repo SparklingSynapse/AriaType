@@ -1,3 +1,6 @@
+use crate::polish_engine::streaming::{
+    collect_openai_streaming_response, PolishRuntimeTimings, StreamingPolishResponse,
+};
 use crate::polish_engine::traits::{
     PolishEngine, PolishEngineType, PolishRequest, PolishResult, SystemContext,
 };
@@ -192,7 +195,7 @@ impl CloudPolishEngine {
         }
     }
 
-    fn build_system_prompt(system_context: &SystemContext) -> String {
+    pub(crate) fn build_system_prompt(system_context: &SystemContext) -> String {
         let user_rules = system_context.system_prompt.as_str();
         let reference_context = system_context.reference_context_section();
         match (user_rules.is_empty(), reference_context) {
@@ -379,8 +382,12 @@ impl CloudPolishEngine {
         );
 
         info!(
-            request_body = %serde_json::to_string(&body).unwrap_or_default(),
-            "cloud_polish_anthropic_request_body"
+            model = %self.config.model,
+            system_prompt_len = system_prompt.len(),
+            user_message_len = user_message.len(),
+            max_tokens = body.max_tokens,
+            thinking_disabled = body.thinking.is_some(),
+            "cloud_polish_anthropic_request_prepared"
         );
 
         let response = self
@@ -397,17 +404,28 @@ impl CloudPolishEngine {
             .map_err(|e| self.format_request_error("HTTP request", &url, e, timeout))?;
 
         let status = response.status();
+        if !status.is_success() {
+            let response_text = response
+                .text()
+                .await
+                .map_err(|e| self.format_request_error("HTTP response read", &url, e, timeout))?;
+            error!(
+                status = %status,
+                body_len = response_text.len(),
+                "cloud_polish_api_error"
+            );
+            return Err(format!("API error ({status})"));
+        }
+
         let response_text = response
             .text()
             .await
             .map_err(|e| self.format_request_error("HTTP response read", &url, e, timeout))?;
 
-        if !status.is_success() {
-            error!(status = %status, body = %response_text, "cloud_polish_api_error");
-            return Err(format!("API error ({}): {}", status, response_text));
-        }
-
-        info!(raw_response = %response_text, "cloud_polish_anthropic_raw_response");
+        debug!(
+            response_len = response_text.len(),
+            "cloud_polish_anthropic_response_received"
+        );
 
         #[derive(Deserialize)]
         struct ContentBlock {
@@ -436,13 +454,15 @@ impl CloudPolishEngine {
         system_prompt: &str,
         user_message: &str,
         timeout: Duration,
-    ) -> Result<String, String> {
+        preview_callback: Option<&crate::polish_engine::PolishPreviewCallback>,
+    ) -> Result<StreamingPolishResponse, String> {
         let url = self.get_api_url();
         let (header_name, header_value) = self.get_auth_header();
 
         let mut body = serde_json::json!({
             "model": self.config.model,
             "max_tokens": 4096,
+            "stream": preview_callback.is_some(),
             "messages": [
                 {
                     "role": "system",
@@ -468,8 +488,12 @@ impl CloudPolishEngine {
         );
 
         info!(
-            request_body = %serde_json::to_string(&body).unwrap_or_default(),
-            "cloud_polish_openai_request_body"
+            model = %self.config.model,
+            system_prompt_len = system_prompt.len(),
+            user_message_len = user_message.len(),
+            stream = preview_callback.is_some(),
+            enable_thinking = self.config.enable_thinking,
+            "cloud_polish_openai_request_prepared"
         );
 
         let response = self
@@ -485,17 +509,33 @@ impl CloudPolishEngine {
             .map_err(|e| self.format_request_error("HTTP request", &url, e, timeout))?;
 
         let status = response.status();
+        if !status.is_success() {
+            let response_text = response
+                .text()
+                .await
+                .map_err(|e| self.format_request_error("HTTP response read", &url, e, timeout))?;
+            error!(
+                status = %status,
+                body_len = response_text.len(),
+                "cloud_polish_api_error"
+            );
+            return Err(format!("API error ({status})"));
+        }
+
+        if preview_callback.is_some() {
+            return collect_openai_streaming_response(response, preview_callback, "cloud_polish")
+                .await;
+        }
+
         let response_text = response
             .text()
             .await
             .map_err(|e| self.format_request_error("HTTP response read", &url, e, timeout))?;
 
-        if !status.is_success() {
-            error!(status = %status, body = %response_text, "cloud_polish_api_error");
-            return Err(format!("API error ({}): {}", status, response_text));
-        }
-
-        info!(raw_response = %response_text, "cloud_polish_openai_raw_response");
+        debug!(
+            response_len = response_text.len(),
+            "cloud_polish_openai_response_received"
+        );
 
         #[derive(Deserialize)]
         struct Choice {
@@ -521,7 +561,12 @@ impl CloudPolishEngine {
             .map(|c| c.message.content.clone())
             .unwrap_or_default();
 
-        Ok(text)
+        Ok(StreamingPolishResponse {
+            text,
+            time_to_first_token_ms: None,
+            generation_ms: 0,
+            timings: PolishRuntimeTimings::default(),
+        })
     }
 }
 
@@ -546,6 +591,7 @@ impl PolishEngine for CloudPolishEngine {
 
         let system_prompt = Self::build_system_prompt(&request.system_context);
         let timeout = Self::request_timeout(&system_prompt, &input_text);
+        let preview_callback = request.preview_callback.clone();
 
         info!(
             provider = %self.config.provider_type,
@@ -553,41 +599,71 @@ impl PolishEngine for CloudPolishEngine {
             base_url = %self.config.base_url,
             enable_thinking = self.config.enable_thinking,
             timeout_secs = timeout.as_secs(),
-            system_prompt = %system_prompt,
-            input_text = %input_text,
+            system_prompt_len = system_prompt.len(),
             input_len = input_chars,
             "cloud_polish_request"
         );
 
         let result = match self.config.provider_type.as_str() {
             "anthropic" => {
-                self.call_anthropic_api(&system_prompt, &input_text, timeout)
-                    .await?
+                let text = self
+                    .call_anthropic_api(&system_prompt, &input_text, timeout)
+                    .await?;
+                StreamingPolishResponse {
+                    text,
+                    time_to_first_token_ms: None,
+                    generation_ms: 0,
+                    timings: PolishRuntimeTimings::default(),
+                }
             }
             "openai" => {
-                self.call_openai_api(&system_prompt, &input_text, timeout)
-                    .await?
+                self.call_openai_api(
+                    &system_prompt,
+                    &input_text,
+                    timeout,
+                    preview_callback.as_ref(),
+                )
+                .await?
             }
             _ => {
-                self.call_openai_api(&system_prompt, &input_text, timeout)
-                    .await?
+                self.call_openai_api(
+                    &system_prompt,
+                    &input_text,
+                    timeout,
+                    preview_callback.as_ref(),
+                )
+                .await?
             }
         };
 
         let total_ms = t0.elapsed().as_millis() as u64;
-        let output_chars = result.len();
+        let output_chars = result.text.len();
 
         info!(
             provider = %self.config.provider_type,
             model = %self.config.model,
             input_len = input_chars,
-            output_text = %result,
             output_len = output_chars,
             duration_ms = total_ms,
+            model_load_ms = result.timings.model_load_ms,
+            context_create_ms = result.timings.context_create_ms,
+            prefill_ms = result.timings.prefill_ms,
+            inference_ms = result.timings.inference_ms,
+            time_to_first_token_ms = result.time_to_first_token_ms,
+            generation_ms = result.generation_ms,
             "cloud_polish_complete"
         );
 
-        Ok(PolishResult::new(result, PolishEngineType::Cloud, total_ms))
+        Ok(
+            PolishResult::new(result.text, PolishEngineType::Cloud, total_ms)
+                .with_runtime_metrics(
+                    result.timings.model_load_ms,
+                    result.timings.context_create_ms,
+                    result.timings.prefill_ms,
+                    result.timings.inference_ms,
+                )
+                .with_streaming_metrics(result.time_to_first_token_ms, Some(result.generation_ms)),
+        )
     }
 }
 

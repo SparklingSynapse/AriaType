@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+env:
+  LLAMA_CPP_RELEASE_TAG: b9568
+
 # Builds macOS and Windows installers in parallel, publishes them to the
 # public releases repo (ariatype/releases), then deploys the website.
 #
@@ -50,6 +53,20 @@ jobs:
           jq ".version = \"$VERSION\"" apps/desktop/src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json apps/desktop/src-tauri/tauri.conf.json
 
+      - name: Prepare llama.cpp local polish runtimes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .tmp/llama-server-assets
+          gh release download "$LLAMA_CPP_RELEASE_TAG" \
+            --repo ggml-org/llama.cpp \
+            --pattern '*macos*arm64*' \
+            --pattern '*macos*x64*' \
+            --dir .tmp/llama-server-assets
+          node scripts/prepare-llama-server-release-assets.mjs \
+            --platform macos \
+            --assets-dir .tmp/llama-server-assets
+
       - name: Import Apple certificate
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -71,7 +88,11 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ARIATYPE_REQUIRE_LOCAL_POLISH_RUNTIME: "1"
         run: pnpm tauri:build:mac-universal
+
+      - name: Verify bundled local polish runtimes
+        run: node scripts/verify-tauri-runtime-resources.mjs --platform macos --smoke --smoke-timeout-ms 30000
 
       - name: Collect DMG
         run: |
@@ -111,9 +132,29 @@ jobs:
           jq ".version = \"$VERSION\"" apps/desktop/src-tauri/tauri.conf.json > tauri.conf.tmp
           mv tauri.conf.tmp apps/desktop/src-tauri/tauri.conf.json
 
+      - name: Prepare llama.cpp local polish runtime
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .tmp/llama-server-assets
+          gh release download "$LLAMA_CPP_RELEASE_TAG" \
+            --repo ggml-org/llama.cpp \
+            --pattern '*win*cpu*x64*' \
+            --dir .tmp/llama-server-assets
+          node scripts/prepare-llama-server-release-assets.mjs \
+            --platform windows \
+            --assets-dir .tmp/llama-server-assets
+
       - name: Build Windows NSIS installer
         working-directory: apps/desktop
+        env:
+          ARIATYPE_REQUIRE_LOCAL_POLISH_RUNTIME: "1"
         run: pnpm tauri:build:win
+
+      - name: Verify bundled local polish runtime
+        shell: bash
+        run: node scripts/verify-tauri-runtime-resources.mjs --platform windows --smoke --smoke-timeout-ms 30000
 
       - name: Collect installer
         shell: bash

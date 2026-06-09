@@ -88,6 +88,7 @@
 |----------|-------------|
 | [`reference/providers/stt.md`](./reference/providers/stt.md) | STT provider API reference (Volcengine, OpenAI, Deepgram, etc.) |
 | [`reference/providers/polish.md`](./reference/providers/polish.md) | Polish provider API reference (Anthropic, OpenAI, etc.) |
+| [`reference/providers/capswriter-polish-latency.md`](./reference/providers/capswriter-polish-latency.md) | CapsWriter-Offline polish latency case study and AriaType optimization guidance |
 
 ---
 

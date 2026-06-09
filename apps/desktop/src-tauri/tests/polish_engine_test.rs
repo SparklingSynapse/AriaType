@@ -26,11 +26,12 @@ fn test_unified_manager_initialization() {
     let manager = UnifiedPolishManager::new();
     let engines = manager.available_engines();
 
-    // Should have three local engines registered
-    assert_eq!(engines.len(), 3);
+    // Should have all local engines registered
+    assert_eq!(engines.len(), 4);
     assert!(engines.contains(&PolishEngineType::Qwen));
     assert!(engines.contains(&PolishEngineType::Lfm));
     assert!(engines.contains(&PolishEngineType::Gemma));
+    assert!(engines.contains(&PolishEngineType::Glm));
 }
 
 #[test]
@@ -134,7 +135,15 @@ fn test_polish_result_creation() {
     );
 
     assert_eq!(result_with_metrics.model_load_ms, Some(500));
+    assert!(result_with_metrics.context_create_ms.is_none());
+    assert!(result_with_metrics.prefill_ms.is_none());
     assert_eq!(result_with_metrics.inference_ms, Some(1500));
+
+    let result_with_runtime_metrics =
+        result_with_metrics.with_runtime_metrics(Some(500), Some(100), Some(300), Some(1200));
+    assert_eq!(result_with_runtime_metrics.context_create_ms, Some(100));
+    assert_eq!(result_with_runtime_metrics.prefill_ms, Some(300));
+    assert_eq!(result_with_runtime_metrics.inference_ms, Some(1200));
 }
 
 #[test]

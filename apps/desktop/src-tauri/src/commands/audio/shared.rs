@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::{error, info, warn};
 
@@ -27,6 +28,22 @@ pub(crate) const LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE: &str =
     "Local polish timed out. Using original transcription.";
 pub(crate) const POLISH_POLICY_TOOLTIP_MESSAGE: &str =
     "Polish result was rejected. Using original transcription.";
+pub(crate) const POLISH_PREVIEW_TOOLTIP_DURATION_MS: u64 = 1600;
+const POLISH_PREVIEW_MAX_CHARS: usize = 220;
+const THINK_START_TAG: &str = "<think>";
+const THINK_END_TAG: &str = "</think>";
+
+#[derive(Clone)]
+pub(crate) struct PolishPreviewHandle {
+    pub callback: crate::polish_engine::PolishPreviewCallback,
+    direct_stream_inserted: Arc<AtomicBool>,
+}
+
+impl PolishPreviewHandle {
+    pub(crate) fn direct_stream_inserted(&self) -> bool {
+        self.direct_stream_inserted.load(Ordering::SeqCst)
+    }
+}
 
 pub(crate) fn polish_error_tooltip_message(reason: Option<&str>) -> String {
     match reason.map(str::trim).filter(|reason| !reason.is_empty()) {
@@ -83,16 +100,31 @@ pub struct RecordingState {
 pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result: FinalizeResult) {
     match result {
         FinalizeResult::DeliverText(text) => {
-            let _ = app.emit(
-                EventName::TRANSCRIPTION_COMPLETE,
-                crate::events::TranscriptionCompleteEvent {
-                    text: text.clone(),
-                    task_id,
-                },
-            );
-            emit_recording_state(app, RecordingStatus::Idle, task_id);
+            emit_recording_complete(app, task_id, &text);
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            crate::text_injector::insert_text(&text);
+            insert_text_with_metrics(
+                &text,
+                task_id,
+                "recording",
+                None,
+                crate::text_injector::insert_text,
+            );
+            let correction_memory_enabled = {
+                let state = app.state::<AppState>();
+                let settings = state.settings.lock();
+                settings.correction_memory_enabled
+            };
+            if correction_memory_enabled {
+                crate::correction_learning::observe_post_delivery_edit(app.clone(), text);
+            }
+        }
+        FinalizeResult::TextAlreadyInserted(text) => {
+            emit_recording_complete(app, task_id, &text);
+            info!(
+                task_id,
+                text_len = text.len(),
+                "text_injection_skipped-direct_stream_already_inserted"
+            );
             let correction_memory_enabled = {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock();
@@ -111,11 +143,28 @@ pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result:
     }
 }
 
+fn emit_recording_complete(app: &AppHandle, task_id: u64, text: &str) {
+    let _ = app.emit(
+        EventName::TRANSCRIPTION_COMPLETE,
+        crate::events::TranscriptionCompleteEvent {
+            text: text.to_string(),
+            task_id,
+        },
+    );
+    emit_recording_state(app, RecordingStatus::Idle, task_id);
+}
+
 pub(crate) async fn apply_retry_success(app: &AppHandle, entry_id: &str, task_id: u64, text: &str) {
     emit_retry_complete(app, entry_id, task_id, text);
     emit_retry_state(app, entry_id, RetryStatus::Completed, task_id);
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    crate::text_injector::insert_text(text);
+    insert_text_with_metrics(
+        text,
+        task_id,
+        "retry",
+        Some(entry_id),
+        crate::text_injector::insert_text,
+    );
     let correction_memory_enabled = {
         let state = app.state::<AppState>();
         let settings = state.settings.lock();
@@ -124,6 +173,30 @@ pub(crate) async fn apply_retry_success(app: &AppHandle, entry_id: &str, task_id
     if correction_memory_enabled {
         crate::correction_learning::observe_post_delivery_edit(app.clone(), text.to_string());
     }
+}
+
+fn insert_text_with_metrics<F>(
+    text: &str,
+    task_id: u64,
+    context: &'static str,
+    entry_id: Option<&str>,
+    insert: F,
+) -> u64
+where
+    F: FnOnce(&str),
+{
+    let injection_started = Instant::now();
+    insert(text);
+    let injection_ms = injection_started.elapsed().as_millis() as u64;
+    info!(
+        task_id,
+        context,
+        entry_id = entry_id.unwrap_or(""),
+        text_len = text.len(),
+        injection_ms,
+        "text_injection_completed"
+    );
+    injection_ms
 }
 
 pub(crate) fn apply_retry_error(app: &AppHandle, entry_id: &str, task_id: u64, error: &str) {
@@ -171,6 +244,57 @@ impl ProcessingEventTarget<'_> {
         self.emit_processing_tooltip(task_id, POLISH_POLICY_TOOLTIP_MESSAGE.to_string());
     }
 
+    pub(crate) fn polish_preview_callback(&self, task_id: u64) -> Option<PolishPreviewHandle> {
+        let app = match self {
+            Self::None => return None,
+            Self::Recording(app) => (*app).clone(),
+            Self::Retry { app, .. } => (*app).clone(),
+        };
+        let tooltip_task_id = match self {
+            Self::Recording(_) => Some(task_id),
+            Self::Retry { .. } => None,
+            Self::None => None,
+        };
+        let direct_typing_enabled = match self {
+            Self::Recording(app) => {
+                let state = app.state::<AppState>();
+                let settings = state.settings.lock();
+                settings.polish_stream_direct_typing_enabled
+            }
+            Self::Retry { .. } | Self::None => false,
+        };
+        let typed_visible_chars = Arc::new(ParkingMutex::new(0_usize));
+        let direct_stream_inserted = Arc::new(AtomicBool::new(false));
+        let callback_inserted = Arc::clone(&direct_stream_inserted);
+
+        let callback = Arc::new(move |update: crate::polish_engine::PolishPreviewUpdate| {
+            if should_type_direct_stream_delta(direct_typing_enabled, update.is_final) {
+                maybe_insert_direct_stream_delta(
+                    &app,
+                    task_id,
+                    &update.text,
+                    &typed_visible_chars,
+                    &callback_inserted,
+                );
+            }
+
+            let Some(message) = polish_preview_tooltip_message(&update.text) else {
+                return;
+            };
+            emit_pill_tooltip(
+                &app,
+                message,
+                POLISH_PREVIEW_TOOLTIP_DURATION_MS,
+                tooltip_task_id,
+            );
+        });
+
+        Some(PolishPreviewHandle {
+            callback,
+            direct_stream_inserted,
+        })
+    }
+
     fn emit_processing_tooltip(&self, task_id: u64, message: String) {
         match self {
             Self::None => {}
@@ -185,6 +309,91 @@ impl ProcessingEventTarget<'_> {
             }
         }
     }
+}
+
+fn maybe_insert_direct_stream_delta(
+    app: &AppHandle,
+    task_id: u64,
+    accumulated_text: &str,
+    typed_visible_chars: &Arc<ParkingMutex<usize>>,
+    direct_stream_inserted: &Arc<AtomicBool>,
+) {
+    let state = app.state::<AppState>();
+    if state.task_counter.load(Ordering::SeqCst) != task_id
+        || state.is_cancellation_requested(task_id)
+    {
+        return;
+    }
+
+    let mut typed_chars = typed_visible_chars.lock();
+    let Some(delta) = next_direct_stream_delta(accumulated_text, &mut typed_chars) else {
+        return;
+    };
+    drop(typed_chars);
+
+    insert_text_with_metrics(
+        &delta,
+        task_id,
+        "recording-polish-stream",
+        None,
+        crate::text_injector::insert_text,
+    );
+    direct_stream_inserted.store(true, Ordering::SeqCst);
+}
+
+fn should_type_direct_stream_delta(direct_typing_enabled: bool, is_final_update: bool) -> bool {
+    direct_typing_enabled && !is_final_update
+}
+
+fn next_direct_stream_delta(
+    accumulated_text: &str,
+    typed_visible_chars: &mut usize,
+) -> Option<String> {
+    let visible_text = sanitize_polish_preview_text(accumulated_text)?;
+    let visible_chars = visible_text.chars().count();
+    if visible_chars <= *typed_visible_chars {
+        return None;
+    }
+
+    let delta = visible_text
+        .chars()
+        .skip(*typed_visible_chars)
+        .collect::<String>();
+    *typed_visible_chars = visible_chars;
+
+    (!delta.is_empty()).then_some(delta)
+}
+
+pub(crate) fn polish_preview_tooltip_message(text: &str) -> Option<String> {
+    let text = sanitize_polish_preview_text(text)?;
+    let mut preview = text
+        .chars()
+        .take(POLISH_PREVIEW_MAX_CHARS)
+        .collect::<String>();
+
+    if text.chars().count() > POLISH_PREVIEW_MAX_CHARS {
+        preview.push_str("...");
+    }
+
+    Some(format!("Polishing preview:\n{preview}"))
+}
+
+fn sanitize_polish_preview_text(text: &str) -> Option<&str> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+
+    if let Some(end_idx) = text.find(THINK_END_TAG) {
+        let text = text[end_idx + THINK_END_TAG.len()..].trim();
+        return (!text.is_empty()).then_some(text);
+    }
+
+    if text.contains(THINK_START_TAG) {
+        return None;
+    }
+
+    Some(text)
 }
 
 pub(crate) fn await_streaming_task_in_background(
@@ -268,9 +477,13 @@ pub(crate) fn should_unregister_cancel_hotkey_after_async_cleanup(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
     use super::{
-        polish_error_tooltip_message, LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE,
-        POLISH_ERROR_TOOLTIP_MESSAGE,
+        insert_text_with_metrics, next_direct_stream_delta, polish_error_tooltip_message,
+        polish_preview_tooltip_message, should_type_direct_stream_delta,
+        LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE, POLISH_ERROR_TOOLTIP_MESSAGE,
     };
 
     #[test]
@@ -298,6 +511,84 @@ mod tests {
         assert_eq!(
             LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE,
             "Local polish timed out. Using original transcription."
+        );
+    }
+
+    #[test]
+    fn insert_text_with_metrics_invokes_inserter() {
+        let called = Arc::new(AtomicBool::new(false));
+        let callback_called = Arc::clone(&called);
+
+        let injection_ms =
+            insert_text_with_metrics("hello", 42, "test", Some("entry-1"), move |text| {
+                assert_eq!(text, "hello");
+                callback_called.store(true, Ordering::SeqCst);
+            });
+
+        assert!(called.load(Ordering::SeqCst));
+        assert!(injection_ms < 1_000);
+    }
+
+    #[test]
+    fn direct_stream_typing_requires_explicit_non_final_update() {
+        assert!(should_type_direct_stream_delta(true, false));
+        assert!(!should_type_direct_stream_delta(false, false));
+        assert!(!should_type_direct_stream_delta(true, true));
+    }
+
+    #[test]
+    fn direct_stream_delta_returns_only_new_visible_text() {
+        let mut typed_chars = 0;
+
+        assert_eq!(
+            next_direct_stream_delta("Hello", &mut typed_chars).as_deref(),
+            Some("Hello")
+        );
+        assert_eq!(typed_chars, 5);
+        assert_eq!(
+            next_direct_stream_delta("Hello world", &mut typed_chars).as_deref(),
+            Some(" world")
+        );
+        assert_eq!(typed_chars, 11);
+        assert_eq!(
+            next_direct_stream_delta("Hello world", &mut typed_chars),
+            None
+        );
+    }
+
+    #[test]
+    fn direct_stream_delta_hides_incomplete_thinking() {
+        let mut typed_chars = 0;
+
+        assert_eq!(
+            next_direct_stream_delta("<think>hidden reasoning", &mut typed_chars),
+            None
+        );
+        assert_eq!(typed_chars, 0);
+        assert_eq!(
+            next_direct_stream_delta("<think>hidden</think>\nVisible", &mut typed_chars).as_deref(),
+            Some("Visible")
+        );
+    }
+
+    #[test]
+    fn polish_preview_tooltip_truncates_long_text() {
+        let message = polish_preview_tooltip_message(&"a".repeat(300)).unwrap();
+
+        assert!(message.starts_with("Polishing preview:\n"));
+        assert!(message.ends_with("..."));
+        assert!(message.len() < 260);
+    }
+
+    #[test]
+    fn polish_preview_tooltip_hides_incomplete_thinking() {
+        assert_eq!(
+            polish_preview_tooltip_message("<think>hidden reasoning"),
+            None
+        );
+        assert_eq!(
+            polish_preview_tooltip_message("<think>hidden</think>\nVisible text").unwrap(),
+            "Polishing preview:\nVisible text"
         );
     }
 }

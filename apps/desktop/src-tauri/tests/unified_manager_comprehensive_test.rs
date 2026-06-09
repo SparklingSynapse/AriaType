@@ -9,10 +9,12 @@
 // F. Language recommendations
 // G. Edge cases and error handling
 
+use ariatype_lib::stt_engine::models::{
+    ModelDefinition, SENSE_VOICE_SMALL, WHISPER_BASE, WHISPER_SMALL,
+};
 use ariatype_lib::stt_engine::{EngineType, UnifiedEngineManager};
 use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ==================== Test helper functions ====================
 
@@ -27,58 +29,41 @@ fn create_test_dir(name: &str) -> PathBuf {
     dir
 }
 
-/// Create fake model files in proper subdirectory structure
-fn create_fake_whisper_model(dir: &PathBuf, model_name: &str) {
-    let model_subdir = dir.join(model_name);
+fn create_sparse_file(path: &Path, bytes: u64) {
+    let file = File::create(path).expect("Failed to create fake model file");
+    file.set_len(bytes).expect("Failed to size fake model file");
+}
+
+fn create_fake_model_files(dir: &Path, model: &ModelDefinition) {
+    let model_subdir = dir.join(model.name);
     std::fs::create_dir_all(&model_subdir).expect("Failed to create model subdirectory");
 
-    let files: &[(&str, usize)] = match model_name {
-        "whisper-base" => &[
-            ("base-encoder.onnx", 1024),
-            ("base-decoder.onnx", 2048),
-            ("base-tokens.txt", 100),
-        ],
-        "whisper-small" => &[
-            ("small-encoder.onnx", 2048),
-            ("small-decoder.onnx", 4096),
-            ("small-tokens.txt", 100),
-        ],
-        _ => &[
-            ("encoder.onnx", 1024),
-            ("decoder.onnx", 2048),
-            ("tokens.txt", 100),
-        ],
-    };
-
-    for (filename, size) in files {
-        let path = model_subdir.join(filename);
-        let mut file = File::create(&path).expect("Failed to create fake model file");
-        let data = vec![0u8; *size];
-        file.write_all(&data)
-            .expect("Failed to write fake model data");
+    for model_file in model.files {
+        create_sparse_file(
+            &model_subdir.join(model_file.filename),
+            model_file.minimum_complete_bytes(),
+        );
     }
 }
 
+/// Create fake model files in proper subdirectory structure
+fn create_fake_whisper_model(dir: &Path, model_name: &str) {
+    let model = match model_name {
+        "whisper-base" => &WHISPER_BASE,
+        "whisper-small" => &WHISPER_SMALL,
+        _ => &WHISPER_BASE,
+    };
+
+    create_fake_model_files(dir, model);
+}
+
 /// Create fake SenseVoice model files
-fn create_fake_sensevoice_model(dir: &PathBuf) {
-    let model_subdir = dir.join("sense-voice-small");
-    std::fs::create_dir_all(&model_subdir).expect("Failed to create model subdirectory");
-
-    let path = model_subdir.join("model.int8.onnx");
-    let mut file = File::create(&path).expect("Failed to create fake model file");
-    let data = vec![0u8; 2048];
-    file.write_all(&data)
-        .expect("Failed to write fake model data");
-
-    let tokens_path = model_subdir.join("tokens.txt");
-    let mut tokens_file = File::create(&tokens_path).expect("Failed to create tokens file");
-    tokens_file
-        .write_all(b"fake tokens")
-        .expect("Failed to write tokens");
+fn create_fake_sensevoice_model(dir: &Path) {
+    create_fake_model_files(dir, &SENSE_VOICE_SMALL);
 }
 
 /// Cleanup test directory
-fn cleanup_test_dir(dir: &PathBuf) {
+fn cleanup_test_dir(dir: &Path) {
     let _ = std::fs::remove_dir_all(dir);
 }
 

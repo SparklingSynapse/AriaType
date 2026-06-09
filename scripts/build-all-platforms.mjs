@@ -10,15 +10,12 @@
  *   pnpm build:all --unsigned         # Build unsigned (no signing)
  *   pnpm build:all --cross-win        # Cross-compile Windows from macOS/Linux
  *
- * Native build requirements:
- *   - CMake is required by llama-cpp-sys-2 (macOS: brew install cmake)
- * 
  * Cross-compilation notes:
  *   - Windows builds require either:
  *     a) Running on Windows (native)
  *     b) --cross-win flag with cargo-xwin installed
  *   - Cross-compilation requirements:
- *     brew install cmake ninja llvm nsis
+ *     brew install ninja llvm nsis
  *     cargo install cargo-xwin
  *     rustup target add x86_64-pc-windows-msvc
  */
@@ -31,6 +28,7 @@ import { execSync } from 'child_process';
 import {
   WINDOWS_CROSS_BUILD_COMMAND,
   checkRequiredBuildTools,
+  detachRepoDmgMounts,
   runCommand,
   windowsCrossBuildEnv,
 } from './build-all-platforms-lib.mjs';
@@ -58,16 +56,7 @@ const autoSkipMacIntel = skipMacIntel || !isMacOS;
 const desktopDir = resolve(root, 'apps/desktop');
 const tauriTargetDir = resolve(desktopDir, 'src-tauri/target');
 const buildDiagnosticsDir = resolve(desktopDir, '.build-diagnostics');
-
-function cmakeInstallHint() {
-  if (isMacOS) {
-    return 'brew install cmake';
-  }
-  if (isWindows) {
-    return 'winget install Kitware.CMake';
-  }
-  return 'Install cmake with your system package manager, for example: sudo apt-get install cmake';
-}
+const runtimeConfig = 'src-tauri/tauri.runtime.generated.conf.json';
 
 function ninjaInstallHint() {
   if (isMacOS) {
@@ -84,18 +73,12 @@ function requiredBuildTools() {
     return [];
   }
 
-  const tools = [
-    {
-      command: 'cmake',
-      description: 'CMake (required by llama-cpp-sys-2)',
-      installHint: cmakeInstallHint(),
-    },
-  ];
+  const tools = [];
 
   if (canCrossCompile) {
     tools.push({
       command: 'ninja',
-      description: 'Ninja (required by Windows cargo-xwin CMake builds)',
+      description: 'Ninja (required by Windows cargo-xwin builds)',
       installHint: ninjaInstallHint(),
     });
   }
@@ -239,10 +222,11 @@ const results = [];
 // macOS ARM (Apple Silicon)
 if (!autoSkipMacArm) {
   cleanTarget('aarch64-apple-darwin');
+  detachRepoDmgMounts({ repoRoot: root });
 
   const cmd = unsigned
-    ? 'env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --target aarch64-apple-darwin'
-    : 'node ../../scripts/sign-macos-binaries.mjs && pnpm tauri build --config src-tauri/tauri.macos.conf.json --target aarch64-apple-darwin';
+    ? `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --config ${runtimeConfig} --target aarch64-apple-darwin`
+    : `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && node ../../scripts/sign-macos-binaries.mjs && pnpm tauri build --config src-tauri/tauri.macos.conf.json --config ${runtimeConfig} --target aarch64-apple-darwin`;
   const diagnosticsDir = prepareMacBuildDiagnostics('aarch64-apple-darwin', cmd);
 
   const success = runCommand(cmd, 'Building macOS ARM', {
@@ -272,10 +256,11 @@ if (!autoSkipMacArm) {
 // macOS Intel (x64)
 if (!autoSkipMacIntel) {
   cleanTarget('x86_64-apple-darwin');
+  detachRepoDmgMounts({ repoRoot: root });
 
   const cmd = unsigned
-    ? 'env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --target x86_64-apple-darwin'
-    : 'node ../../scripts/sign-macos-binaries.mjs && pnpm tauri build --config src-tauri/tauri.macos.conf.json --target x86_64-apple-darwin';
+    ? `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --config ${runtimeConfig} --target x86_64-apple-darwin`
+    : `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && node ../../scripts/sign-macos-binaries.mjs && pnpm tauri build --config src-tauri/tauri.macos.conf.json --config ${runtimeConfig} --target x86_64-apple-darwin`;
   const diagnosticsDir = prepareMacBuildDiagnostics('x86_64-apple-darwin', cmd);
 
   const success = runCommand(cmd, 'Building macOS Intel', {
@@ -311,7 +296,7 @@ if (!autoSkipWin) {
   
   if (isWindows) {
     // Native Windows build
-    cmd = 'pnpm tauri build --config src-tauri/tauri.windows.conf.json --target x86_64-pc-windows-msvc';
+    cmd = `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform windows --require-runtime && pnpm tauri build --config src-tauri/tauri.windows.conf.json --config ${runtimeConfig} --target x86_64-pc-windows-msvc`;
   } else {
     // Cross-compilation from macOS/Linux using cargo-xwin
     console.log('🔧 Cross-compiling Windows from ' + hostPlatform + '\n');
@@ -354,7 +339,7 @@ if (!autoSkipWin) {
   console.log(`⏭️  Skipping Windows (${reason})\n`);
   if (!skipWin && !isWindows && !crossWin) {
     console.log('   💡 Tip: Add --cross-win to enable cross-compilation, or use CI.\n');
-    console.log('   Requirements: cargo install cargo-xwin && brew install llvm nsis\n');
+    console.log('   Requirements: cargo install cargo-xwin && brew install ninja llvm nsis\n');
   }
 }
 

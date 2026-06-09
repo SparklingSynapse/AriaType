@@ -1,7 +1,8 @@
 import { execSync } from 'child_process';
+import { basename, resolve, sep } from 'path';
 
 export const WINDOWS_CROSS_BUILD_COMMAND =
-  'cargo tauri build --config src-tauri/tauri.windows.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc';
+  'node ../../scripts/prepare-tauri-runtime-resources.mjs --platform windows --require-runtime && cargo tauri build --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc';
 
 function write(log, level, message) {
   const method = log[level] ?? log.log;
@@ -30,6 +31,99 @@ function isRetryableNotarizationTimeout(error, description) {
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function normalizeVolumeName(value) {
+  return basename(value).replace(/ \d+$/, '');
+}
+
+function normalizePath(value) {
+  return resolve(value);
+}
+
+function pathIsInside(parent, child) {
+  const normalizedParent = normalizePath(parent);
+  const normalizedChild = normalizePath(child);
+  return (
+    normalizedChild === normalizedParent
+    || normalizedChild.startsWith(`${normalizedParent}${sep}`)
+  );
+}
+
+export function parseHdiutilMountedImages(hdiutilInfo) {
+  const images = [];
+  let current = null;
+
+  for (const rawLine of String(hdiutilInfo).split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+
+    if (line.startsWith('image-path')) {
+      if (current) {
+        images.push(current);
+      }
+      current = {
+        imagePath: line.slice(line.indexOf(':') + 1).trim(),
+        mountPoints: [],
+      };
+      continue;
+    }
+
+    if (!current || !line.startsWith('/dev/')) {
+      continue;
+    }
+
+    const volumeIndex = line.indexOf('/Volumes/');
+    if (volumeIndex >= 0) {
+      current.mountPoints.push(line.slice(volumeIndex).trim());
+    }
+  }
+
+  if (current) {
+    images.push(current);
+  }
+
+  return images;
+}
+
+export function findRepoDmgMounts(hdiutilInfo, options) {
+  const {
+    repoRoot,
+    volumeNames,
+  } = options;
+  const allowedVolumeNames = new Set(volumeNames);
+
+  return parseHdiutilMountedImages(hdiutilInfo)
+    .filter((image) => image.imagePath.endsWith('.dmg'))
+    .filter((image) => pathIsInside(repoRoot, image.imagePath))
+    .flatMap((image) => image.mountPoints.map((mountPoint) => ({
+      imagePath: image.imagePath,
+      mountPoint,
+      volumeName: normalizeVolumeName(mountPoint),
+    })))
+    .filter((mount) => allowedVolumeNames.has(mount.volumeName));
+}
+
+export function detachRepoDmgMounts(options) {
+  const {
+    repoRoot,
+    volumeNames = ['AriaType', 'AriaType Inhouse'],
+    exec = execSync,
+    log = console,
+  } = options;
+
+  const info = exec('hdiutil info', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const mounts = findRepoDmgMounts(info, { repoRoot, volumeNames });
+
+  for (const mount of mounts) {
+    write(
+      log,
+      'warn',
+      `Detaching stale ${mount.volumeName} DMG mount before packaging: ${mount.mountPoint}`
+    );
+    exec(`hdiutil detach ${shellQuote(mount.mountPoint)}`, { stdio: 'inherit' });
+  }
+
+  return mounts;
 }
 
 function appendEnvToken(value, token) {

@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## Unreleased
+
+### Features
+
+- Keep local polish bounded after install (9f3ac26)
+
 ## v0.6.5 (2026-06-08)
 
 ### Features

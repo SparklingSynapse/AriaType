@@ -1,8 +1,8 @@
 import { test, expect } from '../fixtures';
-import { navigateViaSidebar, openRoute } from '../utils/helpers';
+import { navigateViaSidebar, openRouteWithOnboarding } from '../utils/helpers';
 
 test('General Settings page renders', async ({ tauriPage }) => {
-  await openRoute(tauriPage, '/');
+  await openRouteWithOnboarding(tauriPage, '/');
   await navigateViaSidebar(tauriPage, 'General');
 
   const settingsPage = tauriPage.locator('[data-testid="settings-page"]');

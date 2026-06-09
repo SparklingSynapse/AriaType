@@ -12,7 +12,7 @@ test('desktop unsigned mac build script merges in-house and unsigned configs', (
 
   assert.equal(
     packageJson.scripts['tauri:build:mac:unsigned'],
-    'env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json && pnpm copy-installer'
+    'node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --config src-tauri/tauri.runtime.generated.conf.json && pnpm copy-installer'
   );
 });
 
@@ -21,10 +21,10 @@ test('multi-platform unsigned mac commands merge in-house and unsigned configs',
 
   assert.match(
     script,
-    /tauri\.dev\.conf\.json --config src-tauri\/tauri\.macos\.unsigned\.conf\.json --target aarch64-apple-darwin/
+    /tauri\.dev\.conf\.json --config src-tauri\/tauri\.macos\.unsigned\.conf\.json --config \$\{runtimeConfig\} --target aarch64-apple-darwin/
   );
   assert.match(
     script,
-    /tauri\.dev\.conf\.json --config src-tauri\/tauri\.macos\.unsigned\.conf\.json --target x86_64-apple-darwin/
+    /tauri\.dev\.conf\.json --config src-tauri\/tauri\.macos\.unsigned\.conf\.json --config \$\{runtimeConfig\} --target x86_64-apple-darwin/
   );
 });

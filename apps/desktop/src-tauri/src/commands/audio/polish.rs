@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tracing::{info, instrument, warn};
 
@@ -13,6 +13,92 @@ struct LocalPolishContext {
     language: String,
     model_id: String,
     log_context: &'static str,
+}
+
+struct PolishAcceptContext {
+    polish_wall_ms: u64,
+    polish_queue_ms: u64,
+    log_context: &'static str,
+    direct_stream_inserted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PolishProcessingResult {
+    pub text: String,
+    pub direct_stream_inserted: bool,
+    pub polish_ms: u64,
+    pub polish_wall_ms: u64,
+    pub polish_queue_ms: u64,
+    pub model_load_ms: Option<u64>,
+    pub context_create_ms: Option<u64>,
+    pub prefill_ms: Option<u64>,
+    pub inference_ms: Option<u64>,
+    pub time_to_first_token_ms: Option<u64>,
+    pub generation_ms: Option<u64>,
+    pub fallback_reason: Option<&'static str>,
+}
+
+impl PolishProcessingResult {
+    pub(super) fn skipped(text: String, fallback_reason: &'static str) -> Self {
+        Self {
+            text,
+            direct_stream_inserted: false,
+            polish_ms: 0,
+            polish_wall_ms: 0,
+            polish_queue_ms: 0,
+            model_load_ms: None,
+            context_create_ms: None,
+            prefill_ms: None,
+            inference_ms: None,
+            time_to_first_token_ms: None,
+            generation_ms: None,
+            fallback_reason: Some(fallback_reason),
+        }
+    }
+
+    fn from_polish_result(
+        result: crate::polish_engine::PolishResult,
+        polish_wall_ms: u64,
+        polish_queue_ms: u64,
+        direct_stream_inserted: bool,
+    ) -> Self {
+        Self {
+            text: result.text,
+            direct_stream_inserted,
+            polish_ms: result.total_ms,
+            polish_wall_ms,
+            polish_queue_ms,
+            model_load_ms: result.model_load_ms,
+            context_create_ms: result.context_create_ms,
+            prefill_ms: result.prefill_ms,
+            inference_ms: result.inference_ms,
+            time_to_first_token_ms: result.time_to_first_token_ms,
+            generation_ms: result.generation_ms,
+            fallback_reason: None,
+        }
+    }
+
+    fn using_original(
+        text: String,
+        polish_wall_ms: u64,
+        polish_queue_ms: u64,
+        fallback_reason: &'static str,
+    ) -> Self {
+        Self {
+            text,
+            direct_stream_inserted: false,
+            polish_ms: 0,
+            polish_wall_ms,
+            polish_queue_ms,
+            model_load_ms: None,
+            context_create_ms: None,
+            prefill_ms: None,
+            inference_ms: None,
+            time_to_first_token_ms: None,
+            generation_ms: None,
+            fallback_reason: Some(fallback_reason),
+        }
+    }
 }
 
 const LOCAL_POLISH_BASE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -34,6 +120,10 @@ fn local_polish_timeout(text: &str) -> Duration {
         + Duration::from_secs(LOCAL_POLISH_TIMEOUT_STEP.as_secs() * extra_steps as u64);
 
     timeout.min(LOCAL_POLISH_MAX_TIMEOUT)
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    started.elapsed().as_millis() as u64
 }
 
 fn has_question_mark(text: &str) -> bool {
@@ -129,6 +219,8 @@ fn classify_polish_failure_reason(error: &str) -> &'static str {
         "model inference failed"
     } else if lower.contains("task join") || lower.contains("panic") {
         "polish worker crashed"
+    } else if lower.contains("local polish server unavailable") {
+        "local polish server unavailable"
     } else if lower.contains("401") || lower.contains("unauthorized") || lower.contains("api key") {
         "cloud polish authentication failed"
     } else if lower.contains("429") || lower.contains("rate limit") {
@@ -154,22 +246,51 @@ fn accept_polish_result(
     event_target: &ProcessingEventTarget<'_>,
     task_id: u64,
     accumulated_text: String,
-    result_text: String,
-    polish_ms: u64,
-    context: &'static str,
-) -> (String, u64) {
-    if should_reject_question_answer_polish(&accumulated_text, &result_text) {
+    result: crate::polish_engine::PolishResult,
+    context: PolishAcceptContext,
+) -> PolishProcessingResult {
+    let PolishAcceptContext {
+        polish_wall_ms,
+        polish_queue_ms,
+        log_context,
+        direct_stream_inserted,
+    } = context;
+    let result_text = result.text.as_str();
+    if direct_stream_inserted {
+        if should_reject_question_answer_polish(&accumulated_text, result_text) {
+            warn!(
+                task_id,
+                context = log_context,
+                input_chars = accumulated_text.len(),
+                output_chars = result_text.len(),
+                "polish_policy_rejection_skipped-direct_stream_inserted"
+            );
+        }
+        return PolishProcessingResult::from_polish_result(
+            result,
+            polish_wall_ms,
+            polish_queue_ms,
+            true,
+        );
+    }
+
+    if should_reject_question_answer_polish(&accumulated_text, result_text) {
         event_target.emit_polish_policy_tooltip(task_id);
         warn!(
             task_id,
-            context,
+            context = log_context,
             input_chars = accumulated_text.len(),
             output_chars = result_text.len(),
             "polish_rejected_answered_question-using_raw"
         );
-        (accumulated_text, 0)
+        PolishProcessingResult::using_original(
+            accumulated_text,
+            polish_wall_ms,
+            polish_queue_ms,
+            "polish answered dictated question",
+        )
     } else {
-        (result_text, polish_ms)
+        PolishProcessingResult::from_polish_result(result, polish_wall_ms, polish_queue_ms, false)
     }
 }
 
@@ -179,7 +300,8 @@ async fn run_local_polish(
     task_id: u64,
     accumulated_text: String,
     context: LocalPolishContext,
-) -> (String, u64) {
+    polish_decision_started: Instant,
+) -> PolishProcessingResult {
     let LocalPolishContext {
         system_prompt,
         window_context,
@@ -197,7 +319,12 @@ async fn run_local_polish(
             failure_reason,
             "polish_model_not_configured"
         );
-        return (accumulated_text, 0);
+        return PolishProcessingResult::using_original(
+            accumulated_text,
+            0,
+            elapsed_ms(polish_decision_started),
+            failure_reason,
+        );
     }
 
     match crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&model_id) {
@@ -211,7 +338,15 @@ async fn run_local_polish(
                     .polish_manager
                     .is_model_downloaded(engine_type, &model_id)
             }) {
-                info!(task_id, engine = ?engine_type, model_id = %model_id, context = log_context, "polish_started-local");
+                let polish_queue_ms = elapsed_ms(polish_decision_started);
+                info!(
+                    task_id,
+                    engine = ?engine_type,
+                    model_id = %model_id,
+                    context = log_context,
+                    polish_queue_ms,
+                    "polish_started-local"
+                );
 
                 let timeout = local_polish_timeout(&accumulated_text);
                 let request = crate::polish_engine::PolishRequest::new(
@@ -225,9 +360,15 @@ async fn run_local_polish(
                     Some(ref ctx) => request.with_window_context(ctx),
                     None => request,
                 };
+                let preview_handle = event_target.polish_preview_callback(task_id);
+                let request = match preview_handle.as_ref() {
+                    Some(handle) => request.with_preview_callback(handle.callback.clone()),
+                    None => request,
+                };
 
                 event_target.emit_polishing(task_id);
 
+                let polish_call_started = Instant::now();
                 match tokio::time::timeout(
                     timeout,
                     state.polish_manager.polish(engine_type, request),
@@ -235,10 +376,19 @@ async fn run_local_polish(
                 .await
                 {
                     Ok(Ok(result)) if !result.text.is_empty() => {
+                        let polish_wall_ms = elapsed_ms(polish_call_started);
                         info!(
                             task_id,
                             chars = result.text.len(),
                             polish_ms = result.total_ms,
+                            polish_wall_ms,
+                            polish_queue_ms,
+                            model_load_ms = result.model_load_ms,
+                            context_create_ms = result.context_create_ms,
+                            prefill_ms = result.prefill_ms,
+                            inference_ms = result.inference_ms,
+                            time_to_first_token_ms = result.time_to_first_token_ms,
+                            generation_ms = result.generation_ms,
                             context = log_context,
                             "polish_completed-local"
                         );
@@ -246,12 +396,20 @@ async fn run_local_polish(
                             event_target,
                             task_id,
                             accumulated_text,
-                            result.text,
-                            result.total_ms,
-                            log_context,
+                            result,
+                            PolishAcceptContext {
+                                polish_wall_ms,
+                                polish_queue_ms,
+                                log_context,
+                                direct_stream_inserted: preview_handle
+                                    .as_ref()
+                                    .map(|handle| handle.direct_stream_inserted())
+                                    .unwrap_or(false),
+                            },
                         )
                     }
                     Ok(Ok(_)) => {
+                        let polish_wall_ms = elapsed_ms(polish_call_started);
                         let failure_reason = "model returned empty output";
                         event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
                         warn!(
@@ -260,9 +418,15 @@ async fn run_local_polish(
                             failure_reason,
                             "polish_empty_result-local_using_raw"
                         );
-                        (accumulated_text, 0)
+                        PolishProcessingResult::using_original(
+                            accumulated_text,
+                            polish_wall_ms,
+                            polish_queue_ms,
+                            failure_reason,
+                        )
                     }
                     Ok(Err(e)) => {
+                        let polish_wall_ms = elapsed_ms(polish_call_started);
                         let failure_reason = classify_polish_failure_reason(&e);
                         if is_local_polish_timeout_error(&e) {
                             event_target.emit_local_polish_timeout_tooltip(task_id);
@@ -270,9 +434,15 @@ async fn run_local_polish(
                             event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
                         }
                         warn!(task_id, error = %e, context = log_context, failure_reason, "polish_failed-local_using_raw");
-                        (accumulated_text, 0)
+                        PolishProcessingResult::using_original(
+                            accumulated_text,
+                            polish_wall_ms,
+                            polish_queue_ms,
+                            failure_reason,
+                        )
                     }
                     Err(_) => {
+                        let polish_wall_ms = elapsed_ms(polish_call_started);
                         event_target.emit_local_polish_timeout_tooltip(task_id);
                         warn!(
                             task_id,
@@ -281,10 +451,16 @@ async fn run_local_polish(
                             input_chars = accumulated_text.chars().count(),
                             "polish_timeout-local_using_raw"
                         );
-                        (accumulated_text, 0)
+                        PolishProcessingResult::using_original(
+                            accumulated_text,
+                            polish_wall_ms,
+                            polish_queue_ms,
+                            LOCAL_POLISH_TIMEOUT_REASON,
+                        )
                     }
                 }
             } else {
+                let polish_queue_ms = elapsed_ms(polish_decision_started);
                 let failure_reason = "model is not downloaded";
                 event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
                 warn!(
@@ -293,14 +469,25 @@ async fn run_local_polish(
                     failure_reason,
                     "polish_model_not_downloaded-using_raw"
                 );
-                (accumulated_text, 0)
+                PolishProcessingResult::using_original(
+                    accumulated_text,
+                    0,
+                    polish_queue_ms,
+                    failure_reason,
+                )
             }
         }
         None => {
+            let polish_queue_ms = elapsed_ms(polish_decision_started);
             let failure_reason = "unknown polish model";
             event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
             warn!(task_id, model_id = %model_id, context = log_context, failure_reason, "polish_model_unknown-engine_undetermined");
-            (accumulated_text, 0)
+            PolishProcessingResult::using_original(
+                accumulated_text,
+                0,
+                polish_queue_ms,
+                failure_reason,
+            )
         }
     }
 }
@@ -315,11 +502,12 @@ pub(super) async fn maybe_polish_transcription_text(
     task_id: u64,
     accumulated_text: String,
     resolved_polish_template_id: Option<String>,
-) -> (String, u64) {
+) -> PolishProcessingResult {
+    let polish_decision_started = Instant::now();
     match resolved_polish_template_id {
         None => {
             info!(task_id, "polish_skipped-no_template");
-            (accumulated_text, 0)
+            PolishProcessingResult::skipped(accumulated_text, "no polish template")
         }
         Some(template_id) => {
             let (
@@ -379,12 +567,14 @@ pub(super) async fn maybe_polish_transcription_text(
             if cloud_polish_enabled {
                 if let Some(cfg) = cloud_config {
                     if !cfg.api_key.is_empty() && !cfg.model.is_empty() {
+                        let polish_queue_ms = elapsed_ms(polish_decision_started);
                         info!(
                             task_id,
                             provider = %provider_type,
                             model = %cfg.model,
                             has_window_context = window_context_chars > 0,
                             window_context_chars,
+                            polish_queue_ms,
                             "polish_started-cloud"
                         );
 
@@ -397,9 +587,15 @@ pub(super) async fn maybe_polish_transcription_text(
                             Some(ref ctx) => request.with_window_context(ctx),
                             None => request,
                         };
+                        let preview_handle = event_target.polish_preview_callback(task_id);
+                        let request = match preview_handle.as_ref() {
+                            Some(handle) => request.with_preview_callback(handle.callback.clone()),
+                            None => request,
+                        };
 
                         event_target.emit_polishing(task_id);
 
+                        let polish_call_started = Instant::now();
                         return match state
                             .polish_manager
                             .polish_cloud(
@@ -413,34 +609,62 @@ pub(super) async fn maybe_polish_transcription_text(
                             .await
                         {
                             Ok(result) if !result.text.is_empty() => {
+                                let polish_wall_ms = elapsed_ms(polish_call_started);
                                 info!(
                                     task_id,
                                     chars = result.text.len(),
                                     polish_ms = result.total_ms,
+                                    polish_wall_ms,
+                                    polish_queue_ms,
+                                    model_load_ms = result.model_load_ms,
+                                    context_create_ms = result.context_create_ms,
+                                    prefill_ms = result.prefill_ms,
+                                    inference_ms = result.inference_ms,
+                                    time_to_first_token_ms = result.time_to_first_token_ms,
+                                    generation_ms = result.generation_ms,
                                     "polish_completed-cloud"
                                 );
                                 accept_polish_result(
                                     event_target,
                                     task_id,
                                     accumulated_text,
-                                    result.text,
-                                    result.total_ms,
-                                    "cloud",
+                                    result,
+                                    PolishAcceptContext {
+                                        polish_wall_ms,
+                                        polish_queue_ms,
+                                        log_context: "cloud",
+                                        direct_stream_inserted: preview_handle
+                                            .as_ref()
+                                            .map(|handle| handle.direct_stream_inserted())
+                                            .unwrap_or(false),
+                                    },
                                 )
                             }
                             Ok(_) => {
+                                let polish_wall_ms = elapsed_ms(polish_call_started);
                                 let failure_reason = "cloud model returned empty output";
                                 event_target
                                     .emit_polish_error_tooltip(task_id, Some(failure_reason));
                                 warn!(task_id, provider = %provider_type, failure_reason, "polish_empty_result-cloud_using_raw");
-                                (accumulated_text, 0)
+                                PolishProcessingResult::using_original(
+                                    accumulated_text,
+                                    polish_wall_ms,
+                                    polish_queue_ms,
+                                    failure_reason,
+                                )
                             }
                             Err(e) => {
+                                let polish_wall_ms = elapsed_ms(polish_call_started);
                                 let failure_reason = classify_polish_failure_reason(&e);
                                 event_target
                                     .emit_polish_error_tooltip(task_id, Some(failure_reason));
                                 warn!(task_id, provider = %provider_type, error = %e, failure_reason, "polish_failed-cloud_using_raw");
-                                (accumulated_text, 0)
+                                PolishProcessingResult::using_original(
+                                    accumulated_text,
+                                    polish_wall_ms,
+                                    polish_queue_ms,
+                                    failure_reason,
+                                )
                             }
                         };
                     }
@@ -459,6 +683,7 @@ pub(super) async fn maybe_polish_transcription_text(
                     model_id: polish_model_id,
                     log_context: "local",
                 },
+                polish_decision_started,
             )
             .await
         }
@@ -557,6 +782,14 @@ mod tests {
         assert_eq!(
             classify_polish_failure_reason("Local polish timed out"),
             "local polish timed out"
+        );
+    }
+
+    #[test]
+    fn classifies_local_server_unavailable_without_cloud_reason() {
+        assert_eq!(
+            classify_polish_failure_reason("Local polish server unavailable: connection refused"),
+            "local polish server unavailable"
         );
     }
 }
