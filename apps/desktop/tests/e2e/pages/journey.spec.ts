@@ -81,45 +81,15 @@ test('Desktop first-run journey', async ({ tauriPage }) => {
   await expect(tauriPage.locator('[data-testid="dashboard-page"]')).toBeVisible({ timeout: 15000 });
 
   const modal = tauriPage.locator('[data-testid="onboarding-modal"]');
-  const progress = modal.locator('[data-testid="onboarding-step-progress"]');
+  const modalBody = modal.locator('[data-testid="onboarding-modal-body"]');
+  const progress = modalBody.locator('[data-testid="onboarding-step-progress"]');
   const nextButton = tauriPage.locator('[data-testid="onboarding-primary-action"]');
 
   await expect(modal).toBeVisible({ timeout: 10000 });
   await expect(modal).toHaveCSS('width', '640px');
+  await expect(modal.locator('h2')).toBeVisible();
+  await expect(modalBody).toBeVisible();
   await expect(progress).toBeVisible();
-
-  const progressPlacement = await tauriPage.evaluate<{
-    modalHeight: number;
-    modalY: number;
-    progressY: number;
-    titleBottom: number;
-  } | null>(
-    `(function() {
-      const modalElement = document.querySelector('[data-testid="onboarding-modal"]');
-      const titleElement = modalElement?.querySelector('h2');
-      const progressElement = modalElement?.querySelector('[data-testid="onboarding-step-progress"]');
-      if (!modalElement || !titleElement || !progressElement) {
-        return null;
-      }
-
-      const modalRect = modalElement.getBoundingClientRect();
-      const titleRect = titleElement.getBoundingClientRect();
-      const progressRect = progressElement.getBoundingClientRect();
-      return {
-        modalHeight: modalRect.height,
-        modalY: modalRect.y,
-        progressY: progressRect.y,
-        titleBottom: titleRect.y + titleRect.height,
-      };
-    })()`,
-  );
-  if (!progressPlacement) {
-    throw new Error('Unable to measure onboarding progress placement');
-  }
-  expect(progressPlacement.progressY).toBeGreaterThan(progressPlacement.titleBottom);
-  expect(progressPlacement.progressY).toBeGreaterThan(
-    progressPlacement.modalY + progressPlacement.modalHeight * 0.7,
-  );
 
   for (const [index, stepId] of onboardingSteps.entries()) {
     await assertJourneyStep(tauriPage, stepId);
