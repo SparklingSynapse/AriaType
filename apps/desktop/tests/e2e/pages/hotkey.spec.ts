@@ -1,7 +1,6 @@
 import type { TauriFixtures } from '@srsholmes/tauri-playwright';
 import { test, expect } from '../fixtures';
 import {
-  navigateViaSidebar,
   openRoute,
   openRouteWithOnboarding,
   seedDefaultShortcutProfiles,
@@ -16,9 +15,12 @@ async function openSeededHotkeyPage(tauriPage: TauriFixtures['tauriPage']): Prom
 test('Hotkey Settings page displays profiles', async ({ tauriPage }) => {
   await openRouteWithOnboarding(tauriPage, '/');
   await seedDefaultShortcutProfiles(tauriPage);
-  await navigateViaSidebar(tauriPage, 'Hotkey');
+  await tauriPage.click('[data-testid="open-settings-modal"]');
+  await tauriPage.locator('[data-testid="settings-modal-section-recording"]').click();
 
-  const hotkeyPage = tauriPage.locator('[data-testid="hotkey-page"]');
+  const hotkeyPage = tauriPage
+    .locator('[data-testid="settings-modal"]')
+    .locator('[data-testid="hotkey-page"]');
 
   await expect(hotkeyPage).toBeVisible();
   await expect(hotkeyPage.locator('[data-testid="profile-dictate"]')).toBeVisible();

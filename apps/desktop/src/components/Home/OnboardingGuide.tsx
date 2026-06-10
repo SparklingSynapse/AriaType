@@ -4,15 +4,14 @@ import { Button } from "@/components/ui/button";
 import {
   CaretRight,
   CaretLeft,
-  X,
   Microphone,
   Wheelchair,
   Desktop,
   Check,
   CircleNotch,
-  Shield,
-  Lightning,
-  Eye,
+  HardDrives,
+  Tray,
+  Waveform,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
@@ -39,6 +38,13 @@ import {
   resolveOnboardingModelProgress,
   resolveOnboardingModelReady,
 } from "./onboarding-model";
+import {
+  ModalBackdrop,
+  ModalCloseButton,
+  ModalSurface,
+  ModalViewport,
+  ONBOARDING_MODAL_SIZE_CLASS,
+} from "./ModalShell";
 
 const DEFAULT_HOTKEY = "Shift+Space";
 const ONBOARDING_RESET_EVENT = "ariatype:onboarding-reset";
@@ -841,17 +847,17 @@ function DoneStep() {
 
   const features = [
     {
-      icon: Shield,
+      icon: HardDrives,
       label: t("onboarding.done.feature1"),
       highlight: t("onboarding.done.feature1Highlight"),
     },
     {
-      icon: Lightning,
+      icon: Waveform,
       label: t("onboarding.done.feature2"),
       highlight: t("onboarding.done.feature2Highlight"),
     },
     {
-      icon: Eye,
+      icon: Tray,
       label: t("onboarding.done.feature3"),
       highlight: t("onboarding.done.feature3Highlight"),
     },
@@ -867,7 +873,9 @@ function DoneStep() {
             key={index}
             className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border border-border bg-card"
           >
-            <feature.icon className="w-5 h-5 text-muted-foreground shrink-0" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <feature.icon weight="duotone" className="w-5 h-5 shrink-0" />
+            </div>
             <div className="text-center">
               <span className="text-sm font-medium block leading-tight">{feature.label}</span>
               <span className="text-xs text-muted-foreground block leading-tight mt-0.5">
@@ -1026,93 +1034,90 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleSkip}
-      />
+    <>
+      <ModalBackdrop onClick={handleSkip} />
 
-      <div
-        className="relative z-10 w-[640px] h-[620px] mx-4 bg-background rounded-3xl border border-border shadow-2xl flex flex-col"
-        data-testid="onboarding-modal"
-        data-step-id={current.id}
-      >
-        <div className="flex flex-col items-center gap-3 pt-6 shrink-0">
-          <div className="flex justify-center gap-2">
-            {steps.map((_, index) => (
-              <button
-                key={index}
-                onClick={() => setCurrentStep(index)}
-                className={cn(
-                  "h-1.5 rounded-full transition-all duration-300 cursor-pointer",
-                  index === currentStep
-                    ? "w-6 bg-primary"
-                    : index < currentStep
-                      ? "w-1.5 bg-primary"
-                      : "w-1.5 bg-input",
-                )}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="flex-1 flex flex-col">
-          <div className="pt-6 px-14 shrink-0">
-            <h2 className="text-lg font-semibold text-center mb-2">
-              {current.title}
-            </h2>
-            <p className="text-sm text-muted-foreground text-center">
-              {current.description}
-            </p>
-          </div>
-
-          <div className="flex-1 flex items-center justify-center px-14 pb-10">
-            {renderStepContent()}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between space-x-4 p-4 border-t border-border shrink-0 rounded-b-xl">
-          {currentStep > 0 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handlePrev}
-              className="gap-2"
-            >
-              <CaretLeft className="w-4 h-4" />
-              {t("onboarding.prev")}
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSkip}
-              className="text-muted-foreground"
-            >
-              {t("onboarding.skip")}
-            </Button>
-          )}
-          <Button
-            size="sm"
-            onClick={handleNext}
-            disabled={!canProceed()}
-            className="gap-2"
-            data-testid="onboarding-primary-action"
-          >
-            {isLastStep ? t("onboarding.finish") : t("onboarding.next")}
-            {!isLastStep && <CaretRight className="w-4 h-4" />}
-          </Button>
-        </div>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute top-3 right-3 h-8 w-8 text-muted-foreground hover:text-foreground"
-          onClick={handleSkip}
+      <ModalViewport>
+        <ModalSurface
+          className="relative flex-col"
+          sizeClassName={ONBOARDING_MODAL_SIZE_CLASS}
+          data-testid="onboarding-modal"
+          data-step-id={current.id}
         >
-          <X className="w-4 h-4" />
-        </Button>
-      </div>
-    </div>
+          <div className="flex shrink-0 items-center justify-between gap-5 border-b border-border/70 px-8 py-4">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold leading-6 text-foreground">
+                {current.title}
+              </h2>
+              <p className="mt-0.5 max-w-xl text-sm leading-5 text-muted-foreground">
+                {current.description}
+              </p>
+            </div>
+            <ModalCloseButton
+              aria-label={t("onboarding.skip")}
+              onClick={handleSkip}
+            />
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col px-14 pb-5 pt-6">
+            <div className="flex min-h-0 flex-1 items-center justify-center">
+              {renderStepContent()}
+            </div>
+            <div
+              className="flex shrink-0 justify-center gap-2 pt-4"
+              data-testid="onboarding-step-progress"
+            >
+              {steps.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setCurrentStep(index)}
+                  className={cn(
+                    "h-1.5 rounded-full transition-all duration-300 cursor-pointer",
+                    index === currentStep
+                      ? "w-6 bg-primary"
+                      : index < currentStep
+                        ? "w-1.5 bg-primary"
+                        : "w-1.5 bg-input",
+                  )}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center justify-between gap-4 border-t border-border/70 px-8 py-4">
+            {currentStep > 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handlePrev}
+                className="gap-2"
+              >
+                <CaretLeft className="w-4 h-4" />
+                {t("onboarding.prev")}
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSkip}
+                className="text-muted-foreground"
+              >
+                {t("onboarding.skip")}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={handleNext}
+              disabled={!canProceed()}
+              className="gap-2"
+              data-testid="onboarding-primary-action"
+            >
+              {isLastStep ? t("onboarding.finish") : t("onboarding.next")}
+              {!isLastStep && <CaretRight className="w-4 h-4" />}
+            </Button>
+          </div>
+        </ModalSurface>
+      </ModalViewport>
+    </>
   );
 }

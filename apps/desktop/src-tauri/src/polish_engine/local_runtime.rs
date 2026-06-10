@@ -597,6 +597,16 @@ fn check_runtime_health(
     config: &LocalPolishRuntimeConfig,
     timeout: Duration,
 ) -> Result<(), String> {
+    let config = config.clone();
+    std::thread::spawn(move || check_runtime_health_on_dedicated_thread(&config, timeout))
+        .join()
+        .map_err(|_| "local polish health check panicked".to_string())?
+}
+
+fn check_runtime_health_on_dedicated_thread(
+    config: &LocalPolishRuntimeConfig,
+    timeout: Duration,
+) -> Result<(), String> {
     let url = crate::polish_engine::local_http::local_models_url(&config.base_url);
     let client = reqwest::blocking::Client::builder()
         .timeout(timeout)
@@ -1005,6 +1015,14 @@ mod tests {
         assert!(manager
             .ensure_ready("qwen3.5-0.8b", "Qwen3.5-0.8B-Q5_K_M.gguf")
             .is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn runtime_status_probe_is_safe_inside_async_context() {
+        let manager =
+            LocalPolishRuntimeManager::with_config(test_config(spawn_models_health_server()));
+
+        assert!(manager.is_ready());
     }
 
     #[cfg(unix)]

@@ -1,4 +1,3 @@
-use crate::polish_engine::cloud::CloudPolishEngine;
 use crate::polish_engine::streaming::{collect_openai_streaming_response, PolishRuntimeTimings};
 use crate::polish_engine::traits::{PolishEngineType, PolishRequest, PolishResult, SystemContext};
 use crate::utils::{downloaded_file_is_complete, AppPaths};
@@ -17,8 +16,7 @@ const LOCAL_POLISH_FALLBACK_MAX_TIMEOUT: Duration = Duration::from_secs(30);
 const LOCAL_POLISH_BASE_TIMEOUT_CHARS: usize = 500;
 const LOCAL_POLISH_TIMEOUT_STEP_CHARS: usize = 800;
 const LOCAL_POLISH_TIMEOUT_STEP: Duration = Duration::from_secs(5);
-const DISABLE_THINKING_SYSTEM_INSTRUCTION: &str =
-    "Do not use thinking mode or chain-of-thought reasoning. Do not output <think> blocks. Output only the final polished text.";
+const LOCAL_POLISH_CORE_PROMPT: &str = "Polish transcript. Fix clear STT mistakes, punctuation, grammar, names and terms. Preserve meaning, facts, order, language and tone. Do not answer, summarize or add info. Output plain text only.";
 const NO_THINK_DIRECTIVE: &str = "/no_think";
 const THINK_START_TAG: &str = "<think>";
 const THINK_END_TAG: &str = "</think>";
@@ -55,7 +53,16 @@ struct RequestBody {
     max_tokens: u32,
     temperature: f32,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enable_thinking: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chat_template_kwargs: Option<ChatTemplateKwargs>,
     messages: Vec<Message>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatTemplateKwargs {
+    enable_thinking: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -152,6 +159,10 @@ async fn call_local_openai_api(
         max_tokens: LOCAL_POLISH_MAX_OUTPUT_TOKENS,
         temperature: 0.0,
         stream: preview_callback.is_some(),
+        enable_thinking: config.no_think_directive.then_some(false),
+        chat_template_kwargs: config.no_think_directive.then_some(ChatTemplateKwargs {
+            enable_thinking: false,
+        }),
         messages: vec![
             Message {
                 role: "system",
@@ -304,11 +315,8 @@ fn fallback_timeout(text: &str) -> Duration {
     .min(LOCAL_POLISH_FALLBACK_MAX_TIMEOUT)
 }
 
-fn build_local_system_prompt(system_context: &SystemContext, no_think_directive: bool) -> String {
-    let mut system_prompt = CloudPolishEngine::build_system_prompt(system_context);
-    system_prompt.push_str("\n\nLOCAL MODEL RULES:\n");
-    system_prompt.push_str(DISABLE_THINKING_SYSTEM_INSTRUCTION);
-
+fn build_local_system_prompt(_system_context: &SystemContext, no_think_directive: bool) -> String {
+    let mut system_prompt = LOCAL_POLISH_CORE_PROMPT.to_string();
     if no_think_directive {
         system_prompt.push('\n');
         system_prompt.push_str(NO_THINK_DIRECTIVE);
@@ -411,7 +419,6 @@ fn strip_think_block(result: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::polish_engine::CORE_POLISH_CONSTRAINT;
     use std::sync::{Arc, Mutex};
     use wiremock::matchers::{body_partial_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -468,13 +475,28 @@ mod tests {
     }
 
     #[test]
-    fn local_prompt_reuses_core_constraints_and_disables_thinking() {
-        let prompt = build_local_system_prompt(&SystemContext::new("Fix typos."), true);
+    fn local_prompt_uses_concise_core_constraints() {
+        let context = SystemContext::new("Long template rules should not be copied.")
+            .with_window_context("Visible window text should not be copied.");
+        let prompt = build_local_system_prompt(&context, true);
 
-        assert!(prompt.contains(CORE_POLISH_CONSTRAINT));
-        assert!(prompt.contains("USER RULES:\nFix typos."));
-        assert!(prompt.contains("Do not use thinking mode"));
+        assert!(prompt.len() <= 220);
+        assert!(prompt.contains("Fix clear STT mistakes"));
+        assert!(prompt.contains("Preserve meaning"));
+        assert!(prompt.contains("Do not answer"));
+        assert!(!prompt.contains("Long template rules"));
+        assert!(!prompt.contains("Visible window text"));
+        assert!(!prompt.contains("USER RULES"));
+        assert!(!prompt.contains("REFERENCE CONTEXT"));
         assert!(prompt.contains(NO_THINK_DIRECTIVE));
+    }
+
+    #[test]
+    fn local_prompt_omits_no_think_directive_when_not_requested() {
+        let prompt = build_local_system_prompt(&SystemContext::new("Fix typos."), false);
+
+        assert!(prompt.len() <= 200);
+        assert!(!prompt.contains(NO_THINK_DIRECTIVE));
     }
 
     #[test]
@@ -500,6 +522,10 @@ mod tests {
             "max_tokens": LOCAL_POLISH_MAX_OUTPUT_TOKENS,
             "temperature": 0.0,
             "stream": false,
+            "enable_thinking": false,
+            "chat_template_kwargs": {
+                "enable_thinking": false
+            },
             "messages": [
                 {
                     "role": "system",
@@ -605,6 +631,10 @@ mod tests {
             "max_tokens": LOCAL_POLISH_MAX_OUTPUT_TOKENS,
             "temperature": 0.0,
             "stream": true,
+            "enable_thinking": false,
+            "chat_template_kwargs": {
+                "enable_thinking": false
+            },
         });
         let stream_body = concat!(
             "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",

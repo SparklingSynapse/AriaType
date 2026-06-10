@@ -40,6 +40,14 @@ import langCodes from "@/lib/lang-codes.json";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Slider } from "@/components/ui/slider";
 
+type GeneralSettingsTab = "general" | "transcription";
+
+interface GeneralSettingsProps {
+  initialTab?: GeneralSettingsTab;
+  fixedTab?: GeneralSettingsTab;
+  variant?: "page" | "modal";
+}
+
 function getLanguageLabel(code: string): string {
   return (langCodes as Record<string, string>)[code] || code;
 }
@@ -73,13 +81,17 @@ function normalizePillBackgroundOpacity(opacity: number | undefined): number {
   return Math.min(1, Math.max(0.2, opacity));
 }
 
-export function GeneralSettings() {
+export function GeneralSettings({
+  initialTab = "general",
+  fixedTab,
+  variant = "page",
+}: GeneralSettingsProps = {}) {
   const { t, i18n } = useTranslation();
   const { settings, updateSetting } = useSettingsContext();
   const [audioDevices, setAudioDevices] = useState<string[]>(["default"]);
   const [isMacOS, setIsMacOS] = useState(false);
   const [isInHouseBuild, setIsInHouseBuild] = useState(false);
-  const [activeTab, setActiveTab] = useState<"general" | "transcription">("general");
+  const [activeTab, setActiveTab] = useState<GeneralSettingsTab>(initialTab);
   const [availableSubdomains, setAvailableSubdomains] = useState<string[]>([]);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [isClearingCorrectionMemory, setIsClearingCorrectionMemory] = useState(false);
@@ -107,6 +119,10 @@ export function GeneralSettings() {
     colorPickerDismiss,
     colorPickerRole,
   ]);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   // Helper functions with static i18n keys (for scanner detection)
   const getPillSizeLabel = (size: number): string => {
@@ -345,24 +361,30 @@ export function GeneralSettings() {
   const pillBackgroundColor = normalizePillBackgroundColor(settings.pill_background_color);
   const pillBackgroundOpacity = normalizePillBackgroundOpacity(settings.pill_background_opacity);
   const pillBackgroundOpacityPercent = `${Math.round(pillBackgroundOpacity * 100)}%`;
+  const displayedTab = fixedTab ?? activeTab;
+  const showTabs = fixedTab === undefined;
 
   return (
     <SettingsPageLayout
       title={t("general.title")}
       description={t("general.description")}
       testId="settings-page"
+      variant={variant}
+      showHeader={variant === "page"}
     >
-      <SegmentedControl
-        items={[
-          { value: "general", label: t("general.tabs.general") },
-          { value: "transcription", label: t("general.tabs.transcription") },
-        ]}
-        value={activeTab}
-        onChange={(v) => setActiveTab(v as "general" | "transcription")}
-        size="sm"
-      />
+      {showTabs && (
+        <SegmentedControl
+          items={[
+            { value: "general", label: t("general.tabs.general") },
+            { value: "transcription", label: t("general.tabs.transcription") },
+          ]}
+          value={activeTab}
+          onChange={(v) => setActiveTab(v as GeneralSettingsTab)}
+          size="sm"
+        />
+      )}
 
-      {activeTab === "general" && (
+      {displayedTab === "general" && (
         <>
           <Card>
             <CardHeader>
@@ -669,7 +691,7 @@ export function GeneralSettings() {
         </>
       )}
 
-      {activeTab === "transcription" && (
+      {displayedTab === "transcription" && (
         <>
           <Card>
             <CardHeader>

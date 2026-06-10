@@ -101,11 +101,11 @@ impl PolishProcessingResult {
     }
 }
 
-const LOCAL_POLISH_BASE_TIMEOUT: Duration = Duration::from_secs(10);
-const LOCAL_POLISH_MAX_TIMEOUT: Duration = Duration::from_secs(30);
+const LOCAL_POLISH_BASE_TIMEOUT: Duration = Duration::from_secs(20);
+const LOCAL_POLISH_MAX_TIMEOUT: Duration = Duration::from_secs(60);
 const LOCAL_POLISH_BASE_TIMEOUT_CHARS: usize = 500;
 const LOCAL_POLISH_TIMEOUT_STEP_CHARS: usize = 800;
-const LOCAL_POLISH_TIMEOUT_STEP: Duration = Duration::from_secs(5);
+const LOCAL_POLISH_TIMEOUT_STEP: Duration = Duration::from_secs(10);
 const LOCAL_POLISH_TIMEOUT_REASON: &str = "local polish timed out";
 
 fn contains_any(text: &str, needles: &[&str]) -> bool {

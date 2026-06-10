@@ -70,12 +70,56 @@ test('Desktop first-run journey', async ({ tauriPage }) => {
   test.setTimeout(180000);
 
   await waitForAppReady(tauriPage, 15000);
+  await tauriPage.evaluate(
+    `(function() {
+      localStorage.removeItem('onboarding_completed');
+      window.location.reload();
+      return true;
+    })()`,
+  );
+  await waitForAppReady(tauriPage, 15000);
   await expect(tauriPage.locator('[data-testid="dashboard-page"]')).toBeVisible({ timeout: 15000 });
 
   const modal = tauriPage.locator('[data-testid="onboarding-modal"]');
+  const progress = modal.locator('[data-testid="onboarding-step-progress"]');
   const nextButton = tauriPage.locator('[data-testid="onboarding-primary-action"]');
 
   await expect(modal).toBeVisible({ timeout: 10000 });
+  await expect(modal).toHaveCSS('width', '640px');
+  await expect(progress).toBeVisible();
+
+  const progressPlacement = await tauriPage.evaluate<{
+    modalHeight: number;
+    modalY: number;
+    progressY: number;
+    titleBottom: number;
+  } | null>(
+    `(function() {
+      const modalElement = document.querySelector('[data-testid="onboarding-modal"]');
+      const titleElement = modalElement?.querySelector('h2');
+      const progressElement = modalElement?.querySelector('[data-testid="onboarding-step-progress"]');
+      if (!modalElement || !titleElement || !progressElement) {
+        return null;
+      }
+
+      const modalRect = modalElement.getBoundingClientRect();
+      const titleRect = titleElement.getBoundingClientRect();
+      const progressRect = progressElement.getBoundingClientRect();
+      return {
+        modalHeight: modalRect.height,
+        modalY: modalRect.y,
+        progressY: progressRect.y,
+        titleBottom: titleRect.y + titleRect.height,
+      };
+    })()`,
+  );
+  if (!progressPlacement) {
+    throw new Error('Unable to measure onboarding progress placement');
+  }
+  expect(progressPlacement.progressY).toBeGreaterThan(progressPlacement.titleBottom);
+  expect(progressPlacement.progressY).toBeGreaterThan(
+    progressPlacement.modalY + progressPlacement.modalHeight * 0.7,
+  );
 
   for (const [index, stepId] of onboardingSteps.entries()) {
     await assertJourneyStep(tauriPage, stepId);
@@ -114,8 +158,13 @@ test('Desktop post-onboarding navigation journey', async ({ tauriPage }) => {
   await expect(dashboardPage).toBeVisible({ timeout: 10000 });
   await expect(dashboardPage.locator('[data-testid="dashboard-content"]')).toBeVisible();
 
-  await navigateViaSidebar(tauriPage, 'General');
-  const settingsPage = tauriPage.locator('[data-testid="settings-page"]');
+  const settingsButton = tauriPage.locator('[data-testid="open-settings-modal"]');
+  await expect(settingsButton).toBeVisible({ timeout: 10000 });
+  await expect(settingsButton).toBeEnabled();
+  await settingsButton.click();
+  const settingsModal = tauriPage.locator('[data-testid="settings-modal"]');
+  const settingsPage = settingsModal.locator('[data-testid="settings-page"]');
+  await expect(settingsModal).toBeVisible({ timeout: 10000 });
   await expect(settingsPage).toBeVisible({ timeout: 10000 });
   await expect(settingsPage.getByText('App Language')).toBeVisible();
   await expectNativeScreenshot(
@@ -124,6 +173,8 @@ test('Desktop post-onboarding navigation journey', async ({ tauriPage }) => {
     0.1,
     { captureMode: 'native-with-fallback', stabilizationMs: journeySnapshotStabilizationMs },
   );
+  await tauriPage.keyboard.press('Escape');
+  await expect(settingsModal).toBeHidden();
 
   await navigateViaSidebar(tauriPage, 'History');
   const historyPage = tauriPage.locator('[data-testid="history-page"]');

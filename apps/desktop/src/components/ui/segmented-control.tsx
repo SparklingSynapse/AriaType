@@ -36,7 +36,7 @@ export function SegmentedControl({
     <div
       data-testid={testId}
       className={cn(
-        "inline-flex items-center justify-center rounded-full bg-secondary text-muted-foreground gap-1",
+        "inline-flex items-center justify-center rounded-full bg-secondary/35 text-muted-foreground gap-1 dark:bg-secondary",
         containerSizeClasses[size],
         className
       )}
@@ -50,8 +50,8 @@ export function SegmentedControl({
             "inline-flex h-full items-center justify-center whitespace-nowrap rounded-full text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
             buttonSizeClasses[size],
             value === item.value
-              ? "bg-background text-foreground shadow-sm"
-              : "hover:text-foreground hover:bg-background/40"
+              ? "bg-white text-zinc-950 shadow-sm dark:bg-background dark:text-foreground"
+              : "hover:text-foreground hover:bg-white/60 dark:hover:bg-background/40"
           )}
         >
           {item.label}
