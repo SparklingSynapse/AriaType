@@ -469,9 +469,10 @@ fn test_stt_engine_type_switching() {
     );
 
     let engines = UnifiedEngineManager::available_engines();
-    assert_eq!(engines.len(), 3);
+    assert_eq!(engines.len(), EngineType::all().len());
     assert!(engines.contains(&EngineType::Whisper));
     assert!(engines.contains(&EngineType::SenseVoice));
+    assert!(engines.contains(&EngineType::Qwen3Asr));
     assert!(engines.contains(&EngineType::Cloud));
 
     cleanup_test_dir(&test_dir);

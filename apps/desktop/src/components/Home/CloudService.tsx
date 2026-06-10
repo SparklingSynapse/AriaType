@@ -5,15 +5,27 @@ import { CloudSttSection } from "./cloud/CloudSttSection";
 import { CloudPolishSection } from "./cloud/CloudPolishSection";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
-export function CloudService() {
+type CloudServiceTab = "stt" | "polish";
+
+interface CloudServiceProps {
+  initialTab?: CloudServiceTab;
+  variant?: "page" | "modal";
+}
+
+export function CloudService({
+  initialTab = "stt",
+  variant = "page",
+}: CloudServiceProps = {}) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<"stt" | "polish">("stt");
+  const [activeTab, setActiveTab] = useState<CloudServiceTab>(initialTab);
 
   return (
     <SettingsPageLayout
       title={t("cloud.title")}
       description={t("cloud.description")}
       testId="cloud-page"
+      variant={variant}
+      showHeader={variant === "page"}
     >
       <SegmentedControl
         items={[
@@ -21,7 +33,7 @@ export function CloudService() {
           { value: "polish", label: t("cloud.tabs.polish", "Cloud Polish") },
         ]}
         value={activeTab}
-        onChange={(v) => setActiveTab(v as "stt" | "polish")}
+        onChange={(v) => setActiveTab(v as CloudServiceTab)}
       />
       <div>
         {activeTab === "stt" && <CloudSttSection />}

@@ -64,7 +64,7 @@ fn order_window_front(window: &tauri::WebviewWindow) {
 #[cfg(all(target_os = "macos", feature = "e2e-testing"))]
 fn prepare_main_window_for_e2e_snapshot(window: &tauri::WebviewWindow) {
     let _ = window.set_visible_on_all_workspaces(true);
-    let _ = window.set_size(tauri::LogicalSize::new(980.0, 740.0));
+    let _ = window.set_size(tauri::LogicalSize::new(1120.0, 800.0));
     let _ = window.center();
 
     use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};

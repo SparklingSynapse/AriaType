@@ -18,10 +18,20 @@ import { PerformanceSection } from "./model/PerformanceSection";
 
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
-export function ModelSettings() {
+type ModelSettingsTab = "voice" | "polish" | "performance";
+
+interface ModelSettingsProps {
+  initialTab?: ModelSettingsTab;
+  variant?: "page" | "modal";
+}
+
+export function ModelSettings({
+  initialTab = "voice",
+  variant = "page",
+}: ModelSettingsProps = {}) {
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
-  const [activeTab, setActiveTab] = useState<"voice" | "polish" | "performance">("voice");
+  const [activeTab, setActiveTab] = useState<ModelSettingsTab>(initialTab);
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
@@ -36,6 +46,10 @@ export function ModelSettings() {
   useEffect(() => {
     polishDownloadingIdRef.current = polishDownloadingId;
   }, [polishDownloadingId]);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const loadModels = useCallback(async () => {
     try {
@@ -238,6 +252,8 @@ export function ModelSettings() {
       title={t("model.title")}
       description={t("model.description")}
       testId="model-page"
+      variant={variant}
+      showHeader={variant === "page"}
     >
       <SegmentedControl
         items={[
@@ -246,7 +262,7 @@ export function ModelSettings() {
           { value: "performance", label: t("model.tabs.performance", "Performance") },
         ]}
         value={activeTab}
-        onChange={(v) => setActiveTab(v as "voice" | "polish" | "performance")}
+        onChange={(v) => setActiveTab(v as ModelSettingsTab)}
       />
 
       <div >

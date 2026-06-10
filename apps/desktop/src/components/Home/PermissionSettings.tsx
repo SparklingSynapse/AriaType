@@ -11,7 +11,11 @@ import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/hooks/usePermissions";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 
-export function PermissionSettings() {
+interface PermissionSettingsProps {
+  variant?: "page" | "modal";
+}
+
+export function PermissionSettings({ variant = "page" }: PermissionSettingsProps = {}) {
   const { t } = useTranslation();
   const { accessibilityGranted, microphoneStatus, screenRecordingStatus, isLoading, handleApplyPermission } =
     usePermissions();
@@ -21,6 +25,8 @@ export function PermissionSettings() {
       title={t("general.permissions.title")}
       description={t("general.permissions.description")}
       testId="permission-page"
+      variant={variant}
+      showHeader={variant === "page"}
     >
       <Card>
         <CardHeader>

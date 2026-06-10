@@ -9,8 +9,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Check, WarningCircle } from "@phosphor-icons/react";
+import { Check, CircleNotch, WarningCircle } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -25,7 +24,6 @@ import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
 import { useSettingsContext } from "@/contexts/SettingsContext";
-import { CloudConnectionCheckRow } from "@/components/Home/cloud/CloudConnectionCheckRow";
 
 const TEMPLATE_LABEL_KEYS: Record<string, string> = {
   filler: "model.polish.templateFiller",
@@ -50,12 +48,6 @@ const DEFAULT_LOCAL_RUNTIME: LocalPolishRuntimeSettings = {
   server_command: "",
   server_args_json: "",
   ready_timeout_secs: 20,
-};
-
-const LOCAL_RUNTIME_PRESETS: Record<string, Pick<LocalPolishRuntimeSettings, "base_url">> = {
-  "llama-server": { base_url: "http://127.0.0.1:8000/v1" },
-  "lm-studio": { base_url: "http://127.0.0.1:1234/v1" },
-  ollama: { base_url: "http://127.0.0.1:11434/v1" },
 };
 
 interface PolishSectionProps {
@@ -112,13 +104,6 @@ function getCompatibilityWarning(model: PolishModelInfo | undefined, t: TFunctio
   });
 }
 
-function getCompatibilityTextTone(model: PolishModelInfo | undefined): string {
-  if (model?.compatibility?.level === "unsupported") {
-    return "text-destructive";
-  }
-  return "text-amber-500";
-}
-
 function getTemplateNames(templateIds: string[], t: TFunction): string {
   return templateIds
     .map((id) => t(TEMPLATE_LABEL_KEYS[id] ?? id))
@@ -127,19 +112,6 @@ function getTemplateNames(templateIds: string[], t: TFunction): string {
 
 function getLatencyLabel(model: PolishModelInfo, t: TFunction): string {
   return t(LATENCY_LABEL_KEYS[model.latency_profile.class]);
-}
-
-function getLatencyTone(model: PolishModelInfo): string {
-  switch (model.latency_profile.class) {
-    case "fast":
-      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
-    case "balanced":
-      return "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400";
-    case "slow":
-      return "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400";
-    case "heavy":
-      return "border-destructive/30 bg-destructive/10 text-destructive";
-  }
 }
 
 function getLatencySummary(model: PolishModelInfo, t: TFunction): string {
@@ -154,6 +126,53 @@ function getLatencyCaution(model: PolishModelInfo, t: TFunction): string | null 
   return t("model.polish.latency.slowerFor", {
     templates: getTemplateNames(model.latency_profile.caution_templates, t),
   });
+}
+
+function getLocalRuntimeProviderLabel(providerType: string, t: TFunction): string {
+  switch (providerType) {
+    case "llama-server":
+      return t("model.polish.localRuntime.llamaServer");
+    case "lm-studio":
+      return t("model.polish.localRuntime.lmStudio");
+    case "ollama":
+      return t("model.polish.localRuntime.ollama");
+    case "custom":
+      return t("model.polish.localRuntime.custom");
+    default:
+      return providerType;
+  }
+}
+
+function getRuntimeCheckMessage(
+  result: CloudConnectionCheckResult | null,
+  checking: boolean,
+  t: TFunction,
+): string | null {
+  if (checking) return t("cloud.check.checking");
+  if (!result) return null;
+
+  switch (result.kind) {
+    case "ok":
+      return t("cloud.check.ok");
+    case "disabled":
+      return t("cloud.check.disabled");
+    case "missing_required":
+      return t("cloud.check.missing_required");
+    case "invalid_url":
+      return t("cloud.check.invalid_url");
+    case "unsupported_provider":
+      return t("cloud.check.unsupported_provider");
+    case "auth_failed":
+      return t("cloud.check.auth_failed");
+    case "model_failed":
+      return t("cloud.check.model_failed");
+    case "network_failed":
+      return t("cloud.check.network_failed");
+    case "timeout":
+      return t("cloud.check.timeout");
+    case "provider_error":
+      return t("cloud.check.provider_error");
+  }
 }
 
 export function PolishSection({
@@ -218,31 +237,6 @@ export function PolishSection({
     localRuntime.server_args_json,
   ]);
 
-  const updateLocalRuntime = async (next: LocalPolishRuntimeSettings) => {
-    setRuntimeCheckResult(null);
-    await updateSetting("local_polish_runtime", next);
-    await refreshPolishModelStatus();
-  };
-
-  const handleRuntimeProviderSelect = async (providerType: string) => {
-    const preset = LOCAL_RUNTIME_PRESETS[providerType];
-    await updateLocalRuntime({
-      ...localRuntime,
-      provider_type: providerType,
-      ...(preset ? { base_url: preset.base_url } : {}),
-    });
-  };
-
-  const handleRuntimeFieldChange = async (
-    key: keyof LocalPolishRuntimeSettings,
-    value: string | number,
-  ) => {
-    await updateLocalRuntime({
-      ...localRuntime,
-      [key]: value,
-    });
-  };
-
   const handleRuntimeCheck = async () => {
     setCheckingRuntime(true);
     try {
@@ -283,6 +277,13 @@ export function PolishSection({
     : false;
   const showRuntimeNotReadyWarning =
     Boolean(selectedPolishModelInfo) && selectedModelDownloaded && !selectedRuntimeReady;
+  const runtimeProviderLabel = getLocalRuntimeProviderLabel(localRuntime.provider_type, t);
+  const runtimeStatusText = selectedModelLoaded
+    ? t("model.polish.localRuntime.readyStatus")
+    : showRuntimeNotReadyWarning
+      ? t("model.polish.localRuntime.notReadyStatus")
+      : t("model.polish.localRuntime.fileOnlyStatus");
+  const runtimeCheckMessage = getRuntimeCheckMessage(runtimeCheckResult, checkingRuntime, t);
 
   return (
     <div className="space-y-4">
@@ -301,10 +302,7 @@ export function PolishSection({
               onChange={(e) => handlePolishModelSelect(e.target.value)}
               options={downloadedPolishModels.map((m) => ({
                 value: m.id,
-                label:
-                  m.compatibility.level === "smooth"
-                    ? `${m.name} · ${m.size} · ${getLatencyLabel(m, t)}`
-                    : `${m.name} · ${m.size} · ${getLatencyLabel(m, t)} · ${t("model.polish.compat.warningTag")}`,
+                label: `${m.name} · ${m.size} · ${getLatencyLabel(m, t)}`,
               }))}
               placeholder={
                 downloadedPolishModels.length === 0
@@ -313,128 +311,86 @@ export function PolishSection({
               }
             />
             {downloadedPolishModels.length === 0 && (
-              <p className="text-xs text-amber-500">
+              <p className="text-xs text-muted-foreground">
                 {t("model.active.noModels")}
               </p>
             )}
             {selectedCompatibilityWarning && (
-              <p
-                className={`mt-2 flex items-start gap-1 text-xs leading-5 ${getCompatibilityTextTone(selectedPolishModelInfo)}`}
-              >
-                <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <p className="mt-2 flex items-start gap-1 text-xs leading-5 text-muted-foreground">
+                <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span>{selectedCompatibilityWarning}</span>
               </p>
             )}
             {selectedPolishModelInfo && (
               <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
                 <p>
-                  <span
-                    className={`mr-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${getLatencyTone(selectedPolishModelInfo)}`}
-                  >
-                    {getLatencyLabel(selectedPolishModelInfo, t)}
-                  </span>
+                  {getLatencyLabel(selectedPolishModelInfo, t)} ·{" "}
                   {getLatencySummary(selectedPolishModelInfo, t)}
                 </p>
                 {selectedLatencyCaution && <p>{selectedLatencyCaution}</p>}
-                <p
-                  className={
-                    selectedModelLoaded
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : showRuntimeNotReadyWarning
-                        ? "text-amber-500"
-                        : "text-muted-foreground"
-                  }
-                >
-                  {selectedModelLoaded
-                    ? t("model.polish.localRuntime.readyStatus")
-                    : showRuntimeNotReadyWarning
-                      ? t("model.polish.localRuntime.notReadyStatus")
-                      : t("model.polish.localRuntime.fileOnlyStatus")}
-                </p>
               </div>
             )}
           </div>
 
-          <div className="space-y-3 rounded-2xl border border-border p-4">
-            <div className="space-y-1">
-              <Label>{t("model.polish.localRuntime.title")}</Label>
-              <p className="text-xs leading-5 text-muted-foreground">
-                {t("model.polish.localRuntime.description")}
-              </p>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>{t("model.polish.localRuntime.provider")}</Label>
-                <Select
-                  value={localRuntime.provider_type}
-                  onChange={(e) => handleRuntimeProviderSelect(e.target.value)}
-                  options={[
-                    { value: "llama-server", label: t("model.polish.localRuntime.llamaServer") },
-                    { value: "lm-studio", label: t("model.polish.localRuntime.lmStudio") },
-                    { value: "ollama", label: t("model.polish.localRuntime.ollama") },
-                    { value: "custom", label: t("model.polish.localRuntime.custom") },
-                  ]}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("model.polish.localRuntime.baseUrl")}</Label>
-                <Input
-                  value={localRuntime.base_url}
-                  onChange={(e) => handleRuntimeFieldChange("base_url", e.target.value)}
-                  placeholder="http://127.0.0.1:8000/v1"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("model.polish.localRuntime.apiKey")}</Label>
-                <Input
-                  type="password"
-                  value={localRuntime.api_key}
-                  onChange={(e) => handleRuntimeFieldChange("api_key", e.target.value)}
-                  placeholder={t("model.polish.localRuntime.optional")}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("model.polish.localRuntime.timeout")}</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={localRuntime.ready_timeout_secs}
-                  onChange={(e) =>
-                    handleRuntimeFieldChange(
-                      "ready_timeout_secs",
-                      Math.max(1, Number(e.target.value) || 1),
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("model.polish.localRuntime.serverCommand")}</Label>
-                <Input
-                  value={localRuntime.server_command}
-                  onChange={(e) => handleRuntimeFieldChange("server_command", e.target.value)}
-                  placeholder={t("model.polish.localRuntime.optional")}
-                />
+          <div className="space-y-4 rounded-2xl border border-border/60 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 space-y-1">
+                <Label>{t("model.polish.localRuntime.title")}</Label>
                 <p className="text-xs leading-5 text-muted-foreground">
-                  {t("model.polish.localRuntime.serverCommandHint")}
+                  {t("model.polish.localRuntime.description")}
                 </p>
               </div>
-              <div className="space-y-1.5">
-                <Label>{t("model.polish.localRuntime.serverArgs")}</Label>
-                <Input
-                  value={localRuntime.server_args_json}
-                  onChange={(e) => handleRuntimeFieldChange("server_args_json", e.target.value)}
-                  placeholder='["--model","{model_path}"]'
-                />
+              <div className="shrink-0 text-xs font-medium text-muted-foreground">
+                {runtimeProviderLabel}
               </div>
             </div>
-            <CloudConnectionCheckRow
-              result={runtimeCheckResult}
-              checking={checkingRuntime}
-              onCheck={handleRuntimeCheck}
-            />
+
+            <div className="grid gap-3 border-t border-border/60 pt-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {t("model.polish.localRuntime.provider")}
+                </p>
+                <p className="truncate text-sm text-foreground">{runtimeProviderLabel}</p>
+              </div>
+              <div className="min-w-0 space-y-1">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {t("model.polish.localRuntime.baseUrl")}
+                </p>
+                <p className="truncate font-mono text-xs text-foreground/80">
+                  {localRuntime.base_url}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start justify-between gap-3 border-t border-border/70 pt-3">
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-medium text-foreground">{runtimeStatusText}</p>
+                {runtimeCheckMessage && (
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {runtimeCheckMessage}
+                  </p>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 shrink-0 gap-1.5 px-3 text-xs"
+                onClick={handleRuntimeCheck}
+                disabled={checkingRuntime}
+              >
+                {checkingRuntime ? (
+                  <CircleNotch className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+                {t("cloud.check.button")}
+              </Button>
+            </div>
+
             {showRuntimeNotReadyWarning && (
-              <p className="flex items-start gap-1 text-xs leading-5 text-amber-500">
-                <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <p className="flex items-start gap-1 text-xs leading-5 text-muted-foreground">
+                <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span>{t("model.polish.localRuntime.notReadyHelp")}</span>
               </p>
             )}
@@ -453,7 +409,7 @@ export function PolishSection({
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{m.name}</span>
                       {m.downloaded && m.id === selectedPolishModel && selectedModelLoaded && (
-                        <Check className="h-4 w-4 text-green-500" />
+                        <Check className="h-4 w-4 text-muted-foreground" />
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
@@ -461,19 +417,12 @@ export function PolishSection({
                     </div>
                     <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
                       <p>
-                        <span
-                          className={`mr-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${getLatencyTone(m)}`}
-                        >
-                          {getLatencyLabel(m, t)}
-                        </span>
-                        {getLatencySummary(m, t)}
+                        {getLatencyLabel(m, t)} · {getLatencySummary(m, t)}
                       </p>
                     </div>
                     {compatibilityWarning && (
-                      <p
-                        className={`mt-2 flex items-start gap-1 text-xs leading-5 ${getCompatibilityTextTone(m)}`}
-                      >
-                        <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <p className="mt-2 flex items-start gap-1 text-xs leading-5 text-muted-foreground">
+                        <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span>{compatibilityWarning}</span>
                       </p>
                     )}

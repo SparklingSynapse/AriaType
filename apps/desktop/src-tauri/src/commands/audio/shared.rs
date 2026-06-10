@@ -28,6 +28,7 @@ pub(crate) const LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE: &str =
     "Local polish timed out. Using original transcription.";
 pub(crate) const POLISH_POLICY_TOOLTIP_MESSAGE: &str =
     "Polish result was rejected. Using original transcription.";
+pub(crate) const POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE: &str = "Polishing...";
 pub(crate) const POLISH_PREVIEW_TOOLTIP_DURATION_MS: u64 = 1600;
 const POLISH_PREVIEW_MAX_CHARS: usize = 220;
 const THINK_START_TAG: &str = "<think>";
@@ -365,7 +366,18 @@ fn next_direct_stream_delta(
 }
 
 pub(crate) fn polish_preview_tooltip_message(text: &str) -> Option<String> {
-    let text = sanitize_polish_preview_text(text)?;
+    let raw_text = text.trim();
+    if raw_text.is_empty() {
+        return None;
+    }
+
+    let Some(text) = sanitize_polish_preview_text(raw_text) else {
+        if raw_text.contains(THINK_START_TAG) {
+            return Some(POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE.to_string());
+        }
+        return None;
+    };
+
     let mut preview = text
         .chars()
         .take(POLISH_PREVIEW_MAX_CHARS)
@@ -375,7 +387,7 @@ pub(crate) fn polish_preview_tooltip_message(text: &str) -> Option<String> {
         preview.push_str("...");
     }
 
-    Some(format!("Polishing preview:\n{preview}"))
+    Some(preview)
 }
 
 fn sanitize_polish_preview_text(text: &str) -> Option<&str> {
@@ -484,6 +496,7 @@ mod tests {
         insert_text_with_metrics, next_direct_stream_delta, polish_error_tooltip_message,
         polish_preview_tooltip_message, should_type_direct_stream_delta,
         LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE, POLISH_ERROR_TOOLTIP_MESSAGE,
+        POLISH_PREVIEW_MAX_CHARS, POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE,
     };
 
     #[test]
@@ -575,20 +588,24 @@ mod tests {
     fn polish_preview_tooltip_truncates_long_text() {
         let message = polish_preview_tooltip_message(&"a".repeat(300)).unwrap();
 
-        assert!(message.starts_with("Polishing preview:\n"));
+        assert!(!message.contains("Polishing preview"));
         assert!(message.ends_with("..."));
-        assert!(message.len() < 260);
+        assert_eq!(message.chars().count(), POLISH_PREVIEW_MAX_CHARS + 3);
     }
 
     #[test]
-    fn polish_preview_tooltip_hides_incomplete_thinking() {
+    fn polish_preview_tooltip_shows_pending_message_for_incomplete_thinking() {
         assert_eq!(
-            polish_preview_tooltip_message("<think>hidden reasoning"),
-            None
+            polish_preview_tooltip_message("<think>hidden reasoning").unwrap(),
+            POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE
+        );
+        assert_eq!(
+            polish_preview_tooltip_message("<think>hidden</think>").unwrap(),
+            POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE
         );
         assert_eq!(
             polish_preview_tooltip_message("<think>hidden</think>\nVisible text").unwrap(),
-            "Polishing preview:\nVisible text"
+            "Visible text"
         );
     }
 }

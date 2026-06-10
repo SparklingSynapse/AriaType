@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { modelCommands } from "@/lib/tauri";
 import { logger } from "@/lib/logger";
@@ -83,87 +82,101 @@ export function PolishTemplatesPage() {
       description={t("polishTemplates.description")}
       testId="polish-templates-page"
     >
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("polishTemplates.builtInTitle")}</CardTitle>
-          <CardDescription>{t("polishTemplates.builtInDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {builtInTemplates.map((template) => (
-              <div
-                key={template.id}
-                className="w-full flex items-center justify-between p-4 rounded-2xl border border-border"
-              >
-                <div className="text-left">
-                  <div className="font-medium">
-                    {t(BUILT_IN_TEMPLATE_KEY_MAP[template.id]?.name ?? template.id)}
-                  </div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    {t(BUILT_IN_TEMPLATE_KEY_MAP[template.id]?.description ?? template.id)}
+      <section className="space-y-3">
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold tracking-tight">
+            {t("polishTemplates.builtInTitle")}
+          </h3>
+          <p className="text-sm leading-6 text-muted-foreground">
+            {t("polishTemplates.builtInDesc")}
+          </p>
+        </div>
+
+        <div className="rounded-3xl border border-border bg-card p-2">
+          <div>
+            {builtInTemplates.map((template, index) => (
+              <div key={template.id}>
+                <div className="w-full rounded-2xl px-4 py-3.5 transition-colors hover:bg-background">
+                  <div className="text-left">
+                    <div className="font-medium">
+                      {t(BUILT_IN_TEMPLATE_KEY_MAP[template.id]?.name ?? template.id)}
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {t(BUILT_IN_TEMPLATE_KEY_MAP[template.id]?.description ?? template.id)}
+                    </div>
                   </div>
                 </div>
+                {index < builtInTemplates.length - 1 && (
+                  <div className="mx-4 my-2 h-px bg-border/40" />
+                )}
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      <Card className="mt-6">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>{t("polishTemplates.myTemplatesTitle")}</CardTitle>
-            <CardDescription>{t("polishTemplates.myTemplatesDesc")}</CardDescription>
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h3 className="text-lg font-semibold tracking-tight">
+              {t("polishTemplates.myTemplatesTitle")}
+            </h3>
+            <p className="text-sm leading-6 text-muted-foreground">
+              {t("polishTemplates.myTemplatesDesc")}
+            </p>
           </div>
           <Button size="sm" onClick={handleCreate}>
             <Plus className="h-4 w-4 mr-2" />
             {t("polishTemplates.createButton")}
           </Button>
-        </CardHeader>
-        <CardContent>
-          {customTemplates.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              {t("polishTemplates.emptyHint")}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {customTemplates.map((template) => (
-                <div
-                  key={template.id}
-                  className="flex items-center justify-between p-4 rounded-2xl border border-border hover:border-primary/50 transition-all"
-                >
-                  <div className="flex-1 text-left">
-                    <div className="font-medium">
-                      {template.name}
+        </div>
+
+        {customTemplates.length === 0 ? (
+          <div className="rounded-3xl border border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
+            {t("polishTemplates.emptyHint")}
+          </div>
+        ) : (
+          <div className="rounded-3xl border border-border bg-card p-2">
+            <div>
+              {customTemplates.map((template, index) => (
+                <div key={template.id}>
+                  <div className="flex items-center justify-between rounded-2xl px-4 py-3.5 transition-colors hover:bg-background">
+                    <div className="flex-1 text-left">
+                      <div className="font-medium">
+                        {template.name}
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                        {template.system_prompt.slice(0, 100)}
+                        {template.system_prompt.length > 100 && "..."}
+                      </div>
                     </div>
-                    <div className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                      {template.system_prompt.slice(0, 100)}
-                      {template.system_prompt.length > 100 && "..."}
+                    <div className="flex gap-1 ml-4">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(template)}
+                      >
+                        <PencilSimple className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(template)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex gap-1 ml-4">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEdit(template)}
-                    >
-                      <PencilSimple className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(template)}
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  {index < customTemplates.length - 1 && (
+                    <div className="mx-4 my-2 h-px bg-border/40" />
+                  )}
                 </div>
               ))}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
+      </section>
 
       <TemplateEditModal
         open={editModalOpen}

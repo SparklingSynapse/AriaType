@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Microphone,
   Keyboard,
-  TextT,
-  PaintBrush,
-  Sparkle,
-  Lock,
+  MagicWand,
+  Palette,
+  ShieldCheck,
+  TextAa,
+  Waveform,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
@@ -29,13 +29,12 @@ export function About() {
 
   const features = [
     {
-      icon: Lock,
+      icon: ShieldCheck,
       title: t("about.feature.privacy.title"),
       description: t("about.feature.privacy.description"),
-      highlight: true,
     },
     {
-      icon: Microphone,
+      icon: Waveform,
       title: t("about.feature.voice.title"),
       description: t("about.feature.voice.description"),
     },
@@ -45,17 +44,17 @@ export function About() {
       description: t("about.feature.hotkey.description"),
     },
     {
-      icon: TextT,
+      icon: TextAa,
       title: t("about.feature.insert.title"),
       description: t("about.feature.insert.description"),
     },
     {
-      icon: Sparkle,
+      icon: MagicWand,
       title: t("about.feature.polish.title"),
       description: t("about.feature.polish.description"),
     },
     {
-      icon: PaintBrush,
+      icon: Palette,
       title: t("about.feature.design.title"),
       description: t("about.feature.design.description"),
     },
@@ -98,7 +97,7 @@ export function About() {
           <img
             src={logo}
             alt="AriaType"
-            className="h-24 w-24 rounded-3xl shadow-xl ring-1 ring-border"
+            className="h-24 w-24 rounded-3xl ring-1 ring-border"
           />
         </div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground font-serif italic">
@@ -136,8 +135,8 @@ export function About() {
                 key={index}
                 className="flex items-start gap-3 p-4 rounded-2xl bg-secondary/50 hover:bg-secondary transition-colors"
               >
-                <div className="rounded-2xl bg-background p-2 shrink-0 shadow-sm">
-                  <feature.icon className={`h-4 w-4 ${feature.highlight ? "text-green-600 dark:text-green-500" : "text-foreground"}`} />
+                <div className="rounded-full bg-primary/5 p-2.5 text-primary shrink-0 dark:bg-primary/10">
+                  <feature.icon weight="duotone" className="h-4 w-4" />
                 </div>
                 <div>
                   <h3 className="text-sm font-medium">{feature.title}</h3>

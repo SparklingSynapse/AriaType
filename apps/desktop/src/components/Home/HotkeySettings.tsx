@@ -122,7 +122,11 @@ function ProfileSection({
   );
 }
 
-export function HotkeySettings() {
+interface HotkeySettingsProps {
+  variant?: "page" | "modal";
+}
+
+export function HotkeySettings({ variant = "page" }: HotkeySettingsProps = {}) {
   const { t } = useTranslation();
   const { settings, polishAvailable } = useSettingsContext();
   const [templates, setTemplates] = useState<(PolishTemplate | CustomPolishTemplate)[]>([]);
@@ -210,6 +214,8 @@ export function HotkeySettings() {
       title={t("hotkey.title")}
       description={t("hotkey.description")}
       testId="hotkey-page"
+      variant={variant}
+      showHeader={variant === "page"}
     >
       <Card>
         <CardHeader>
