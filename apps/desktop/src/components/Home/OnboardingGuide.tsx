@@ -1059,7 +1059,10 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
             />
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col px-14 pb-5 pt-6">
+          <div
+            className="flex min-h-0 flex-1 flex-col px-14 pb-5 pt-6"
+            data-testid="onboarding-modal-body"
+          >
             <div className="flex min-h-0 flex-1 items-center justify-center">
               {renderStepContent()}
             </div>
