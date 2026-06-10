@@ -245,6 +245,7 @@ pub struct SettingsChangedEvent {
     pub stt_engine_work_domain: String,
     pub stt_engine_work_domain_prompt: String,
     pub stt_engine_user_glossary: String,
+    pub custom_dictionary: String,
     pub correction_memory_enabled: bool,
 }
 

@@ -6,7 +6,7 @@ import {
   navigateViaSidebar,
   waitForAppReady,
 } from '@ariatype/e2e-harness/helpers';
-import { openRouteWithOnboarding } from '../utils/helpers';
+import { openRouteWithOnboarding, setOnboardingCompleted } from '../utils/helpers';
 
 const journeySnapshotStabilizationMs = 1000;
 const modelReadyTimeoutMs = 120000;
@@ -47,7 +47,7 @@ async function assertJourneyStep(
       await expect(tauriPage.locator('[data-testid="onboarding-primary-action"]')).toBeEnabled({
         timeout: modelReadyTimeoutMs,
       });
-      await expect(tauriPage.getByText(/download complete/i)).not.toBeVisible({
+      await expect(tauriPage.locator('text=/download complete/i')).not.toBeVisible({
         timeout: 10000,
       });
       return;
@@ -70,14 +70,7 @@ test('Desktop first-run journey', async ({ tauriPage }) => {
   test.setTimeout(180000);
 
   await waitForAppReady(tauriPage, 15000);
-  await tauriPage.evaluate(
-    `(function() {
-      localStorage.removeItem('onboarding_completed');
-      window.location.reload();
-      return true;
-    })()`,
-  );
-  await waitForAppReady(tauriPage, 15000);
+  await setOnboardingCompleted(tauriPage, false);
   await expect(tauriPage.locator('[data-testid="dashboard-page"]')).toBeVisible({ timeout: 15000 });
 
   const modal = tauriPage.locator('[data-testid="onboarding-modal"]');

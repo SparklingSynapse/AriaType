@@ -2,6 +2,9 @@ use std::time::{Duration, Instant};
 
 use tracing::{info, warn};
 
+use crate::correction_learning::hotwords::{
+    apply_hotwords_to_text, parse_custom_hotword_entries, HotwordEntry,
+};
 use crate::correction_learning::types::{CorrectionApplyResult, CorrectionMapping, CorrectionPair};
 
 const GLOSSARY_CORRECTION_SOURCE: &str = "user_glossary";
@@ -12,6 +15,7 @@ pub(super) struct PostSttProcessResult {
     pub postprocess_ms: u64,
     pub normalization_applied: usize,
     pub corrections_applied: usize,
+    pub hotwords_applied: usize,
     pub glossary_applied: usize,
 }
 
@@ -27,6 +31,7 @@ struct PostSttFinishInput<'a> {
     input_normalization_applied: usize,
     correction_memory_enabled: bool,
     correction_result: Result<CorrectionApplyResult, String>,
+    custom_hotword_entries: &'a [HotwordEntry],
     glossary_mappings: &'a [CorrectionMapping],
     elapsed: Duration,
     task_id: u64,
@@ -37,13 +42,14 @@ pub(super) fn apply_post_stt_processing(
     raw_text: &str,
     correction_memory_enabled: bool,
     user_glossary: &str,
+    custom_dictionary: &str,
     task_id: u64,
     context: &'static str,
 ) -> PostSttProcessResult {
     let started = Instant::now();
     let normalized_input = normalize_transcript_text(raw_text);
     let correction_result = if correction_memory_enabled {
-        crate::correction_learning::storage::apply_shared_corrections_best_effort_result(
+        crate::correction_learning::storage::apply_shared_hotwords_best_effort_result(
             &normalized_input.text,
         )
     } else {
@@ -52,6 +58,7 @@ pub(super) fn apply_post_stt_processing(
             applied: Vec::new(),
         })
     };
+    let custom_hotword_entries = parse_custom_hotword_entries(custom_dictionary);
     let glossary_mappings = parse_glossary_correction_mappings(user_glossary);
 
     finish_post_stt_processing(PostSttFinishInput {
@@ -60,6 +67,7 @@ pub(super) fn apply_post_stt_processing(
         input_normalization_applied: normalized_input.applied,
         correction_memory_enabled,
         correction_result,
+        custom_hotword_entries: &custom_hotword_entries,
         glossary_mappings: &glossary_mappings,
         elapsed: started.elapsed(),
         task_id,
@@ -74,6 +82,7 @@ fn finish_post_stt_processing(input: PostSttFinishInput<'_>) -> PostSttProcessRe
         input_normalization_applied,
         correction_memory_enabled,
         correction_result,
+        custom_hotword_entries,
         glossary_mappings,
         elapsed,
         task_id,
@@ -91,10 +100,13 @@ fn finish_post_stt_processing(input: PostSttFinishInput<'_>) -> PostSttProcessRe
             )
         }
     };
-    let glossary_result = apply_glossary_corrections(&corrected_text, glossary_mappings);
+    let custom_hotword_result = apply_hotwords_to_text(&corrected_text, custom_hotword_entries);
+    let glossary_result =
+        apply_glossary_corrections(&custom_hotword_result.text, glossary_mappings);
     let normalized_output = normalize_transcript_text(&glossary_result.text);
     let text = normalized_output.text;
     let normalization_applied = input_normalization_applied + normalized_output.applied;
+    let hotwords_applied = custom_hotword_result.applied.len();
     let glossary_applied = glossary_result.applied.len();
     let postprocess_ms = elapsed.as_millis() as u64;
 
@@ -104,7 +116,9 @@ fn finish_post_stt_processing(input: PostSttFinishInput<'_>) -> PostSttProcessRe
         postprocess_ms,
         normalization_applied,
         corrections_applied,
+        hotwords_applied,
         glossary_applied,
+        custom_dictionary_entries = custom_hotword_entries.len(),
         glossary_entries = glossary_mappings.len(),
         correction_memory_enabled,
         input_chars = raw_text.chars().count(),
@@ -118,6 +132,7 @@ fn finish_post_stt_processing(input: PostSttFinishInput<'_>) -> PostSttProcessRe
         postprocess_ms,
         normalization_applied,
         corrections_applied,
+        hotwords_applied,
         glossary_applied,
     }
 }
@@ -330,6 +345,7 @@ mod tests {
                 text: "raw text".to_string(),
                 applied: Vec::new(),
             }),
+            custom_hotword_entries: &[],
             glossary_mappings: &[],
             elapsed: Duration::from_millis(3),
             task_id: 1,
@@ -340,6 +356,7 @@ mod tests {
         assert_eq!(result.postprocess_ms, 3);
         assert_eq!(result.normalization_applied, 0);
         assert_eq!(result.corrections_applied, 0);
+        assert_eq!(result.hotwords_applied, 0);
         assert_eq!(result.glossary_applied, 0);
     }
 
@@ -354,6 +371,7 @@ mod tests {
                 text: "open sootie".to_string(),
                 applied: vec![CorrectionPair::new("搜题", "sootie")],
             }),
+            custom_hotword_entries: &[],
             glossary_mappings: &[],
             elapsed: Duration::from_millis(5),
             task_id: 2,
@@ -364,6 +382,7 @@ mod tests {
         assert_eq!(result.postprocess_ms, 5);
         assert_eq!(result.normalization_applied, 0);
         assert_eq!(result.corrections_applied, 1);
+        assert_eq!(result.hotwords_applied, 0);
         assert_eq!(result.glossary_applied, 0);
     }
 
@@ -375,6 +394,7 @@ mod tests {
             input_normalization_applied: 0,
             correction_memory_enabled: true,
             correction_result: Err("store unavailable".to_string()),
+            custom_hotword_entries: &[],
             glossary_mappings: &[],
             elapsed: Duration::from_millis(7),
             task_id: 3,
@@ -385,17 +405,25 @@ mod tests {
         assert_eq!(result.postprocess_ms, 7);
         assert_eq!(result.normalization_applied, 0);
         assert_eq!(result.corrections_applied, 0);
+        assert_eq!(result.hotwords_applied, 0);
         assert_eq!(result.glossary_applied, 0);
     }
 
     #[test]
     fn normalizes_spacing_and_punctuation_without_llm() {
-        let result =
-            apply_post_stt_processing("  hello   ,world  this is  fine  ", false, "", 5, "test");
+        let result = apply_post_stt_processing(
+            "  hello   ,world  this is  fine  ",
+            false,
+            "",
+            "",
+            5,
+            "test",
+        );
 
         assert_eq!(result.text, "hello, world this is fine");
         assert_eq!(result.normalization_applied, 1);
         assert_eq!(result.corrections_applied, 0);
+        assert_eq!(result.hotwords_applied, 0);
         assert_eq!(result.glossary_applied, 0);
     }
 
@@ -407,6 +435,7 @@ mod tests {
             input_normalization_applied: 1,
             correction_memory_enabled: true,
             correction_result: Err("store unavailable".to_string()),
+            custom_hotword_entries: &[],
             glossary_mappings: &[],
             elapsed: Duration::from_millis(2),
             task_id: 6,
@@ -416,11 +445,13 @@ mod tests {
         assert_eq!(result.text, "hello, world");
         assert_eq!(result.normalization_applied, 1);
         assert_eq!(result.corrections_applied, 0);
+        assert_eq!(result.hotwords_applied, 0);
     }
 
     #[test]
     fn preserves_decimal_versions_and_time_like_colons() {
-        let result = apply_post_stt_processing("version 1.2 ,ok at 10:30", false, "", 7, "test");
+        let result =
+            apply_post_stt_processing("version 1.2 ,ok at 10:30", false, "", "", 7, "test");
 
         assert_eq!(result.text, "version 1.2, ok at 10:30");
         assert_eq!(result.normalization_applied, 1);
@@ -428,7 +459,7 @@ mod tests {
 
     #[test]
     fn removes_spaces_around_cjk_punctuation() {
-        let result = apply_post_stt_processing("你好 ， 世界 。", false, "", 8, "test");
+        let result = apply_post_stt_processing("你好 ， 世界 。", false, "", "", 8, "test");
 
         assert_eq!(result.text, "你好，世界。");
         assert_eq!(result.normalization_applied, 1);
@@ -457,6 +488,22 @@ mod tests {
     }
 
     #[test]
+    fn keeps_custom_dictionary_hotwords_separate_from_user_glossary() {
+        let result = apply_post_stt_processing(
+            "open 搜题 with ariatype",
+            false,
+            "AriaType",
+            "sootie",
+            9,
+            "test",
+        );
+
+        assert_eq!(result.text, "open sootie with AriaType");
+        assert_eq!(result.hotwords_applied, 1);
+        assert_eq!(result.glossary_applied, 1);
+    }
+
+    #[test]
     fn applies_glossary_after_correction_memory() {
         let mappings = parse_glossary_correction_mappings("搜题 -> sootie, AriaType");
         let result = finish_post_stt_processing(PostSttFinishInput {
@@ -468,6 +515,7 @@ mod tests {
                 text: "open 搜题 with ariatype".to_string(),
                 applied: Vec::new(),
             }),
+            custom_hotword_entries: &[],
             glossary_mappings: &mappings,
             elapsed: Duration::from_millis(4),
             task_id: 4,
@@ -476,6 +524,7 @@ mod tests {
 
         assert_eq!(result.text, "open sootie with AriaType");
         assert_eq!(result.corrections_applied, 0);
+        assert_eq!(result.hotwords_applied, 0);
         assert_eq!(result.glossary_applied, 2);
     }
 }

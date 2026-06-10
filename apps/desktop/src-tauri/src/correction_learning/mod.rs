@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod diff;
+pub mod hotwords;
 pub mod observer;
 pub mod platform;
 pub mod storage;

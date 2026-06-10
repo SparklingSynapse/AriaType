@@ -115,6 +115,7 @@ pub struct AppSettings {
     pub stt_engine_work_domain_prompt: String,
     pub stt_engine_work_subdomain: String,
     pub stt_engine_user_glossary: String,
+    pub custom_dictionary: String,
     pub analytics_opt_in: bool,
     pub cloud_stt_enabled: bool,
     pub active_cloud_stt_provider: String,
@@ -425,6 +426,7 @@ impl Default for AppSettings {
             stt_engine_work_domain_prompt: String::new(),
             stt_engine_work_subdomain: String::new(),
             stt_engine_user_glossary: String::new(),
+            custom_dictionary: String::new(),
             analytics_opt_in: false,
             cloud_stt_enabled: false,
             active_cloud_stt_provider: "volcengine-streaming".to_string(),
@@ -1158,6 +1160,11 @@ pub fn update_settings(
             "stt_engine_user_glossary" => {
                 if let Some(v) = value.as_str() {
                     settings.stt_engine_user_glossary = v.to_string();
+                }
+            }
+            "custom_dictionary" => {
+                if let Some(v) = value.as_str() {
+                    settings.custom_dictionary = v.to_string();
                 }
             }
             "analytics_opt_in" => {

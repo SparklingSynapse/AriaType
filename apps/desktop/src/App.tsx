@@ -13,6 +13,7 @@ import { About } from "./components/Home/About";
 import { LogViewer } from "./components/Home/LogViewer";
 import { ChangelogPage } from "./components/Home/ChangelogPage";
 import { PolishTemplatesPage } from "./components/Home/PolishTemplatesPage";
+import { DictionaryPage } from "./components/Home/DictionaryPage";
 
 function App() {
   return (
@@ -96,6 +97,7 @@ function App() {
         <Route path="/" element={<HomeLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="history" element={<HistoryPage />} />
+          <Route path="dictionary" element={<DictionaryPage />} />
           <Route path="settings" element={<GeneralSettings />} />
           <Route path="hotkey" element={<HotkeySettings />} />
           <Route path="private-ai" element={<ModelSettings />} />
