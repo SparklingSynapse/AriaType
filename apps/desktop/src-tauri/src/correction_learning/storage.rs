@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 use super::diff::{extract_correction_pair, is_word_level_correction_pair};
+use super::hotwords::{apply_hotwords_to_text, HotwordEntry};
 use super::types::{
     CorrectionApplyResult, CorrectionLearningFile, CorrectionMapping, CorrectionPair,
     CORRECTION_SOURCE_POST_DELIVERY_EDIT,
@@ -294,6 +295,65 @@ pub fn apply_corrections_to_text(
         text: result,
         applied,
     }
+}
+
+pub fn apply_shared_hotwords_best_effort_result(
+    text: &str,
+) -> Result<CorrectionApplyResult, String> {
+    let store = CorrectionStore::shared();
+    let file = store
+        .with_store_lock(|| store.load_or_empty_unlocked(chrono::Utc::now().timestamp_millis()))?;
+    let entries = hotword_entries_from_correction_mappings(&file.corrections);
+    Ok(apply_hotwords_to_text(text, &entries))
+}
+
+fn hotword_entries_from_correction_mappings(mappings: &[CorrectionMapping]) -> Vec<HotwordEntry> {
+    let conflicted_wrong_terms = conflicted_wrong_terms(mappings);
+    let mut entries: Vec<HotwordEntry> = Vec::new();
+
+    for mapping in mappings
+        .iter()
+        .filter(|mapping| mapping.frequency >= AUTO_APPLY_MIN_FREQUENCY)
+        .filter(|mapping| is_word_level_correction_pair(&mapping.wrong, &mapping.corrected))
+        .filter(|mapping| !conflicted_wrong_terms.contains(mapping.wrong.as_str()))
+        .filter(|mapping| is_safe_auto_apply_mapping(&mapping.wrong, &mapping.corrected))
+    {
+        let Ok(entry) = HotwordEntry::new(
+            mapping.corrected.clone(),
+            vec![mapping.wrong.clone()],
+            mapping.frequency,
+            mapping.source.clone(),
+        ) else {
+            continue;
+        };
+
+        if let Some(existing) = entries
+            .iter_mut()
+            .find(|existing| existing.term.eq_ignore_ascii_case(&entry.term))
+        {
+            for alias in entry.aliases {
+                if !existing
+                    .aliases
+                    .iter()
+                    .any(|existing_alias| existing_alias.eq_ignore_ascii_case(&alias))
+                {
+                    existing.aliases.push(alias);
+                }
+            }
+            existing.frequency = existing.frequency.saturating_add(mapping.frequency);
+        } else {
+            entries.push(entry);
+        }
+    }
+
+    entries.sort_by(|left, right| {
+        right
+            .frequency
+            .cmp(&left.frequency)
+            .then_with(|| left.term.cmp(&right.term))
+    });
+    entries.truncate(MAX_APPLIED_CORRECTIONS);
+    entries
 }
 
 fn conflicted_wrong_terms(mappings: &[CorrectionMapping]) -> HashSet<String> {

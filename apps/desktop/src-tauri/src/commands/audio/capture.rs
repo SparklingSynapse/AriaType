@@ -474,18 +474,20 @@ pub(super) fn start_unified_recording(
             match text_result {
                 Ok(text) => {
                     let raw_text = text.clone();
-                    let (correction_memory_enabled, user_glossary) = {
+                    let (correction_memory_enabled, user_glossary, custom_dictionary) = {
                         let state = app_clone.state::<AppState>();
                         let settings = state.settings.lock();
                         (
                             settings.correction_memory_enabled,
                             settings.stt_engine_user_glossary.clone(),
+                            settings.custom_dictionary.clone(),
                         )
                     };
                     let postprocess = apply_post_stt_processing(
                         &text,
                         correction_memory_enabled,
                         &user_glossary,
+                        &custom_dictionary,
                         task_id,
                         "recording",
                     );
@@ -520,6 +522,7 @@ pub(super) fn start_unified_recording(
                         postprocess_ms = postprocess.postprocess_ms,
                         normalization_applied = postprocess.normalization_applied,
                         corrections_applied = postprocess.corrections_applied,
+                        hotwords_applied = postprocess.hotwords_applied,
                         glossary_applied = postprocess.glossary_applied,
                         polish_ms = polish_time_ms,
                         polish_wall_ms = polish_result.polish_wall_ms,

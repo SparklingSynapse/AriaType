@@ -48,6 +48,13 @@ interface ActivityRowProps {
   value: string;
 }
 
+interface DictationMetric {
+  label: string;
+  value: string;
+}
+
+const TYPING_BASELINE_UNITS_PER_MINUTE = 30;
+
 function useDashboardPalette() {
   const [isDark, setIsDark] = useState(() =>
     typeof document !== "undefined"
@@ -299,6 +306,36 @@ export function Dashboard() {
 
   const totalCount = Math.max(displayStats.total_count, 1);
   const polishRate = (displayStats.polish_count / totalCount) * 100;
+  const dictationMinutes = displayStats.total_audio_ms / 60_000;
+  const averageDictationSpeed =
+    dictationMinutes > 0
+      ? Math.round(displayStats.total_output_units / dictationMinutes)
+      : 0;
+  const estimatedTypingMs =
+    displayStats.total_output_units > 0
+      ? (displayStats.total_output_units / TYPING_BASELINE_UNITS_PER_MINUTE) * 60_000
+      : 0;
+  const savedTimeMs = Math.max(0, estimatedTypingMs - displayStats.total_audio_ms);
+  const dictationMetrics: DictationMetric[] = [
+    {
+      label: t("dashboard.dictation.totalTime"),
+      value: formatMinutesDuration(t, displayStats.total_audio_ms),
+    },
+    {
+      label: t("dashboard.dictation.output"),
+      value: formatOutputUnits(t, displayStats.total_output_units),
+    },
+    {
+      label: t("dashboard.dictation.savedTime"),
+      value: formatMinutesDuration(t, savedTimeMs),
+    },
+    {
+      label: t("dashboard.dictation.avgSpeed"),
+      value: t("dashboard.dictation.speedValue", {
+        count: averageDictationSpeed,
+      }),
+    },
+  ];
   const trendData = useMemo<TrendPoint[]>(
     () =>
       displayDailyUsage.map((point) => ({
@@ -330,6 +367,26 @@ export function Dashboard() {
   return (
     <div className="mx-auto max-w-6xl p-10" data-testid="dashboard-page">
       <div className="space-y-5 md:space-y-6">
+        <section
+          className="rounded-3xl border border-border bg-card px-5 py-5 md:px-6"
+          style={{
+            borderColor: palette.border,
+          }}
+        >
+          <div className="grid gap-4 md:grid-cols-4">
+            {dictationMetrics.map((metric) => (
+              <div key={metric.label} className="min-w-0">
+                <div className="text-[12px] leading-5 text-muted-foreground">
+                  {metric.label}
+                </div>
+                <div className="mt-1 truncate text-[1.55rem] font-semibold tracking-normal text-foreground">
+                  {metric.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.42fr)_minmax(17rem,0.84fr)]" data-testid="dashboard-content">
           <div
             className="rounded-3xl border border-border bg-card px-5 py-5 md:px-6 md:py-6"
@@ -542,6 +599,28 @@ function formatCompactNumber(value: number | null) {
     notation: value >= 1000 ? "compact" : "standard",
     maximumFractionDigits: value >= 1000 ? 1 : 0,
   }).format(value);
+}
+
+function formatOutputUnits(
+  t: ReturnType<typeof useTranslation>["t"],
+  value: number | null,
+) {
+  return t("dashboard.dictation.outputValue", {
+    value: formatCompactNumber(value),
+  });
+}
+
+function formatMinutesDuration(
+  t: ReturnType<typeof useTranslation>["t"],
+  milliseconds: number | null,
+) {
+  if (!milliseconds || milliseconds <= 0) {
+    return t("dashboard.dictation.minutesValue", { count: 0 });
+  }
+
+  return t("dashboard.dictation.minutesValue", {
+    count: Math.round(milliseconds / 60_000),
+  });
 }
 
 function formatCompactDuration(

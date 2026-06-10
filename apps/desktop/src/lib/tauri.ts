@@ -48,6 +48,20 @@ export interface CorrectionLearnedEvent {
   frequency: number;
 }
 
+export interface DictionaryEntry {
+  term: string;
+  aliases: string[];
+  frequency: number;
+  first_seen_at_ms: number;
+  last_seen_at_ms: number;
+  source: string;
+}
+
+export interface DictionaryImportResult {
+  imported: number;
+  skipped: number;
+}
+
 export interface PillTooltipEvent {
   message: string;
   duration_ms: number;
@@ -181,6 +195,7 @@ export interface AppSettings {
   stt_engine_work_domain_prompt: string;
   stt_engine_work_subdomain: string;
   stt_engine_user_glossary: string;
+  custom_dictionary: string;
   analytics_opt_in: boolean;
   cloud_stt_enabled: boolean;
   active_cloud_stt_provider: string;
@@ -309,6 +324,19 @@ export const settingsCommands = {
     invokeWithLogging<void>("clear_correction_memory"),
   openCorrectionMemoryDirectory: () =>
     invokeWithLogging<void>("open_correction_memory_directory"),
+};
+
+export const dictionaryCommands = {
+  getAutoEntries: () =>
+    invokeWithLogging<DictionaryEntry[]>("get_auto_dictionary_entries"),
+  getCustomEntries: () =>
+    invokeWithLogging<DictionaryEntry[]>("get_custom_dictionary_entries"),
+  addCustomEntry: (term: string) =>
+    invokeWithLogging<DictionaryEntry>("add_custom_dictionary_entry", { term }),
+  importCustomCsv: (csvContent: string) =>
+    invokeWithLogging<DictionaryImportResult>("import_custom_dictionary_csv", { csvContent }),
+  deleteCustomEntry: (term: string) =>
+    invokeWithLogging<void>("delete_custom_dictionary_entry", { term }),
 };
 
 export const hotkeyCommands = {

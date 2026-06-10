@@ -115,6 +115,7 @@ const testSettings: AppSettings = {
   stt_engine_initial_prompt: "",
   stt_engine_language: "en",
   stt_engine_user_glossary: "",
+  custom_dictionary: "",
   stt_engine_work_domain: "general",
   stt_engine_work_domain_prompt: "",
   stt_engine_work_subdomain: "general",

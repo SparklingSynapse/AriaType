@@ -31,21 +31,6 @@ type ShortcutProfilePayload = {
 };
 
 export async function setOnboardingCompleted(page: E2EPage, completed: boolean): Promise<void> {
-  const current = await page.evaluate<string | null>("localStorage.getItem('onboarding_completed')");
-  const expected = completed ? 'true' : null;
-
-  if (current === expected) {
-    await page.evaluate(
-      `(function() {
-        window.dispatchEvent(new Event(${JSON.stringify(
-          completed ? 'ariatype:onboarding-complete' : 'ariatype:onboarding-reset',
-        )}));
-        return true;
-      })()`,
-    );
-    return;
-  }
-
   await page.evaluate(
     `(function() {
       if (${completed}) {
@@ -53,12 +38,11 @@ export async function setOnboardingCompleted(page: E2EPage, completed: boolean):
       } else {
         localStorage.removeItem('onboarding_completed');
       }
-      window.dispatchEvent(new Event(${JSON.stringify(
-        completed ? 'ariatype:onboarding-complete' : 'ariatype:onboarding-reset',
-      )}));
       return true;
     })()`,
   );
+  await page.evaluate('window.location.reload()');
+  await waitForAppReady(page);
 }
 
 export async function openRouteWithOnboarding(

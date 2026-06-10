@@ -4,6 +4,7 @@ import {
   GearSix,
   MagicWand,
   ClockCounterClockwise,
+  BookOpenText,
   ChatCircleText,
   ArrowSquareOut,
   ArrowCircleUp,
@@ -107,6 +108,7 @@ export function HomeLayout() {
   const primaryNavItems: PrimaryNavItem[] = [
     { to: "/", icon: CirclesFour, label: t("nav.dashboard") },
     { to: "/history", icon: ClockCounterClockwise, label: t("nav.history") },
+    { to: "/dictionary", icon: BookOpenText, label: t("nav.dictionary") },
     { to: "/polish-templates", icon: MagicWand, label: t("nav.polishTemplates") },
   ];
   const settingsNeedsAttention = !hasModel || badges.permission;
