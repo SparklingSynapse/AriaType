@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { BorderBeam } from "border-beam";
+import { useTranslation } from "react-i18next";
 import { AudioDots } from "./AudioDots";
 import { SettingsButton } from "./SettingsButton";
 import type { RecordingStatus } from "@/types";
@@ -91,13 +92,14 @@ function tooltipClassName(showPillBody: boolean, isPolishPreview: boolean): stri
     "pointer-events-none bg-black/60 text-[9.5px] font-medium text-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-white/10 backdrop-blur-md";
 
   if (isPolishPreview) {
-    return `${spacing} ${shared} max-h-20 max-w-[min(calc(100vw-1rem),22rem)] overflow-hidden whitespace-pre-wrap break-words rounded-lg px-3 py-1.5 text-left leading-snug`;
+    return `${spacing} ${shared} line-clamp-4 max-w-[min(calc(100vw-1rem),22rem)] overflow-hidden whitespace-normal rounded-lg px-3 py-1.5 text-left leading-snug`;
   }
 
   return `${spacing} ${shared} max-w-[calc(100vw-1rem)] truncate rounded-full px-2.5 py-0.5 text-center`;
 }
 
 export function PillWindow() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
   const [hasAudioActivity, setHasAudioActivity] = useState(false);
@@ -308,7 +310,7 @@ export function PillWindow() {
                   transition={{ duration: 0.15, ease: "easeOut" }}
                   className={tooltipClassName(showPillBody, tooltipIsPolishPreview)}
                 >
-                  {tooltip.message}
+                  {tooltipIsPolishPreview ? t("pill.polishPreviewProcessing") : tooltip.message}
                 </motion.div>
               )}
             </AnimatePresence>

@@ -48,6 +48,7 @@ pub(super) fn apply_post_stt_processing(
 ) -> PostSttProcessResult {
     let started = Instant::now();
     let normalized_input = normalize_transcript_text(raw_text);
+
     let correction_result = if correction_memory_enabled {
         crate::correction_learning::storage::apply_shared_hotwords_best_effort_result(
             &normalized_input.text,
@@ -466,6 +467,15 @@ mod tests {
     }
 
     #[test]
+    fn keeps_raw_chinese_terms_unchanged_in_fast_path() {
+        let result =
+            apply_post_stt_processing("一般一起周一乱七八糟乱七八糟", false, "", "", 9, "test");
+
+        assert_eq!(result.text, "一般一起周一乱七八糟乱七八糟");
+        assert_eq!(result.normalization_applied, 0);
+    }
+
+    #[test]
     fn parses_explicit_glossary_mappings() {
         let mappings = parse_glossary_correction_mappings("搜题 -> sootie, node js=>Node.js");
 
@@ -494,7 +504,7 @@ mod tests {
             false,
             "AriaType",
             "sootie",
-            9,
+            10,
             "test",
         );
 

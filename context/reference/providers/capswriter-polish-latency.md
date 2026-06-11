@@ -290,7 +290,7 @@ maybe_polish_transcription_text
           -> verify the GGUF file is complete
           -> check or start OpenAI-compatible localhost runtime
           -> POST /v1/chat/completions
-          -> stream chunks into pill tooltip
+          -> stream chunks into hidden pill processing state
           -> optionally stream chunks into the target app in advanced mode
       -> accept result or fallback original STT
 ```
@@ -306,7 +306,7 @@ Recent improvements:
 - Outputs are sanitized for `<think>` blocks.
 - Max generated output budget was raised to avoid truncated thinking/output
   failures.
-- Streaming preview is supported through the pill tooltip.
+- Streaming polish keeps the pill in a hidden processing state.
 - Direct streaming typing exists as an explicit advanced setting and is disabled
   by default.
 
@@ -401,7 +401,7 @@ Recommended default UX:
 
 ```text
 LLM chunk arrives
-  -> update pill tooltip / preview
+  -> keep pill tooltip in generic processing state
   -> keep target input unchanged
 LLM completes
   -> inject final text
@@ -497,7 +497,7 @@ Current implementation status:
 ### Phase 2: Add Streaming Contract
 
 - Extend polish engine results to support optional chunk callbacks.
-- Stream cloud polish chunks into pill preview first.
+- Stream cloud polish chunks into a hidden pill processing state first.
 - Add tests that verify final injection remains atomic unless a streaming typing
   mode is explicitly enabled.
 
@@ -507,13 +507,13 @@ Current implementation status:
   records `time_to_first_token_ms` plus `generation_ms` when the provider uses a
   streaming response.
 - OpenAI-compatible cloud polish and OpenAI-compatible local polish can request
-  `stream: true`, parse SSE `data:` chunks, and publish accumulated preview text
-  through the existing pill tooltip channel.
+  `stream: true`, parse SSE `data:` chunks, and drive a generic pill processing
+  state without exposing raw streamed text.
 - The preview channel is UI-only. Recording and retry flows still wait for the
   final polish result before text insertion, so target input injection remains
   atomic by default.
-- Preview tooltip text is capped and filters incomplete `<think>` blocks so
-  local thinking output is not exposed while the stream is still in progress.
+- Any preview accumulation still filters incomplete `<think>` blocks so local
+  thinking output is not surfaced in user-visible states.
 - Direct streaming typing into the target input is implemented as an explicit
   advanced setting, disabled by default, and limited to the recording flow.
   Retry keeps atomic final-result insertion.
@@ -613,7 +613,7 @@ Current implementation status:
 ### Phase 5: Tune UX
 
 - Show short tooltip on slow/fallback behavior.
-- Distinguish "polishing", "streaming preview", and "using original transcript".
+- Distinguish "polishing", "hidden processing state", and "using original transcript".
 - Do not show scary errors for expected timeout fallback.
 - Provide a per-template latency expectation.
 
@@ -624,8 +624,8 @@ Current implementation status:
 - The selected local polish model row distinguishes fully ready local polish
   from "model file downloaded, runtime not ready" and points users to the local
   runtime check before they rely on local polish.
-- Streaming preview updates the pill tooltip while keeping final input
-  insertion atomic.
+- Streaming polish keeps the tooltip in a generic processing state while final
+  input insertion remains atomic.
 - Direct streaming typing is available behind an advanced Performance setting
   and skips the final duplicate insertion when chunks have already been typed.
 - Model cards and the selected-model row show per-template latency expectation
@@ -641,8 +641,8 @@ Minimum tests before shipping a CapsWriter-inspired fast polish redesign:
 2. Correction-only test: known wrong-to-right mappings apply without LLM.
 3. Role/template test: template selection does not accidentally enable slow
    local polish.
-4. Streaming preview test: OpenAI-compatible chunks update pill preview while
-   final injection waits for the full result.
+4. Streaming polish state test: OpenAI-compatible chunks keep the pill in the
+   processing state while final injection waits for the full result.
 5. Streaming typing test: direct chunk typing only occurs when explicitly
    enabled.
 6. Timeout test: slow provider falls back to deterministic text and emits a
@@ -660,7 +660,7 @@ Current verification evidence:
 | Correction-only | `commands::audio::postprocess::tests::reports_correction_only_output_and_applied_count`, `applies_glossary_after_correction_memory` |
 | Normalization/punctuation | `commands::audio::postprocess::tests::normalizes_spacing_and_punctuation_without_llm`, `normalizes_before_correction_failure_fallback`, `preserves_decimal_versions_and_time_like_colons`, `removes_spaces_around_cjk_punctuation` |
 | Role/template guard | `commands::audio::tests::template_selection_without_model_does_not_pick_local_model_implicitly` |
-| Streaming preview | `cloud_polish_mock_test::test_openai_polish_streams_preview_chunks`, `polish_engine::local_http::tests::streams_openai_chunks_to_preview_callback` |
+| Streaming callback plumbing | `cloud_polish_mock_test::test_openai_polish_streams_preview_chunks`, `polish_engine::local_http::tests::streams_openai_chunks_to_preview_callback` |
 | Streaming typing | `commands::audio::shared::tests::direct_stream_typing_requires_explicit_non_final_update`, `direct_stream_delta_returns_only_new_visible_text`, `services::transcription_finalize::tests::finalize_successful_transcription_skips_delivery_when_text_was_already_inserted` |
 | Timeout fallback | `commands::audio::polish::tests::local_polish_timeout_*`, `commands::audio::shared::tests::local_polish_timeout_tooltip_is_specific`, `cloud_polish_mock_test::test_short_cloud_polish_times_out_after_core_prompt_timeout` |
 | Thinking sanitizer | `commands::audio::shared::tests::polish_preview_tooltip_hides_incomplete_thinking`, `commands::audio::shared::tests::direct_stream_delta_hides_incomplete_thinking`, `polish_engine::local_http::tests::strips_complete_think_block` |

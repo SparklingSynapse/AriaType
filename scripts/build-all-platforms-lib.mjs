@@ -1,8 +1,17 @@
 import { execSync } from 'child_process';
 import { basename, resolve, sep } from 'path';
 
+export const ENSURE_WINDOWS_RUNTIME_COMMAND =
+  'node ../../scripts/ensure-llama-server-runtime.mjs --platform windows';
+
+export const PREPARE_WINDOWS_RUNTIME_COMMAND =
+  'node ../../scripts/prepare-tauri-runtime-resources.mjs --platform windows --require-runtime';
+
+export const WINDOWS_NATIVE_BUILD_COMMAND =
+  `${ENSURE_WINDOWS_RUNTIME_COMMAND} && ${PREPARE_WINDOWS_RUNTIME_COMMAND} && pnpm tauri build --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --target x86_64-pc-windows-msvc`;
+
 export const WINDOWS_CROSS_BUILD_COMMAND =
-  'node ../../scripts/prepare-tauri-runtime-resources.mjs --platform windows --require-runtime && cargo tauri build --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc';
+  `${ENSURE_WINDOWS_RUNTIME_COMMAND} && ${PREPARE_WINDOWS_RUNTIME_COMMAND} && cargo tauri build --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc`;
 
 function write(log, level, message) {
   const method = log[level] ?? log.log;

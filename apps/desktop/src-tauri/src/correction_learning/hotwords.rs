@@ -227,7 +227,7 @@ pub fn apply_hotwords_to_text(text: &str, entries: &[HotwordEntry]) -> Correctio
 
 fn split_hotword_entries(content: &str) -> Vec<String> {
     content
-        .split(|c| matches!(c, '\n' | '\r' | ',' | '，' | ';' | '；'))
+        .split(['\n', '\r', ',', '，', ';', '；'])
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
         .map(ToString::to_string)
