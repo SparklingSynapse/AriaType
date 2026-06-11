@@ -270,6 +270,14 @@ impl UnifiedPolishManager {
         self.local_runtime.is_ready()
     }
 
+    pub fn stop_local_runtime(&self) {
+        self.local_runtime.stop();
+    }
+
+    pub fn stop_local_runtime_if_idle(&self, idle_for: std::time::Duration) -> bool {
+        self.local_runtime.stop_if_idle(idle_for)
+    }
+
     pub fn configure_local_runtime(
         &self,
         settings: &crate::commands::settings::LocalPolishRuntimeSettings,

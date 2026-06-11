@@ -41,7 +41,7 @@ function formatLastSeen(
 interface DictionaryEntryRowProps {
   entry: DictionaryEntry;
   tab: DictionaryTab;
-  onDelete: (entry: DictionaryEntry) => void;
+  onDelete: (entry: DictionaryEntry, tab: DictionaryTab) => void;
 }
 
 function DictionaryEntryRow({ entry, tab, onDelete }: DictionaryEntryRowProps) {
@@ -74,18 +74,16 @@ function DictionaryEntryRow({ entry, tab, onDelete }: DictionaryEntryRowProps) {
         </div>
       </div>
 
-      {isManual && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-          onClick={() => onDelete(entry)}
-          title={t("dictionary.actions.delete")}
-        >
-          <Trash className="h-4 w-4" />
-        </Button>
-      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+        onClick={() => onDelete(entry, tab)}
+        title={t("dictionary.actions.delete")}
+      >
+        <Trash className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
@@ -222,10 +220,14 @@ export function DictionaryPage() {
     }
   };
 
-  const handleDelete = async (entry: DictionaryEntry) => {
+  const handleDelete = async (entry: DictionaryEntry, tab: DictionaryTab) => {
     setIsSaving(true);
     try {
-      await dictionaryCommands.deleteCustomEntry(entry.term);
+      if (tab === "automatic") {
+        await dictionaryCommands.deleteAutoEntry(entry.term);
+      } else {
+        await dictionaryCommands.deleteCustomEntry(entry.term);
+      }
       await refreshDictionary();
       showToast(t("dictionary.messages.deleted"));
     } catch (error) {

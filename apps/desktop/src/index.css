@@ -109,9 +109,52 @@ body {
 }
 
 /* Hide native scrollbar - use OverlayScrollbars instead */
+* {
+  scrollbar-color: rgba(0, 0, 0, 0) rgba(0, 0, 0, 0);
+}
+
 ::-webkit-scrollbar {
   width: 0;
   height: 0;
+  background: rgba(0, 0, 0, 0);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-corner {
+  background: rgba(0, 0, 0, 0);
+  border-color: rgba(0, 0, 0, 0);
+}
+
+.os-theme-transparent {
+  box-sizing: border-box;
+  --os-size: 10px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: 10px;
+  --os-track-bg: rgba(0, 0, 0, 0);
+  --os-track-bg-hover: rgba(0, 0, 0, 0);
+  --os-track-bg-active: rgba(0, 0, 0, 0);
+  --os-track-border: none;
+  --os-track-border-hover: none;
+  --os-track-border-active: none;
+  --os-handle-border-radius: 10px;
+  --os-handle-bg: rgba(0, 0, 0, 0);
+  --os-handle-bg-hover: rgba(0, 0, 0, 0);
+  --os-handle-bg-active: rgba(0, 0, 0, 0);
+  --os-handle-border: none;
+  --os-handle-border-hover: none;
+  --os-handle-border-active: none;
+  --os-handle-interactive-area-offset: 4px;
+}
+
+.os-theme-transparent.os-scrollbar,
+.os-theme-transparent .os-scrollbar-track,
+.os-theme-transparent .os-scrollbar-handle {
+  opacity: 0 !important;
+  background-color: rgba(0, 0, 0, 0) !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
 }
 
 /* Toast styles - minimal, elegant, with smooth transitions */
@@ -175,5 +218,3 @@ body {
   opacity: 0.8;
   letter-spacing: -0.01em;
 }
-
-

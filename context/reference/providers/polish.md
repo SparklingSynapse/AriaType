@@ -214,6 +214,13 @@ selected model status separates file download state from runtime readiness; a
 downloaded GGUF does not show as fully ready until the local runtime is also
 reachable.
 
+When Cloud Polish is enabled, AriaType stops any local polish runtime process
+that it started and does not preload or fall back to local polish for incomplete
+cloud configuration. The idle unload setting also stops the managed local
+runtime after the configured idle window. These lifecycle controls only apply to
+AriaType-managed child processes; externally launched runtimes such as LM Studio
+or Ollama remain under the user's control.
+
 For the `llama-server` preset, leaving `server_command` empty makes AriaType
 try to auto-detect a bundled `llama-server` resource first, then a
 `llama-server` on `PATH`, before reporting the runtime unavailable. This code

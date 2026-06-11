@@ -5,6 +5,7 @@ use tracing::{info, instrument, warn};
 use crate::polish_engine::{get_template_by_id, DEFAULT_POLISH_PROMPT};
 use crate::state::app_state::AppState;
 
+use super::postprocess::strip_trailing_sentence_period;
 use super::shared::ProcessingEventTarget;
 
 struct LocalPolishContext {
@@ -40,6 +41,7 @@ pub(super) struct PolishProcessingResult {
 
 impl PolishProcessingResult {
     pub(super) fn skipped(text: String, fallback_reason: &'static str) -> Self {
+        let (text, _) = strip_trailing_sentence_period(&text);
         Self {
             text,
             direct_stream_inserted: false,
@@ -62,8 +64,9 @@ impl PolishProcessingResult {
         polish_queue_ms: u64,
         direct_stream_inserted: bool,
     ) -> Self {
+        let (text, _) = strip_trailing_sentence_period(&result.text);
         Self {
-            text: result.text,
+            text,
             direct_stream_inserted,
             polish_ms: result.total_ms,
             polish_wall_ms,
@@ -84,6 +87,7 @@ impl PolishProcessingResult {
         polish_queue_ms: u64,
         fallback_reason: &'static str,
     ) -> Self {
+        let (text, _) = strip_trailing_sentence_period(&text);
         Self {
             text,
             direct_stream_inserted: false,
@@ -669,6 +673,21 @@ pub(super) async fn maybe_polish_transcription_text(
                         };
                     }
                 }
+
+                let failure_reason = "cloud polish configuration incomplete";
+                event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
+                warn!(
+                    task_id,
+                    provider = %provider_type,
+                    failure_reason,
+                    "polish_cloud_config_incomplete-using_raw"
+                );
+                return PolishProcessingResult::using_original(
+                    accumulated_text,
+                    0,
+                    elapsed_ms(polish_decision_started),
+                    failure_reason,
+                );
             }
 
             run_local_polish(

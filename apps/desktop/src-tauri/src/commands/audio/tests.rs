@@ -103,6 +103,34 @@ async fn template_selection_without_model_does_not_pick_local_model_implicitly()
 }
 
 #[tokio::test]
+async fn incomplete_cloud_polish_config_does_not_fall_back_to_local_model() {
+    let state = AppState::new();
+    state.start_session(13, None);
+    {
+        let mut settings = state.settings.lock();
+        settings.cloud_polish_enabled = true;
+        settings.active_cloud_polish_provider = "openai".to_string();
+        settings.polish_model = "qwen3.5-0.8b".to_string();
+        settings.cloud_polish_configs.remove("openai");
+    }
+
+    let result = maybe_polish_transcription_text(
+        &ProcessingEventTarget::None,
+        &state,
+        13,
+        "Cloud polish should not start local polish".to_string(),
+        Some("filler".to_string()),
+    )
+    .await;
+
+    assert_eq!(result.text, "Cloud polish should not start local polish");
+    assert_eq!(
+        result.fallback_reason,
+        Some("cloud polish configuration incomplete")
+    );
+}
+
+#[tokio::test]
 async fn streaming_finalization_honors_cloud_polish_settings() {
     let mock_server = MockServer::start().await;
 
@@ -110,7 +138,7 @@ async fn streaming_finalization_honors_cloud_polish_settings() {
         "choices": [
             {
                 "message": {
-                    "content": "Polished streaming text"
+                    "content": "Polished streaming text."
                 }
             }
         ]

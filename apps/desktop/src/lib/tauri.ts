@@ -329,6 +329,8 @@ export const settingsCommands = {
 export const dictionaryCommands = {
   getAutoEntries: () =>
     invokeWithLogging<DictionaryEntry[]>("get_auto_dictionary_entries"),
+  deleteAutoEntry: (term: string) =>
+    invokeWithLogging<void>("delete_auto_dictionary_entry", { term }),
   getCustomEntries: () =>
     invokeWithLogging<DictionaryEntry[]>("get_custom_dictionary_entries"),
   addCustomEntry: (term: string) =>

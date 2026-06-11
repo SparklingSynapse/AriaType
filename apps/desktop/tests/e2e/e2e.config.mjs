@@ -13,14 +13,7 @@ export const killCommand = 'pkill -f "target/debug/ariatype"';
 export const systemDataPaths = [
   join(userHome, 'Library', 'Application Support', 'AriaType E2E'),
   e2eDataDir,
-  join(userHome, 'Library', 'WebKit', 'app'),
   join(userHome, 'Library', 'WebKit', 'com.ariatype.voicetotext.e2e'),
-  join(userHome, 'Library', 'WebKit', 'com.ariatype.voicetotext'),
-  join(userHome, 'Library', 'WebKit', 'com.ariatype.voicetotext.inhouse'),
-  join(userHome, 'Library', 'WebKit', 'com.notype.app'),
-  join(userHome, 'Library', 'WebKit', 'com.notype.voicetotext'),
-  join(userHome, 'Library', 'WebKit', 'ariatype'),
-  join(userHome, 'Library', 'WebKit', 'notype'),
 ];
 export const tauriCommand = [
   'dev',
@@ -43,7 +36,7 @@ export default createRunnerConfig({
   pagesDir: 'tests/e2e/pages',
   specsPrefix: 'tests/e2e/pages',
   playwrightConfig: 'tests/e2e/playwright.config.ts',
-  specOrder: ['journey.spec.ts', 'history.spec.ts'],
+  specOrder: ['settings.spec.ts', 'navigation.spec.ts', 'dictionary.spec.ts'],
   runtimeRoot: join(projectRoot, `tests/e2e/.runtime/${runtimeKey}`),
   socketPath: `/tmp/ariatype-pw-${runtimeKey}.sock`,
   killCommand,

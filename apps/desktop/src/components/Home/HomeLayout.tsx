@@ -24,8 +24,7 @@ import { useOnboarding } from "@/hooks/useOnboarding";
 import { useEventListeners } from "@/hooks/useEventListeners";
 import { OnboardingGuide } from "./OnboardingGuide";
 import { useNavBadges } from "@/hooks/useNavBadges";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import "overlayscrollbars/overlayscrollbars.css";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { SettingsModal, type SettingsModalSection } from "./SettingsModal";
 import { MODAL_NAV_WIDTH_CLASS } from "./ModalShell";
 
@@ -167,7 +166,7 @@ export function HomeLayout() {
             <img
               src={logo}
               alt="AriaType"
-              className="h-10 w-10 rounded-[20px] shadow-sm ring-1 ring-border/80"
+              className="h-10 w-10 rounded-lg shadow-sm ring-1 ring-border/80"
             />
             <span className="text-[22px] font-bold text-foreground font-serif italic">
               {t("app.name")}
@@ -260,24 +259,14 @@ export function HomeLayout() {
           </nav>
         </aside>
         <main className="flex-1 relative">
-          <OverlayScrollbarsComponent
+          <ScrollArea
             defer
             className="h-full"
-            options={{
-              showNativeOverlaidScrollbars: false,
-              scrollbars: {
-                theme: "os-theme-dark",
-                visibility: "auto",
-                autoHide: "scroll",
-                autoHideDelay: 300,
-                autoHideSuspend: false,
-              },
-            }}
           >
             <div className="min-h-full px-2">
               <Outlet />
             </div>
-          </OverlayScrollbarsComponent>
+          </ScrollArea>
         </main>
       </div>
     </div>

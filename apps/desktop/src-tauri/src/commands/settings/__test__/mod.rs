@@ -1,9 +1,10 @@
 use super::{
     classify_cloud_check_error, migrate_platform_shortcut_defaults_for_test,
     migrate_to_profiles_map_for_test, normalize_pill_background_color,
-    normalize_pill_background_opacity, selected_local_runtime_check_mode,
-    validate_cloud_polish_config_for_check, validate_cloud_stt_config_for_check, AppSettings,
-    CloudProviderConfig, CloudSttConfig, LocalRuntimeCheckMode,
+    normalize_pill_background_opacity, polish_runtime_action_for_setting_update,
+    selected_local_runtime_check_mode, validate_cloud_polish_config_for_check,
+    validate_cloud_stt_config_for_check, AppSettings, CloudProviderConfig, CloudSttConfig,
+    LocalPolishRuntimeSettingAction, LocalRuntimeCheckMode,
 };
 use crate::polish_engine::PolishEngineType;
 use serde_json::json;
@@ -81,6 +82,22 @@ fn cloud_check_error_classifier_maps_auth_and_timeout() {
     assert_eq!(
         classify_cloud_check_error("API error (404): model not found"),
         "model_failed"
+    );
+}
+
+#[test]
+fn enabling_cloud_polish_stops_managed_local_runtime() {
+    assert_eq!(
+        polish_runtime_action_for_setting_update("cloud_polish_enabled", &json!(true)),
+        LocalPolishRuntimeSettingAction::StopManagedRuntime
+    );
+}
+
+#[test]
+fn disabling_cloud_polish_keeps_local_runtime_available() {
+    assert_eq!(
+        polish_runtime_action_for_setting_update("cloud_polish_enabled", &json!(false)),
+        LocalPolishRuntimeSettingAction::None
     );
 }
 

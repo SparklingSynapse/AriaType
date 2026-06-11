@@ -121,6 +121,29 @@ impl CorrectionStore {
         })
     }
 
+    pub fn delete_corrected_term(&self, corrected: &str) -> Result<bool, String> {
+        let corrected = corrected.trim();
+        if corrected.is_empty() {
+            return Ok(false);
+        }
+
+        self.with_store_lock(|| {
+            let now_ms = chrono::Utc::now().timestamp_millis();
+            let mut file = self.load_or_empty_unlocked(now_ms)?;
+            let before = file.corrections.len();
+            file.corrections
+                .retain(|mapping| !mapping.corrected.eq_ignore_ascii_case(corrected));
+            let changed = file.corrections.len() != before;
+
+            if changed {
+                file.updated_at_ms = now_ms;
+                self.save_unlocked(&file)?;
+            }
+
+            Ok(changed)
+        })
+    }
+
     pub fn ensure_file(&self) -> Result<(), String> {
         self.with_store_lock(|| {
             if self.path.exists() {
@@ -600,6 +623,33 @@ mod tests {
 
         store.clear().unwrap();
         assert!(!store.path().exists());
+    }
+
+    #[test]
+    fn deletes_all_mappings_for_a_corrected_dictionary_term() {
+        let dir = TempDir::new().unwrap();
+        let store = CorrectionStore::new(dir.path().join("corrections.json"));
+
+        store
+            .upsert_pair(CorrectionPair::new("Air Tap", "AriaType"))
+            .unwrap()
+            .unwrap();
+        store
+            .upsert_pair(CorrectionPair::new("AirType", "AriaType"))
+            .unwrap()
+            .unwrap();
+        store
+            .upsert_pair(CorrectionPair::new("Dictate", "Dictation"))
+            .unwrap()
+            .unwrap();
+
+        let deleted = store.delete_corrected_term("ariatype").unwrap();
+
+        assert!(deleted);
+        let file = store.load_or_empty(0).unwrap();
+        assert_eq!(file.corrections.len(), 1);
+        assert_eq!(file.corrections[0].wrong, "Dictate");
+        assert_eq!(file.corrections[0].corrected, "Dictation");
     }
 
     #[test]
