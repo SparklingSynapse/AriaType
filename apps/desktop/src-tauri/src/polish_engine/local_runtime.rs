@@ -457,11 +457,16 @@ fn bundled_runtime_roots_for_exe(exe: &Path) -> Vec<PathBuf> {
 }
 
 fn bundled_runtime_subdirs() -> &'static [&'static str] {
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         &["bin/windows", "bin", ""]
-    } else if cfg!(target_os = "macos") {
+    }
+    #[cfg(target_os = "macos")]
+    {
         macos_bundled_runtime_subdirs()
-    } else {
+    }
+    #[cfg(target_os = "linux")]
+    {
         &["bin/linux", "bin", ""]
     }
 }

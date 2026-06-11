@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
+  ArrowCircleUp,
   Brain,
   Cloud,
   GearSix,
@@ -12,6 +13,10 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
+import { modelCommands, events } from "@/lib/tauri";
+import { logger } from "@/lib/logger";
+import { useNavBadges } from "@/hooks/useNavBadges";
+import { useEventListeners } from "@/hooks/useEventListeners";
 import { GeneralSettings } from "./GeneralSettings";
 import { HotkeySettings } from "./HotkeySettings";
 import { ModelSettings } from "./ModelSettings";
@@ -54,6 +59,30 @@ export function SettingsModal({
   const { t } = useTranslation();
   const [activeSection, setActiveSection] =
     useState<SettingsModalSection>(initialSection);
+  const [hasModel, setHasModel] = useState(true);
+  const badges = useNavBadges();
+
+  const checkModel = useCallback(async () => {
+    try {
+      const models = await modelCommands.getModels();
+      setHasModel(models.some((m) => m.downloaded));
+    } catch (err) {
+      logger.error("failed_to_check_models", { error: String(err) });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      checkModel();
+    }
+  }, [checkModel, open]);
+
+  useEventListeners(async () => {
+    return [
+      await events.onModelDownloadComplete(() => checkModel()),
+      await events.onModelDeleted(() => checkModel()),
+    ];
+  }, [checkModel]);
 
   const sections = useMemo<SettingsSectionConfig[]>(
     () => [
@@ -155,6 +184,9 @@ export function SettingsModal({
                   <div className="flex-1 space-y-1 overflow-y-auto px-3 pb-4 pt-1">
                     {sections.map((section) => {
                       const isActive = section.id === activeSection;
+                      const needsAttention =
+                        (section.id === "models" && !hasModel) ||
+                        (section.id === "permissions" && badges.permission);
 
                       return (
                         <button
@@ -178,6 +210,9 @@ export function SettingsModal({
                               {section.title}
                             </span>
                           </span>
+                          {needsAttention && (
+                            <ArrowCircleUp className="h-4 w-4 shrink-0 text-green-500" weight="fill" />
+                          )}
                         </button>
                       );
                     })}

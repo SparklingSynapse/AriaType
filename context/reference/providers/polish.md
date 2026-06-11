@@ -259,6 +259,15 @@ macOS discovery prefers the current architecture first, so a universal build can
 ship both `bin/apple-silicon/llama-server` and `bin/intel/llama-server` without
 Intel machines accidentally trying the Apple Silicon binary.
 
+Windows packaging entry points now also try to prepare the pinned official
+`llama-b<release>-bin-win-cpu-x64.zip` asset automatically when
+`bin/windows/llama-server.exe` is missing and no `ARIATYPE_LLAMA_SERVER_WINDOWS*`
+variable is configured. The asset is cached under `.tmp/llama-server-assets/`
+and then copied through the same `prepare-llama-server-release-assets.mjs`
+pipeline that the release workflow uses. The required-runtime gate still stays
+on: the build only proceeds automatically if that download-and-prepare step
+completes successfully.
+
 The GitHub release workflow pins a llama.cpp release tag, downloads the official
 macOS arm64, macOS x64, and Windows CPU x64 assets from
 `ggml-org/llama.cpp`, extracts `llama-server`, and builds with
@@ -338,9 +347,10 @@ whitespace and punctuation spacing. These corrections are part of the fast path
 and do not require the local runtime.
 
 When a polish request has a preview callback, the local runtime request uses
-OpenAI-compatible streaming (`stream: true`). Incoming SSE chunks update the
-pill tooltip preview. AriaType still inserts text only after the final polish
-result by default.
+OpenAI-compatible streaming (`stream: true`). Incoming SSE chunks keep the
+pill tooltip in a generic processing state instead of exposing raw streamed
+model output. AriaType still inserts text only after the final polish result by
+default.
 
 An advanced `polish_stream_direct_typing_enabled` setting can type streamed
 polish chunks directly into the target app during the recording flow. This mode

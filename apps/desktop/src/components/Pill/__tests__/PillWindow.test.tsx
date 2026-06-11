@@ -1,5 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import i18n from "@/i18n";
 import { PillWindow } from "../PillWindow";
 import type { AppSettings, PillTooltipEvent, RecordingStateEvent } from "@/lib/tauri";
 
@@ -101,8 +102,9 @@ function settings(overrides: Partial<AppSettings> = {}): Partial<AppSettings> {
 }
 
 describe("PillWindow backend tooltip", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
+    await i18n.changeLanguage("en");
     getSettingsMock.mockReset();
     hidePillMock.mockReset();
     onPillTooltipMock.mockClear();
@@ -158,7 +160,7 @@ describe("PillWindow backend tooltip", () => {
     expect(tooltip).toHaveClass("max-w-[calc(100vw-1rem)]");
   });
 
-  it("renders streaming polish preview tooltips as multiline in-place updates", async () => {
+  it("renders fixed processing text for polish preview tooltips", async () => {
     render(<PillWindow />);
 
     await act(async () => {
@@ -180,11 +182,12 @@ describe("PillWindow backend tooltip", () => {
       });
     });
 
-    const tooltip = document.querySelector(".whitespace-pre-wrap");
+    const tooltip = document.querySelector(".line-clamp-4");
     expect(tooltip).toBeInstanceOf(HTMLElement);
-    expect(tooltip?.textContent).toBe("Polishing preview:\nHello");
-    expect(tooltip).toHaveClass("whitespace-pre-wrap");
-    expect(tooltip).toHaveClass("break-words");
+    expect(tooltip?.textContent).toBe(i18n.t("pill.polishPreviewProcessing"));
+    expect(tooltip?.textContent).not.toContain("Hello");
+    expect(tooltip).toHaveClass("line-clamp-4");
+    expect(tooltip).toHaveClass("whitespace-normal");
     expect(tooltip).not.toHaveClass("truncate");
 
     act(() => {
@@ -195,7 +198,8 @@ describe("PillWindow backend tooltip", () => {
       });
     });
 
-    expect(tooltip?.textContent).toBe("Polishing preview:\nHello world");
+    expect(tooltip?.textContent).toBe(i18n.t("pill.polishPreviewProcessing"));
+    expect(tooltip?.textContent).not.toContain("Hello world");
   });
 
   it("renders idle backend tooltip messages without rendering the pill body", async () => {

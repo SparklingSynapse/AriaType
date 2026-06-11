@@ -6,7 +6,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
-- Make correction dictionaries manageable (de92349)
+- Expose correction dictionaries (8968a88)
 - Make settings and local polish easier to use (df5b2bc)
 
 ## v0.6.5 (2026-06-08)

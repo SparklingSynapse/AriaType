@@ -189,19 +189,21 @@ test('windows cross-build preflight documents ninja as a required tool', () => {
 test('windows cross-build command uses the dedicated Windows Tauri config', () => {
   assert.equal(
     WINDOWS_CROSS_BUILD_COMMAND,
-    'node ../../scripts/prepare-tauri-runtime-resources.mjs --platform windows --require-runtime && cargo tauri build --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc',
+    'node ../../scripts/ensure-llama-server-runtime.mjs --platform windows && node ../../scripts/prepare-tauri-runtime-resources.mjs --platform windows --require-runtime && cargo tauri build --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc',
   );
 });
 
 test('platform build commands merge generated runtime resources config', () => {
   const script = readFileSync(new URL('./build-all-platforms.mjs', import.meta.url), 'utf8');
+  const sharedScript = readFileSync(new URL('./build-all-platforms-lib.mjs', import.meta.url), 'utf8');
 
   assert.match(script, /prepare-tauri-runtime-resources\.mjs --platform macos --require-runtime/);
-  assert.match(script, /prepare-tauri-runtime-resources\.mjs --platform windows --require-runtime/);
+  assert.match(sharedScript, /ensure-llama-server-runtime\.mjs --platform windows/);
+  assert.match(sharedScript, /prepare-tauri-runtime-resources\.mjs --platform windows --require-runtime/);
   assert.match(script, /detachRepoDmgMounts\(\{ repoRoot: root \}\);/);
   assert.match(script, /--config \$\{runtimeConfig\} --target aarch64-apple-darwin/);
   assert.match(script, /--config \$\{runtimeConfig\} --target x86_64-apple-darwin/);
-  assert.match(script, /tauri\.windows\.conf\.json --config \$\{runtimeConfig\}/);
+  assert.match(sharedScript, /tauri\.windows\.conf\.json --config src-tauri\/tauri\.runtime\.generated\.conf\.json/);
 });
 
 test('windows cross-build env preserves existing env and enables static CRT flags', () => {

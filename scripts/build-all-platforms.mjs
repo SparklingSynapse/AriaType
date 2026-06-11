@@ -26,6 +26,7 @@ import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { platform } from 'os';
 import { execSync } from 'child_process';
 import {
+  WINDOWS_NATIVE_BUILD_COMMAND,
   WINDOWS_CROSS_BUILD_COMMAND,
   checkRequiredBuildTools,
   detachRepoDmgMounts,
@@ -296,7 +297,7 @@ if (!autoSkipWin) {
   
   if (isWindows) {
     // Native Windows build
-    cmd = `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform windows --require-runtime && pnpm tauri build --config src-tauri/tauri.windows.conf.json --config ${runtimeConfig} --target x86_64-pc-windows-msvc`;
+    cmd = WINDOWS_NATIVE_BUILD_COMMAND;
   } else {
     // Cross-compilation from macOS/Linux using cargo-xwin
     console.log('🔧 Cross-compiling Windows from ' + hostPlatform + '\n');
