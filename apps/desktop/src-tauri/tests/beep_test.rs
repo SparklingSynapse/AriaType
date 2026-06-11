@@ -8,6 +8,8 @@ use std::fs::File;
 use std::io::Read;
 use tempfile::tempdir;
 
+const MAX_BOUNDARY_RMS_RATIO: f64 = 0.18;
+
 /// Helper to parse WAV header and get sample count
 fn parse_wav_info(path: &std::path::Path) -> (u32, u16, u32) {
     let mut file = File::open(path).unwrap();
@@ -26,6 +28,53 @@ fn parse_wav_info(path: &std::path::Path) -> (u32, u16, u32) {
     let num_samples = data_size / 2;
 
     (sample_rate, channels, num_samples)
+}
+
+fn rms_ratio(samples: &[i16], window_samples: usize) -> (f64, f64) {
+    let peak = samples
+        .iter()
+        .map(|s| i32::from(*s).abs())
+        .max()
+        .expect("beep should contain samples") as f64;
+    assert!(peak > 0.0, "beep should not be silence");
+
+    let window_samples = window_samples.min(samples.len());
+    let rms = |window: &[i16]| {
+        let energy = window
+            .iter()
+            .map(|sample| {
+                let normalized = f64::from(*sample) / peak;
+                normalized * normalized
+            })
+            .sum::<f64>();
+        (energy / window.len() as f64).sqrt()
+    };
+
+    (
+        rms(&samples[..window_samples]),
+        rms(&samples[samples.len() - window_samples..]),
+    )
+}
+
+fn assert_soft_boundaries(path: &std::path::Path) {
+    let mut reader = hound::WavReader::open(path).unwrap();
+    let spec = reader.spec();
+    let samples: Vec<i16> = reader.samples::<i16>().filter_map(|s| s.ok()).collect();
+    let window_samples = (spec.sample_rate as f32 * 0.005) as usize;
+    let (attack_ratio, release_ratio) = rms_ratio(&samples, window_samples);
+
+    assert!(
+        attack_ratio <= MAX_BOUNDARY_RMS_RATIO,
+        "attack RMS ratio {:.3} should be below {:.3}",
+        attack_ratio,
+        MAX_BOUNDARY_RMS_RATIO
+    );
+    assert!(
+        release_ratio <= MAX_BOUNDARY_RMS_RATIO,
+        "release RMS ratio {:.3} should be below {:.3}",
+        release_ratio,
+        MAX_BOUNDARY_RMS_RATIO
+    );
 }
 
 #[test]
@@ -178,6 +227,28 @@ fn test_generate_beep_files_creates_both() {
 
     assert!(start_path.exists());
     assert!(stop_path.exists());
+}
+
+#[test]
+fn test_start_and_stop_generators_fade_in_and_out() {
+    let temp_dir = tempdir().unwrap();
+    let start_path = temp_dir.path().join("start_beep.wav");
+    let stop_path = temp_dir.path().join("stop_beep.wav");
+
+    beep_generator::generate_start_beep(&start_path).unwrap();
+    beep_generator::generate_stop_beep(&stop_path).unwrap();
+
+    assert_soft_boundaries(&start_path);
+    assert_soft_boundaries(&stop_path);
+}
+
+#[test]
+fn test_bundled_beeps_fade_in_and_out() {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let assets_dir = manifest_dir.join("assets");
+
+    assert_soft_boundaries(&assets_dir.join("start_beep.wav"));
+    assert_soft_boundaries(&assets_dir.join("stop_beep.wav"));
 }
 
 #[test]

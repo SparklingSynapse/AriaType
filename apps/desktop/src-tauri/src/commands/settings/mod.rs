@@ -198,6 +198,12 @@ enum LocalRuntimeCheckMode {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalPolishRuntimeSettingAction {
+    None,
+    StopManagedRuntime,
+}
+
 impl CloudConnectionCheckResult {
     fn success(message: impl Into<String>, duration_ms: u64) -> Self {
         Self {
@@ -1005,6 +1011,7 @@ pub fn update_settings(
     let mut hotkey_to_register: Option<String> = None;
     let mut stay_in_tray_to_apply: Option<bool> = None;
     let mut local_polish_runtime_to_apply: Option<LocalPolishRuntimeSettings> = None;
+    let mut local_polish_runtime_action = LocalPolishRuntimeSettingAction::None;
     let preset_to_apply: Option<String>;
     let indicator_mode_to_apply: Option<String>;
 
@@ -1206,6 +1213,8 @@ pub fn update_settings(
             "cloud_polish_enabled" => {
                 if let Some(v) = value.as_bool() {
                     settings.cloud_polish_enabled = v;
+                    local_polish_runtime_action =
+                        polish_runtime_action_for_setting_update(&key, &value);
                 }
             }
             "active_cloud_polish_provider" => {
@@ -1306,6 +1315,10 @@ pub fn update_settings(
         {
             tracing::warn!(error = %e, "local_polish_runtime_configure_failed-settings_update");
         }
+    }
+
+    if local_polish_runtime_action == LocalPolishRuntimeSettingAction::StopManagedRuntime {
+        state.polish_manager.stop_local_runtime();
     }
 
     if let Some(preset) = preset_to_apply {
@@ -1711,6 +1724,17 @@ fn selected_local_runtime_check_mode(
         engine_type,
         model_id: model_id.to_string(),
     }
+}
+
+fn polish_runtime_action_for_setting_update(
+    key: &str,
+    value: &serde_json::Value,
+) -> LocalPolishRuntimeSettingAction {
+    if key == "cloud_polish_enabled" && value.as_bool() == Some(true) {
+        return LocalPolishRuntimeSettingAction::StopManagedRuntime;
+    }
+
+    LocalPolishRuntimeSettingAction::None
 }
 
 /// Scans the models directory for legacy model files (ggml/gguf format)

@@ -13,7 +13,7 @@ export const ModalBackdrop = forwardRef<HTMLDivElement, HTMLMotionProps<"div">>(
   ({ className, ...props }, ref) => (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0 }}
+      initial={false}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.14 }}
       className={cn("fixed inset-0 z-50 bg-black/35 backdrop-blur-md", className)}
@@ -49,7 +49,7 @@ export const ModalSurface = forwardRef<HTMLDivElement, ModalSurfaceProps>(
   ({ className, sizeClassName = SETTINGS_MODAL_SIZE_CLASS, ...props }, ref) => (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0, y: 8, scale: 0.985 }}
+      initial={false}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.16, ease: "easeOut" }}
       className={cn(

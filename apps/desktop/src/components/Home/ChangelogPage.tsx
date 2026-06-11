@@ -2,9 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { CircleNotch, WifiSlash } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { logger } from "@/lib/logger";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { Button } from "@/components/ui/button";
-import "overlayscrollbars/overlayscrollbars.css";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const CHANGELOG_URL =
   "https://raw.githubusercontent.com/joe223/AriaType/refs/heads/master/CHANGELOG.md";
@@ -127,18 +126,9 @@ export function ChangelogPage() {
         )}
 
         {!isEmpty && !loading && !error && (
-          <OverlayScrollbarsComponent
+          <ScrollArea
             defer
             className="h-full"
-            options={{
-              showNativeOverlaidScrollbars: false,
-              scrollbars: {
-                theme: "os-theme-dark",
-                visibility: "auto",
-                autoHide: "scroll",
-                autoHideDelay: 300,
-              },
-            }}
           >
             <div
               className="prose prose-sm dark:prose-invert max-w-none"
@@ -146,7 +136,7 @@ export function ChangelogPage() {
                 __html: parsedHtml,
               }}
             />
-          </OverlayScrollbarsComponent>
+          </ScrollArea>
         )}
       </div>
     </div>

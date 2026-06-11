@@ -6,8 +6,13 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Features
 
+- Refine transcription polish and UX (f1ade27)
 - Expose correction dictionaries (8968a88)
 - Make settings and local polish easier to use (df5b2bc)
+
+### Bug Fixes
+
+- Surface settings nav items that need attention (92134f9)
 
 ## v0.6.5 (2026-06-08)
 

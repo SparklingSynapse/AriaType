@@ -89,6 +89,7 @@ fn set_current_config(config: LocalPolishRuntimeConfig) {
 struct LocalPolishRuntimeState {
     child: Option<Child>,
     model_id: Option<String>,
+    last_used_at: Option<Instant>,
 }
 
 #[derive(Debug)]
@@ -159,6 +160,7 @@ impl LocalPolishRuntimeManager {
             }
 
             if runtime_is_ready(&config, Duration::from_millis(500)) {
+                state.last_used_at = Some(Instant::now());
                 info!(
                     model_id,
                     managed = state.child.is_some(),
@@ -207,6 +209,7 @@ impl LocalPolishRuntimeManager {
 
                 state.child = Some(child);
                 state.model_id = Some(model_id.to_string());
+                state.last_used_at = Some(Instant::now());
             }
         }
 
@@ -228,6 +231,10 @@ impl LocalPolishRuntimeManager {
             base_url = %config.base_url,
             "local_polish_runtime_ready-started"
         );
+        let mut state = self.state.lock().unwrap();
+        if state.model_id.as_deref() == Some(model_id) {
+            state.last_used_at = Some(Instant::now());
+        }
         Ok(())
     }
 
@@ -250,11 +257,38 @@ impl LocalPolishRuntimeManager {
         stop_child(&mut state);
     }
 
+    pub(crate) fn stop_if_idle(&self, idle_for: Duration) -> bool {
+        if idle_for.is_zero() {
+            return false;
+        }
+
+        let mut state = self.state.lock().unwrap();
+        prune_exited_child(&mut state);
+        if state.child.is_none() {
+            return false;
+        }
+
+        let Some(last_used_at) = state.last_used_at else {
+            return false;
+        };
+        if last_used_at.elapsed() < idle_for {
+            return false;
+        }
+
+        stop_child(&mut state);
+        true
+    }
+
     pub(crate) fn stop_model(&self, model_id: &str) {
         let mut state = self.state.lock().unwrap();
         if state.model_id.as_deref() == Some(model_id) {
             stop_child(&mut state);
         }
+    }
+
+    #[cfg(test)]
+    fn has_managed_child_for_test(&self) -> bool {
+        self.state.lock().unwrap().child.is_some()
     }
 }
 
@@ -673,12 +707,14 @@ fn prune_exited_child(state: &mut LocalPolishRuntimeState) {
             warn!(status = ?status, "local_polish_runtime_child_exited");
             state.child = None;
             state.model_id = None;
+            state.last_used_at = None;
         }
         Ok(None) => {}
         Err(e) => {
             warn!(error = %e, "local_polish_runtime_child_status_failed");
             state.child = None;
             state.model_id = None;
+            state.last_used_at = None;
         }
     }
 }
@@ -696,6 +732,7 @@ fn stop_child(state: &mut LocalPolishRuntimeState) {
         debug!(error = %e, "local_polish_runtime_child_wait_failed");
     }
     state.model_id = None;
+    state.last_used_at = None;
     info!("local_polish_runtime_stopped");
 }
 
@@ -1116,5 +1153,43 @@ mod tests {
         assert!(err.contains("Local polish server unavailable"));
         assert!(err.contains("configure a local polish runtime command"));
         assert!(!err.contains("llama-server"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_if_idle_stops_managed_child_after_idle_window() {
+        let manager = LocalPolishRuntimeManager::with_config(test_config(
+            "http://127.0.0.1:1/v1".to_string(),
+        ));
+        let child = Command::new("sleep").arg("60").spawn().unwrap();
+
+        {
+            let mut state = manager.state.lock().unwrap();
+            state.child = Some(child);
+            state.model_id = Some("qwen3.5-0.8b".to_string());
+            state.last_used_at = Some(Instant::now() - Duration::from_secs(120));
+        }
+
+        assert!(manager.stop_if_idle(Duration::from_secs(60)));
+        assert!(!manager.has_managed_child_for_test());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_if_idle_keeps_recent_managed_child_running() {
+        let manager = LocalPolishRuntimeManager::with_config(test_config(
+            "http://127.0.0.1:1/v1".to_string(),
+        ));
+        let child = Command::new("sleep").arg("60").spawn().unwrap();
+
+        {
+            let mut state = manager.state.lock().unwrap();
+            state.child = Some(child);
+            state.model_id = Some("qwen3.5-0.8b".to_string());
+            state.last_used_at = Some(Instant::now());
+        }
+
+        assert!(!manager.stop_if_idle(Duration::from_secs(60)));
+        assert!(manager.has_managed_child_for_test());
     }
 }

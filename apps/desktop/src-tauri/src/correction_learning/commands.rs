@@ -53,6 +53,12 @@ pub fn get_auto_dictionary_entries() -> Result<Vec<DictionaryEntry>, String> {
 }
 
 #[tauri::command]
+pub fn delete_auto_dictionary_entry(term: String) -> Result<(), String> {
+    CorrectionStore::shared().delete_corrected_term(&term)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_custom_dictionary_entries(
     state: State<'_, AppState>,
 ) -> Result<Vec<DictionaryEntry>, String> {

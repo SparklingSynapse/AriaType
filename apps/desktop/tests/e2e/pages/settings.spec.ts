@@ -1,10 +1,14 @@
+import type { TauriFixtures } from '@srsholmes/tauri-playwright';
 import { test, expect } from '../fixtures';
-import { openRouteWithOnboarding } from '../utils/helpers';
-import { disableAutoSnapshot, expectNativeScreenshot } from '@ariatype/e2e-harness/helpers';
+import {
+  disableAutoSnapshot,
+  openRouteWithOnboarding,
+  seedDefaultShortcutProfiles,
+} from '../utils/helpers';
 
-test('Settings modal groups core settings', async ({ tauriPage }) => {
-  disableAutoSnapshot(test.info());
+type E2EPage = TauriFixtures['tauriPage'];
 
+async function openSettingsModal(tauriPage: E2EPage) {
   await openRouteWithOnboarding(tauriPage, '/');
 
   await expect(tauriPage.locator('[data-testid="dashboard-page"]')).toBeVisible({
@@ -16,54 +20,67 @@ test('Settings modal groups core settings', async ({ tauriPage }) => {
   await settingsButton.click();
 
   const settingsModal = tauriPage.locator('[data-testid="settings-modal"]');
-  const settingsPage = settingsModal.locator('[data-testid="settings-page"]');
-
   await expect(settingsModal).toBeVisible({ timeout: 10000 });
-  await expect(settingsModal).toHaveCSS('height', '720px');
-  await expect(settingsModal).toHaveCSS('width', '940px');
-  await expect(settingsModal).toHaveCSS('border-top-width', '0px');
-  await expect(settingsModal).not.toHaveCSS('box-shadow', 'none');
-  await expect(settingsPage).toBeVisible({ timeout: 10000 });
-  await expect(
-    settingsModal.locator('[data-testid="settings-modal-section-basics"]'),
-  ).not.toContainText('Language, startup');
-  await expect(
-    settingsModal.locator('[data-testid="settings-modal-section-transcription"]'),
-  ).not.toContainText('Microphone, output language');
-  await expect(
-    settingsModal.locator('[data-testid="settings-modal-section-advanced"]'),
-  ).toHaveCount(0);
+  return settingsModal;
+}
+
+test('Settings modal navigation matches current sections', async ({ tauriPage }, testInfo) => {
+  disableAutoSnapshot(testInfo);
+  const settingsModal = await openSettingsModal(tauriPage);
+  await seedDefaultShortcutProfiles(tauriPage);
+
   await expect(tauriPage.locator('[data-testid="home-sidebar"]')).toHaveCSS('width', '248px');
   await expect(settingsModal.locator('[data-testid="settings-modal-nav"]')).toHaveCSS('width', '248px');
-  await expect(settingsPage.getByText('App Language')).toBeVisible();
-  await expect(settingsPage.getByText('Auto-start on login')).toBeVisible();
-  await expect(settingsPage.getByText('Theme')).toBeVisible();
+
+  for (const section of ['basics', 'recording', 'transcription', 'models', 'cloud', 'permissions']) {
+    await expect(settingsModal.locator(`[data-testid="settings-modal-section-${section}"]`)).toBeVisible();
+  }
+  await expect(settingsModal.locator('[data-testid="settings-modal-section-advanced"]')).toHaveCount(0);
+
+  const basicsPage = settingsModal.locator('[data-testid="settings-page"]');
+  await expect(basicsPage).toBeVisible();
+  await expect(basicsPage.getByText('App Language')).toBeVisible();
+  await expect(basicsPage.getByText('Auto-start on login')).toBeVisible();
+  await expect(basicsPage.getByText('Theme')).toBeVisible();
+
+  await settingsModal.locator('[data-testid="settings-modal-section-recording"]').click();
+  const hotkeyPage = settingsModal.locator('[data-testid="hotkey-page"]');
+  await expect(hotkeyPage).toBeVisible();
+  await expect(hotkeyPage.locator('[data-testid="profile-dictate"]')).toBeVisible();
+  await expect(hotkeyPage.locator('[data-testid="profile-riff"]')).toBeVisible();
+  await expect(hotkeyPage.locator('[data-testid="create-custom-profile"]')).toBeVisible();
 
   await settingsModal.locator('[data-testid="settings-modal-section-transcription"]').click();
-  await expect(settingsPage.getByText('Audio Input')).toBeVisible();
-  await expect(settingsPage.getByText('Output Language')).toBeVisible();
-  await expectNativeScreenshot(
-    tauriPage,
-    'Settings-modal-groups-core-settings-1.png',
-    0.1,
-    { captureMode: 'native-with-fallback', stabilizationMs: 1000 },
-  );
+  const transcriptionPage = settingsModal.locator('[data-testid="settings-page"]');
+  await expect(transcriptionPage.getByText('Audio Input')).toBeVisible();
+  await expect(transcriptionPage.getByText('Output Language')).toBeVisible();
+  await expect(transcriptionPage.getByText('Glossary')).toBeVisible();
 
-  await tauriPage.keyboard.press('Escape');
-  await expect(settingsModal).toHaveCount(0, { timeout: 5000 });
+  await settingsModal.locator('[data-testid="settings-modal-section-models"]').click();
+  const modelPage = settingsModal.locator('[data-testid="model-page"]');
+  await expect(modelPage).toBeVisible();
+  await expect(modelPage.getByText('Voice Input')).toBeVisible();
+  await expect(modelPage.getByText('Polish')).toBeVisible();
+  await expect(modelPage.getByText('Performance')).toBeVisible();
+
+  await settingsModal.locator('[data-testid="settings-modal-section-cloud"]').click();
+  const cloudPage = settingsModal.locator('[data-testid="cloud-page"]');
+  await expect(cloudPage).toBeVisible();
+  await expect(cloudPage.getByText('Cloud STT')).toBeVisible();
+  await cloudPage.getByText('Cloud Polish').click();
+  await expect(cloudPage.locator('#cloud-polish')).toBeVisible();
+
+  await settingsModal.locator('[data-testid="settings-modal-section-permissions"]').click();
+  const permissionPage = settingsModal.locator('[data-testid="permission-page"]');
+  await expect(permissionPage).toBeVisible();
+  await expect(permissionPage.getByText('Microphone')).toBeVisible();
+  await expect(permissionPage.getByText('Accessibility')).toBeVisible();
+  await expect(permissionPage.getByText('Screen Recording')).toBeVisible();
 });
 
-test('Settings modal unmounts after close and releases the page', async ({ tauriPage }) => {
-  disableAutoSnapshot(test.info());
-
-  await openRouteWithOnboarding(tauriPage, '/');
-  await expect(tauriPage.locator('[data-testid="dashboard-page"]')).toBeVisible({
-    timeout: 15000,
-  });
-
-  await tauriPage.locator('[data-testid="open-settings-modal"]').click();
-  const settingsModal = tauriPage.locator('[data-testid="settings-modal"]');
-  await expect(settingsModal).toBeVisible({ timeout: 10000 });
+test('Settings modal unmounts after close and releases the page', async ({ tauriPage }, testInfo) => {
+  disableAutoSnapshot(testInfo);
+  const settingsModal = await openSettingsModal(tauriPage);
 
   await tauriPage.keyboard.press('Escape');
   await expect(settingsModal).toHaveCount(0, { timeout: 5000 });

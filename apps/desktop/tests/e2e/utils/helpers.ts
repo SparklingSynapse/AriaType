@@ -1,5 +1,6 @@
 import type { TauriFixtures } from '@srsholmes/tauri-playwright';
 import {
+  dismissOnboardingIfPresent,
   waitForAppReady,
   invokeTauri,
 } from '@ariatype/e2e-harness/helpers';
@@ -20,6 +21,9 @@ export {
 } from '@ariatype/e2e-harness/helpers';
 
 type E2EPage = TauriFixtures['tauriPage'];
+const ONBOARDING_RESET_EVENT = 'ariatype:onboarding-reset';
+const ONBOARDING_COMPLETE_EVENT = 'ariatype:onboarding-complete';
+
 type ShortcutProfilePayload = {
   hotkey: string;
   trigger_mode: 'hold' | 'toggle' | 'double_tap';
@@ -35,13 +39,17 @@ export async function setOnboardingCompleted(page: E2EPage, completed: boolean):
     `(function() {
       if (${completed}) {
         localStorage.setItem('onboarding_completed', 'true');
+        window.dispatchEvent(new Event(${JSON.stringify(ONBOARDING_COMPLETE_EVENT)}));
       } else {
         localStorage.removeItem('onboarding_completed');
+        window.dispatchEvent(new Event(${JSON.stringify(ONBOARDING_RESET_EVENT)}));
       }
       return true;
     })()`,
   );
-  await page.evaluate('window.location.reload()');
+  if (completed) {
+    await dismissOnboardingIfPresent(page);
+  }
   await waitForAppReady(page);
 }
 

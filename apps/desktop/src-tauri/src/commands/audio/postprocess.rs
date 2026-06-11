@@ -105,8 +105,10 @@ fn finish_post_stt_processing(input: PostSttFinishInput<'_>) -> PostSttProcessRe
     let glossary_result =
         apply_glossary_corrections(&custom_hotword_result.text, glossary_mappings);
     let normalized_output = normalize_transcript_text(&glossary_result.text);
-    let text = normalized_output.text;
-    let normalization_applied = input_normalization_applied + normalized_output.applied;
+    let (text, stripped_trailing_period) = strip_trailing_sentence_period(&normalized_output.text);
+    let normalization_applied = input_normalization_applied
+        + normalized_output.applied
+        + usize::from(stripped_trailing_period);
     let hotwords_applied = custom_hotword_result.applied.len();
     let glossary_applied = glossary_result.applied.len();
     let postprocess_ms = elapsed.as_millis() as u64;
@@ -147,6 +149,23 @@ fn normalize_transcript_text(text: &str) -> TextNormalizationResult {
         text: normalized,
         applied,
     }
+}
+
+pub(super) fn strip_trailing_sentence_period(text: &str) -> (String, bool) {
+    let trimmed = text.trim_end();
+    let Some((period_start, period)) = trimmed.char_indices().next_back() else {
+        return (text.to_string(), false);
+    };
+
+    if !is_sentence_period(period) {
+        return (text.to_string(), false);
+    }
+
+    (trimmed[..period_start].to_string(), true)
+}
+
+fn is_sentence_period(c: char) -> bool {
+    matches!(c, '.' | '．' | '。' | '｡')
 }
 
 fn collapse_whitespace(text: &str) -> String {
@@ -462,8 +481,32 @@ mod tests {
     fn removes_spaces_around_cjk_punctuation() {
         let result = apply_post_stt_processing("你好 ， 世界 。", false, "", "", 8, "test");
 
-        assert_eq!(result.text, "你好，世界。");
-        assert_eq!(result.normalization_applied, 1);
+        assert_eq!(result.text, "你好，世界");
+        assert_eq!(result.normalization_applied, 2);
+    }
+
+    #[test]
+    fn removes_only_final_sentence_period_variants() {
+        for (input, expected) in [
+            ("hello.", "hello"),
+            ("hello．", "hello"),
+            ("你好。", "你好"),
+            ("你好｡", "你好"),
+            ("version 1.2.", "version 1.2"),
+        ] {
+            let result = apply_post_stt_processing(input, false, "", "", 8, "test");
+            assert_eq!(result.text, expected, "input={input}");
+            assert_eq!(result.normalization_applied, 1, "input={input}");
+        }
+    }
+
+    #[test]
+    fn preserves_final_non_period_sentence_punctuation() {
+        for input in ["hello?", "hello!", "你好？", "你好！"] {
+            let result = apply_post_stt_processing(input, false, "", "", 8, "test");
+            assert_eq!(result.text, input, "input={input}");
+            assert_eq!(result.normalization_applied, 0, "input={input}");
+        }
     }
 
     #[test]

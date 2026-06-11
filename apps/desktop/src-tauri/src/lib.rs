@@ -263,6 +263,7 @@ pub fn run() {
             settings::check_local_polish_runtime_config,
             correction_learning::commands::clear_correction_memory,
             correction_learning::commands::get_auto_dictionary_entries,
+            correction_learning::commands::delete_auto_dictionary_entry,
             correction_learning::commands::get_custom_dictionary_entries,
             correction_learning::commands::add_custom_dictionary_entry,
             correction_learning::commands::import_custom_dictionary_csv,
@@ -469,6 +470,14 @@ pub fn run() {
                     let idle_minutes = settings.idle_unload_minutes;
                     drop(settings);
 
+                    if idle_minutes != 0 {
+                        let idle_for =
+                            std::time::Duration::from_secs(u64::from(idle_minutes) * 60);
+                        if state.polish_manager.stop_local_runtime_if_idle(idle_for) {
+                            info!(idle_minutes, "local_polish_runtime_stopped-idle_unload");
+                        }
+                    }
+
                     if !model_resident {
                         continue;
                     }
@@ -477,8 +486,8 @@ pub fn run() {
                         continue;
                     }
 
-                    // Model idle unloading is now handled by UnifiedEngineManager's engine cache
-                    // TODO: Implement idle unload in UnifiedEngineManager if needed
+                    // STT model idle unloading is handled by UnifiedEngineManager's engine cache.
+                    // The managed local polish runtime is stopped above because it is a process.
                 }
             });
 
@@ -495,6 +504,7 @@ pub fn run() {
                 let model_resident = settings.model_resident;
                 let model_name = settings.model.clone();
                 let polish_model_id = settings.polish_model.clone();
+                let cloud_polish_enabled = settings.cloud_polish_enabled;
                 drop(settings);
 
                 if model_resident {
@@ -533,7 +543,7 @@ pub fn run() {
                 }
 
                 // Preload the configured polish model independently from STT residency.
-                if !polish_model_id.is_empty() {
+                if !cloud_polish_enabled && !polish_model_id.is_empty() {
                     if let Some(engine_type) =
                         crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(
                             &polish_model_id,

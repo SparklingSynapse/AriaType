@@ -12,6 +12,8 @@ use crate::events::{
 use crate::services::transcription_finalize::FinalizeResult;
 use crate::state::app_state::AppState;
 
+use super::postprocess::strip_trailing_sentence_period;
+
 pub(crate) type ParkingMutex<T> = parking_lot::Mutex<T>;
 
 pub(crate) const AUDIO_ACTIVITY_ON_THRESHOLD: u32 = 40;
@@ -350,7 +352,8 @@ fn next_direct_stream_delta(
     accumulated_text: &str,
     typed_visible_chars: &mut usize,
 ) -> Option<String> {
-    let visible_text = sanitize_polish_preview_text(accumulated_text)?;
+    let raw_visible_text = sanitize_polish_preview_text(accumulated_text)?;
+    let (visible_text, _) = strip_trailing_sentence_period(raw_visible_text);
     let visible_chars = visible_text.chars().count();
     if visible_chars <= *typed_visible_chars {
         return None;
@@ -371,12 +374,13 @@ pub(crate) fn polish_preview_tooltip_message(text: &str) -> Option<String> {
         return None;
     }
 
-    let Some(text) = sanitize_polish_preview_text(raw_text) else {
+    let Some(raw_text) = sanitize_polish_preview_text(raw_text) else {
         if raw_text.contains(THINK_START_TAG) {
             return Some(POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE.to_string());
         }
         return None;
     };
+    let (text, _) = strip_trailing_sentence_period(raw_text);
 
     let mut preview = text
         .chars()
@@ -567,6 +571,26 @@ mod tests {
             next_direct_stream_delta("Hello world", &mut typed_chars),
             None
         );
+    }
+
+    #[test]
+    fn direct_stream_delta_holds_trailing_sentence_period_until_more_text_arrives() {
+        let mut typed_chars = 0;
+
+        assert_eq!(
+            next_direct_stream_delta("Hello.", &mut typed_chars).as_deref(),
+            Some("Hello")
+        );
+        assert_eq!(typed_chars, 5);
+
+        assert_eq!(next_direct_stream_delta("Hello.", &mut typed_chars), None);
+        assert_eq!(typed_chars, 5);
+
+        assert_eq!(
+            next_direct_stream_delta("Hello. Again", &mut typed_chars).as_deref(),
+            Some(". Again")
+        );
+        assert_eq!(typed_chars, 12);
     }
 
     #[test]

@@ -156,7 +156,9 @@ interface AppSettings {
    fields fail silently with debug logs.
 8. The user can disable correction memory in Settings.
 9. The user can clear all locally remembered correction pairs in Settings.
-10. Unit tests cover diff extraction, storage upsert, clear, and correction
+10. The user can delete one learned dictionary term without clearing unrelated
+    correction pairs.
+11. Unit tests cover diff extraction, storage upsert, clear, delete, and correction
     application thresholding.
 
 ## BDD Scenarios
@@ -194,12 +196,19 @@ Given correction memory has stored mappings
 When the user clicks Clear Correction Memory in Settings
 Then the shared correction file is removed.
 
+### Delete one learned dictionary term
+
+Given correction memory has stored `Air Tap -> AriaType` and `Dictate -> Dictation`
+When the user deletes `AriaType` from Dictionary
+Then correction memory no longer contains mappings corrected to `AriaType`
+And the `Dictate -> Dictation` mapping remains.
+
 ## Verification
 
 1. Unit test diff extraction, including CJK term correction and ignored
    insertion-only edits.
-2. Unit test correction storage upsert, clear, and deterministic application
-   after the minimum frequency threshold.
+2. Unit test correction storage upsert, clear, delete, and deterministic
+   application after the minimum frequency threshold.
 3. Run Rust test and clippy for backend integration.
 4. Run desktop TypeScript, i18n, unit test, and build checks for pill UI wiring.
 

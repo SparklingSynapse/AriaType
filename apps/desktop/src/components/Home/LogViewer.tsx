@@ -6,8 +6,7 @@ import { useTranslation } from "react-i18next";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
 import { SettingsPageLayout } from "./SettingsPageLayout";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import "overlayscrollbars/overlayscrollbars.css";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const LINE_COUNT = 500;
 
@@ -93,19 +92,9 @@ export function LogViewer() {
         </Button>
       </div>
 
-      <OverlayScrollbarsComponent
+      <ScrollArea
         defer
         className="flex-1 rounded-2xl border border-border bg-zinc-900 dark:bg-zinc-950 text-zinc-300 dark:text-zinc-400 font-mono text-xs p-4 min-h-0 max-h-[calc(100vh-220px)]"
-        options={{
-          showNativeOverlaidScrollbars: false,
-          scrollbars: {
-            theme: "os-theme-dark",
-            visibility: "auto",
-            autoHide: "scroll",
-            autoHideDelay: 300,
-            autoHideSuspend: false,
-          },
-        }}
       >
         {lines.length === 0 ? (
           <span className="text-gray-500 dark:text-gray-400">{t("logs.empty")}</span>
@@ -120,7 +109,7 @@ export function LogViewer() {
           })
         )}
         <div ref={bottomRef} />
-      </OverlayScrollbarsComponent>
+      </ScrollArea>
     </SettingsPageLayout>
   );
 }
