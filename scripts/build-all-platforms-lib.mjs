@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { basename, resolve, sep } from 'path';
+import { basename, dirname, resolve, sep } from 'path';
 
 export const ENSURE_WINDOWS_RUNTIME_COMMAND =
   'node ../../scripts/ensure-llama-server-runtime.mjs --platform windows';
@@ -40,6 +40,61 @@ function isRetryableNotarizationTimeout(error, description) {
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+export function findLastBundledDmgPath(buildLog) {
+  const pattern = /^\s*Bundling .+?\.dmg \((.+?\.dmg)\)$/gm;
+  let found;
+  let match;
+
+  while ((match = pattern.exec(String(buildLog))) !== null) {
+    found = match[1];
+  }
+
+  return found;
+}
+
+export function inferDmgVolumeName(dmgPath) {
+  return basename(dmgPath, '.dmg').replace(/_[0-9][^_]*_(aarch64|x64|universal)$/, '');
+}
+
+export function createDmgTraceCommand(options) {
+  const {
+    scriptPath,
+    dmgPath,
+    sourceDir,
+    traceDmgPath,
+    traceLogPath,
+    backgroundPath,
+    windowSize,
+  } = options;
+
+  const args = [
+    '--volname',
+    inferDmgVolumeName(dmgPath),
+  ];
+
+  if (backgroundPath) {
+    args.push('--background', backgroundPath);
+  }
+
+  if (windowSize) {
+    args.push('--window-size', String(windowSize.width), String(windowSize.height));
+  }
+
+  args.push(traceDmgPath, sourceDir);
+
+  return [
+    'set -o pipefail;',
+    `cd ${shellQuote(dirname(scriptPath))}`,
+    '&&',
+    'bash -x ./bundle_dmg.sh',
+    args.map(shellQuote).join(' '),
+    '2>&1',
+    '|',
+    'tee',
+    shellQuote(traceLogPath),
+  ].join(' ');
 }
 
 function normalizeVolumeName(value) {

@@ -20,16 +20,18 @@
  *     rustup target add x86_64-pc-windows-msvc
  */
 
-import { resolve, dirname } from 'path';
+import { basename, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { platform } from 'os';
 import { execSync } from 'child_process';
 import {
   WINDOWS_NATIVE_BUILD_COMMAND,
   WINDOWS_CROSS_BUILD_COMMAND,
   checkRequiredBuildTools,
+  createDmgTraceCommand,
   detachRepoDmgMounts,
+  findLastBundledDmgPath,
   runCommand,
   windowsCrossBuildEnv,
 } from './build-all-platforms-lib.mjs';
@@ -155,6 +157,15 @@ function collectMacDmgDiagnostics(targetTriple, error, diagnosticsDir = createDi
   const bundleDir = resolve(tauriTargetDir, targetTriple, 'release/bundle');
   const dmgDir = resolve(tauriTargetDir, targetTriple, 'release/bundle/dmg');
   const scriptPath = resolve(dmgDir, 'bundle_dmg.sh');
+  const buildLogPath = resolve(diagnosticsDir, 'build.log');
+  const buildLog = existsSync(buildLogPath) ? readFileSync(buildLogPath, 'utf8') : '';
+  const bundledDmgPath = findLastBundledDmgPath(buildLog);
+  const sourceDir = resolve(bundleDir, 'macos');
+  const traceLogPath = resolve(diagnosticsDir, 'bundle_dmg.trace.log');
+  const backgroundPath = resolve(desktopDir, 'assets/background.png');
+  const traceDmgPath = bundledDmgPath
+    ? resolve(dmgDir, `trace.${process.pid}.${basename(bundledDmgPath)}`)
+    : undefined;
 
   writeDiagnosticFile(
     diagnosticsDir,
@@ -165,6 +176,7 @@ function collectMacDmgDiagnostics(targetTriple, error, diagnosticsDir = createDi
       `bundleDir=${bundleDir}`,
       `dmgDir=${dmgDir}`,
       `bundleScript=${scriptPath}`,
+      `bundledDmg=${bundledDmgPath ?? ''}`,
     ].join('\n'),
   );
 
@@ -198,17 +210,66 @@ function collectMacDmgDiagnostics(targetTriple, error, diagnosticsDir = createDi
     }
   }
 
-  const rerunCommand = existsSync(scriptPath)
-    ? `cd ${shellQuote(dmgDir)} && bash -x ./bundle_dmg.sh 2>&1 | tee ${shellQuote(resolve(diagnosticsDir, 'bundle_dmg.trace.log'))}`
-    : `bundle_dmg.sh was not found at ${scriptPath}`;
+  let rerunCommand = `bundle_dmg.sh was not found at ${scriptPath}`;
+  let canTraceDmg = false;
+
+  if (existsSync(scriptPath) && bundledDmgPath && existsSync(sourceDir) && traceDmgPath) {
+    canTraceDmg = true;
+    rerunCommand = createDmgTraceCommand({
+      scriptPath,
+      dmgPath: bundledDmgPath,
+      sourceDir,
+      traceDmgPath,
+      traceLogPath,
+      backgroundPath: existsSync(backgroundPath) ? backgroundPath : undefined,
+      windowSize: { width: 660, height: 400 },
+    });
+  } else if (!bundledDmgPath) {
+    rerunCommand = `Could not infer the DMG path from ${buildLogPath}`;
+  } else if (!existsSync(sourceDir)) {
+    rerunCommand = `DMG source directory was not found at ${sourceDir}`;
+  }
 
   writeDiagnosticFile(diagnosticsDir, 'rerun-command.sh', `#!/usr/bin/env bash\n${rerunCommand}`);
 
-  console.error('\n🔎 macOS DMG failure diagnostics written to:');
+  if (canTraceDmg) {
+    console.error('\n   Capturing bundle_dmg.sh shell trace...');
+    const traceOutput = safeExecText(rerunCommand, { shell: '/bin/bash' });
+    if (!existsSync(traceLogPath)) {
+      writeDiagnosticFile(diagnosticsDir, 'bundle_dmg.trace.log', traceOutput);
+    }
+    if (traceDmgPath && existsSync(traceDmgPath)) {
+      rmSync(traceDmgPath, { force: true });
+    }
+  }
+
+  const reachedDmgBundling = Boolean(bundledDmgPath);
+  const keyFiles = [
+    'build.log',
+    'failure.txt',
+    'bundle-dir.find.txt',
+    'dmg-dir.find.txt',
+    'hdiutil-info.txt',
+    'volumes.txt',
+    'df.txt',
+  ];
+  if (reachedDmgBundling) {
+    keyFiles.push('bundle_dmg.trace.log');
+  }
+
+  console.error(
+    reachedDmgBundling
+      ? '\n🔎 macOS DMG failure diagnostics written to:'
+      : '\n🔎 macOS build failure diagnostics written to:'
+  );
   console.error(`   ${diagnosticsDir}`);
-  console.error('   Key files: build.log, failure.txt, bundle-dir.find.txt, dmg-dir.find.txt, hdiutil-info.txt, volumes.txt, df.txt');
-  console.error('\n   To capture shell tracing before the next clean, run:');
-  console.error(`   ${rerunCommand}\n`);
+  console.error(`   Key files: ${keyFiles.join(', ')}`);
+  if (reachedDmgBundling) {
+    console.error('\n   To capture shell tracing before the next clean, run:');
+    console.error(`   ${rerunCommand}\n`);
+  } else {
+    console.error('\n   DMG bundling was not reached; inspect build.log for the compile/package failure.\n');
+  }
 }
 
 console.log('\n🚀 AriaType Multi-Platform Build\n');

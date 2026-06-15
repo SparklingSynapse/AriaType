@@ -84,6 +84,107 @@ label[for], [tabindex]:not([tabindex="-1"]) {
   cursor: pointer;
 }
 
+button *,
+a *,
+[role="button"] *,
+label[for] *,
+[tabindex]:not([tabindex="-1"]) * {
+  cursor: inherit;
+}
+
+.navigation-item {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 22px;
+  padding: 0.625rem 0.75rem;
+  background-color: rgba(255, 255, 255, 0);
+  color: var(--muted-foreground);
+  text-align: left;
+  font-size: 0.875rem;
+  transition:
+    color 200ms ease-out,
+    background-color 200ms ease-out;
+}
+
+.navigation-item:hover {
+  background-color: rgba(255, 255, 255, 0.45);
+  color: var(--foreground);
+}
+
+.navigation-item--active {
+  color: #09090b;
+}
+
+.dark .navigation-item:hover {
+  background-color: rgba(39, 39, 42, 0.45);
+}
+
+.dark .navigation-item--active {
+  color: #f4f4f5;
+}
+
+.navigation-item__active-indicator {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 22px;
+  background-color: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(228, 228, 231, 1),
+    0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.dark .navigation-item__active-indicator {
+  background-color: #27272a;
+  box-shadow:
+    0 0 0 1px rgba(63, 63, 70, 1),
+    0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+.navigation-item__content {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.navigation-item__icon {
+  height: 1.25rem;
+  width: 1.25rem;
+  flex-shrink: 0;
+  transition: color 200ms ease-out;
+}
+
+.navigation-item__label-frame {
+  min-width: 0;
+  flex: 1;
+}
+
+.navigation-item__label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navigation-item,
+  .navigation-item__icon {
+    transition: none;
+  }
+}
+
 /* Remove browser default focus ring; use subtle custom one */
 :focus-visible {
   outline: none;

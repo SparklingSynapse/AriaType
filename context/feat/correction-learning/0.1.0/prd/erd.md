@@ -53,6 +53,8 @@ user's repeated corrections.
    and model-assisted cleanup a better starting point.
 5. One observation is evidence for recording; repeated observations are evidence
    for automatic application.
+6. Deleting the delivered output and retyping a compact replacement is still a
+   correction pair. Deleting without replacement is not a dictionary mapping.
 
 ## Information Architecture
 
@@ -146,7 +148,7 @@ interface AppSettings {
 1. When correction memory is enabled, after text delivery the backend starts a
    short-lived edit observer.
 2. If the observer can read a stable user edit, it stores a `wrong -> corrected`
-   mapping.
+   mapping, including compact whole-output replacements.
 3. The storage path is shared across app variants and survives restarts.
 4. The system never stores full target documents as learned data.
 5. Future transcription text applies learned mappings before polish/delivery
@@ -174,6 +176,18 @@ And the pill window receives a correction learned event.
 
 Given AriaType delivered `hello`
 When the focused editor later contains `hello world`
+Then no correction mapping is stored.
+
+### Learn a compact whole-output replacement
+
+Given AriaType delivered `搜题`
+When the user deletes that output and retypes `sootie`
+Then the shared correction file stores `搜题 -> sootie`.
+
+### Ignore deletion without replacement
+
+Given AriaType delivered `搜题`
+When the focused editor later contains no replacement text
 Then no correction mapping is stored.
 
 ### Apply learned corrections

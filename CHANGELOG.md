@@ -2,11 +2,11 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## Unreleased
+## v1.0.0 (2026-06-15)
 
 ### Features
 
-- Refine transcription polish and UX (f1ade27)
+- Refine transcription polish and UX (af242a1)
 - Expose correction dictionaries (8968a88)
 - Make settings and local polish easier to use (df5b2bc)
 

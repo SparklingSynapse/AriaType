@@ -1,6 +1,5 @@
 "use client";
 
-import { useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
 import { useParams } from "next/navigation";
@@ -124,13 +123,6 @@ function LayerVisual({ t }: { t: (key: string) => string }) {
 export default function HomePage() {
   const { t } = useTranslation();
   const { lang } = useParams() as { lang: string };
-  const heroVideoRef = useRef<HTMLVideoElement>(null);
-  const [heroPlaying, setHeroPlaying] = useState(false);
-
-  const playHeroVideo = () => {
-    heroVideoRef.current?.play();
-    setHeroPlaying(true);
-  };
 
   const steps = [
     {
@@ -223,32 +215,13 @@ export default function HomePage() {
             initial="hidden"
             animate="visible"
             transition={{ ...transition, delay: 0.18, duration: 0.8 }}
-            className="relative overflow-hidden rounded-3xl shadow-sm"
-            style={{ aspectRatio: "4 / 3" }}
+            className="relative overflow-hidden rounded-2xl shadow-sm"
           >
-            <video
-              ref={heroVideoRef}
-              muted
-              playsInline
-              src="/illustration/showcase.mp4"
-              className="h-full w-full object-cover"
-              onPlay={() => setHeroPlaying(true)}
-              onPause={() => setHeroPlaying(false)}
-              onEnded={() => setHeroPlaying(false)}
+            <img
+              src="/illustration/showcase.png"
+              alt={t("hero.demoAlt")}
+              className="block h-auto w-full"
             />
-            {!heroPlaying && (
-              <button
-                onClick={playHeroVideo}
-                className="absolute inset-0 flex items-center justify-center bg-foreground/10 transition-colors hover:bg-foreground/15"
-                aria-label={t("homePage.heroVideoPlay")}
-              >
-                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-foreground/60 backdrop-blur-sm">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86a1 1 0 0 0-1.5.86Z" />
-                  </svg>
-                </span>
-              </button>
-            )}
           </motion.div>
         </div>
       </section>
