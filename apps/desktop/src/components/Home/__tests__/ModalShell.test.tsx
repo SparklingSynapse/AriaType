@@ -76,6 +76,26 @@ describe("ModalFrame close animation lifecycle", () => {
     expect(screen.getByTestId("settings-modal")).toBeInTheDocument();
   });
 
+  test("keeps closing modal mounted and inert while closing", () => {
+    const { rerender } = renderModal(true);
+
+    rerender(
+      <ModalFrame
+        onOpenChange={() => undefined}
+        open={false}
+        testId="settings-modal"
+      >
+        <Dialog.Title>Settings</Dialog.Title>
+        <Dialog.Description>Settings modal</Dialog.Description>
+        <div>Modal body</div>
+      </ModalFrame>,
+    );
+
+    expect(screen.getByTestId("settings-modal")).toHaveStyle({
+      pointerEvents: "none",
+    });
+  });
+
   test("unmounts closing modal after the closed animation completes", () => {
     const { rerender } = renderModal(true);
 

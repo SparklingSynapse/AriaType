@@ -33,8 +33,8 @@ import {
 } from "./ModalShell";
 import {
   NavigationAttentionBadge,
-  NavigationGroup,
-  NavigationItemButton,
+  Navigation,
+  type NavigationItemConfig,
 } from "./NavigationItem";
 
 export type SettingsModalSection =
@@ -145,6 +145,23 @@ export function SettingsModal({
       sections[0],
     [activeSection, sections],
   );
+  const navigationItems: NavigationItemConfig[] = sections.map((section) => {
+    const isActive = section.id === activeSection;
+    const needsAttention =
+      (section.id === "models" && !hasModel) ||
+      (section.id === "permissions" && badges.permission);
+
+    return {
+      kind: "button",
+      active: isActive,
+      badge: needsAttention ? <NavigationAttentionBadge /> : undefined,
+      icon: section.icon,
+      id: section.id,
+      label: section.title,
+      onClick: () => setActiveSection(section.id),
+      testId: `settings-modal-section-${section.id}`,
+    };
+  });
 
   const content = (() => {
     switch (activeSection) {
@@ -185,29 +202,11 @@ export function SettingsModal({
             {t("settingsModal.description")}
           </Dialog.Description>
         </div>
-        <NavigationGroup id="settings-modal-navigation">
-          <div className="flex-1 space-y-1 overflow-y-auto px-3 pb-4 pt-1">
-            {sections.map((section) => {
-              const isActive = section.id === activeSection;
-              const needsAttention =
-                (section.id === "models" && !hasModel) ||
-                (section.id === "permissions" && badges.permission);
-
-              return (
-                <NavigationItemButton
-                  active={isActive}
-                  activeIndicatorLayoutId="settings-modal-active-section"
-                  badge={needsAttention ? <NavigationAttentionBadge /> : undefined}
-                  data-testid={`settings-modal-section-${section.id}`}
-                  icon={section.icon}
-                  key={section.id}
-                  label={section.title}
-                  onClick={() => setActiveSection(section.id)}
-                />
-              );
-            })}
-          </div>
-        </NavigationGroup>
+        <Navigation
+          className="flex-1 space-y-1 overflow-y-auto px-3 pb-4 pt-1"
+          id="settings-modal-navigation"
+          items={navigationItems}
+        />
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col bg-card">
