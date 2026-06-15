@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## Unreleased
+
+### Bug Fixes
+
+- Allow production changelog loading (f2d8b54)
+
 ## v1.0.0 (2026-06-15)
 
 ### Features
