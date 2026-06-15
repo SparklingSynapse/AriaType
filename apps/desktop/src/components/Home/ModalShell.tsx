@@ -8,7 +8,12 @@ import {
 } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "@phosphor-icons/react";
-import { motion, useIsPresent, type HTMLMotionProps } from "framer-motion";
+import {
+  motion,
+  useIsPresent,
+  type AnimationDefinition,
+  type HTMLMotionProps,
+} from "framer-motion";
 
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,6 +31,8 @@ const MODAL_SURFACE_ANIMATION = {
   open: { opacity: 1, y: 0, scale: 1 },
   closed: { opacity: 0, y: 10, scale: 0.98 },
 };
+
+type ModalSurfaceAnimationTarget = typeof MODAL_SURFACE_ANIMATION.closed;
 
 type RadixPresenceState = {
   "data-state"?: string;
@@ -69,11 +76,14 @@ export function ModalFrame({
     }
   }, [open]);
 
-  const handleSurfaceAnimationComplete = useCallback(() => {
-    if (!open) {
-      setShouldRender(false);
-    }
-  }, [open]);
+  const handleSurfaceAnimationComplete = useCallback(
+    (definition: AnimationDefinition) => {
+      if (!open && isClosedSurfaceAnimation(definition)) {
+        setShouldRender(false);
+      }
+    },
+    [open],
+  );
 
   return (
     <Dialog.Root modal={modal && open} open={open} onOpenChange={onOpenChange}>
@@ -109,6 +119,26 @@ export function ModalFrame({
         </Dialog.Portal>
       )}
     </Dialog.Root>
+  );
+}
+
+function isClosedSurfaceAnimation(definition: AnimationDefinition): boolean {
+  if (
+    typeof definition !== "object" ||
+    definition === null ||
+    Array.isArray(definition)
+  ) {
+    return false;
+  }
+
+  const target = definition as Partial<
+    Record<keyof ModalSurfaceAnimationTarget, unknown>
+  >;
+
+  return (
+    target.opacity === MODAL_SURFACE_ANIMATION.closed.opacity &&
+    target.y === MODAL_SURFACE_ANIMATION.closed.y &&
+    target.scale === MODAL_SURFACE_ANIMATION.closed.scale
   );
 }
 
