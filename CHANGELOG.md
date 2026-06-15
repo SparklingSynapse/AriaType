@@ -2,6 +2,13 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## Unreleased
+
+### Bug Fixes
+
+- Preserve modal close transitions (30edb99)
+- Allow production changelog loading (6ea6f07)
+
 ## v1.0.0 (2026-06-15)
 
 ### Features
