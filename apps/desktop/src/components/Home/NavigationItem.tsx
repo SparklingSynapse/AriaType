@@ -1,11 +1,5 @@
 import { ArrowCircleUp, type Icon } from "@phosphor-icons/react";
 import {
-  LayoutGroup,
-  motion,
-  useReducedMotion,
-  type Transition,
-} from "framer-motion";
-import {
   NavLink,
   type NavLinkProps,
 } from "react-router-dom";
@@ -17,72 +11,112 @@ import type {
 
 import { cn } from "@/lib/utils";
 
-const NAVIGATION_INDICATOR_TRANSITION: Transition = {
-  duration: 0.24,
-  ease: [0.22, 1, 0.36, 1],
-};
-
 function getNavigationItemClass(isActive: boolean) {
   return cn("navigation-item", isActive && "navigation-item--active");
 }
 
-export function NavigationGroup({
-  children,
-  id,
-}: {
-  children: ReactNode;
+interface NavigationProps {
+  className?: string;
   id: string;
-}) {
-  return <LayoutGroup id={id}>{children}</LayoutGroup>;
+  items: NavigationItemConfig[];
 }
 
-interface NavigationItemContentProps {
-  active?: boolean;
-  activeIndicatorLayoutId?: string;
+interface NavigationItemBaseConfig {
   badge?: ReactNode;
+  className?: string;
   icon: Icon;
+  id: string;
   label: ReactNode;
+  testId?: string;
   trailing?: ReactNode;
 }
 
-interface NavigationItemVisualProps extends NavigationItemContentProps {
-  className?: string;
+interface NavigationItemButtonConfig
+  extends NavigationItemBaseConfig,
+    Omit<
+      ButtonHTMLAttributes<HTMLButtonElement>,
+      "children" | "className" | "id"
+    > {
+  active?: boolean;
+  kind: "button";
 }
 
-interface NavigationItemButtonProps
-  extends NavigationItemVisualProps,
-    Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "className"> {}
+interface NavigationItemAnchorConfig
+  extends NavigationItemBaseConfig,
+    Omit<
+      AnchorHTMLAttributes<HTMLAnchorElement>,
+      "children" | "className" | "id"
+    > {
+  active?: boolean;
+  kind: "anchor";
+}
 
-interface NavigationItemAnchorProps
-  extends NavigationItemVisualProps,
-    Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "children" | "className"> {}
-
-interface NavigationItemLinkProps
-  extends Omit<NavigationItemVisualProps, "active">,
-    Omit<NavLinkProps, "children" | "className"> {
+interface NavigationItemLinkConfig
+  extends NavigationItemBaseConfig,
+    Omit<NavLinkProps, "children" | "className" | "id"> {
   activeWhen?: (isActive: boolean) => boolean;
+  kind: "link";
 }
 
-export function NavigationItemButton({
-  active = false,
-  activeIndicatorLayoutId,
-  badge,
-  className,
-  icon,
-  label,
-  trailing,
-  type = "button",
-  ...props
-}: NavigationItemButtonProps) {
+export type NavigationItemConfig =
+  | NavigationItemAnchorConfig
+  | NavigationItemButtonConfig
+  | NavigationItemLinkConfig;
+
+export function Navigation({ className, id, items }: NavigationProps) {
+  return (
+    <div className={className} id={id}>
+      {items.map((item) => (
+        <NavigationItem item={item} key={item.id} />
+      ))}
+    </div>
+  );
+}
+
+interface NavigationItemProps {
+  item: NavigationItemConfig;
+}
+
+function NavigationItem({ item }: NavigationItemProps) {
+  switch (item.kind) {
+    case "anchor":
+      return <NavigationItemAnchor item={item} />;
+    case "button":
+      return <NavigationItemButton item={item} />;
+    case "link":
+      return <NavigationItemLink item={item} />;
+  }
+}
+
+interface NavigationItemRendererProps<TItem extends NavigationItemConfig> {
+  item: TItem;
+}
+
+function NavigationItemButton({
+  item,
+}: NavigationItemRendererProps<NavigationItemButtonConfig>) {
+  const {
+    active = false,
+    badge,
+    className,
+    icon,
+    kind: _kind,
+    label,
+    testId,
+    trailing,
+    type = "button",
+    ...props
+  } = item;
+
   return (
     <button
       className={cn(getNavigationItemClass(active), className)}
+      data-testid={testId}
       type={type}
       {...props}
     >
       <NavigationItemContent
         active={active}
-        activeIndicatorLayoutId={activeIndicatorLayoutId}
         badge={badge}
         icon={icon}
         label={label}
@@ -92,21 +126,29 @@ export function NavigationItemButton({
   );
 }
 
-export function NavigationItemAnchor({
-  active = false,
-  activeIndicatorLayoutId,
-  badge,
-  className,
-  icon,
-  label,
-  trailing,
-  ...props
-}: NavigationItemAnchorProps) {
+function NavigationItemAnchor({
+  item,
+}: NavigationItemRendererProps<NavigationItemAnchorConfig>) {
+  const {
+    active = false,
+    badge,
+    className,
+    icon,
+    kind: _kind,
+    label,
+    testId,
+    trailing,
+    ...props
+  } = item;
+
   return (
-    <a className={cn(getNavigationItemClass(active), className)} {...props}>
+    <a
+      className={cn(getNavigationItemClass(active), className)}
+      data-testid={testId}
+      {...props}
+    >
       <NavigationItemContent
         active={active}
-        activeIndicatorLayoutId={activeIndicatorLayoutId}
         badge={badge}
         icon={icon}
         label={label}
@@ -116,21 +158,27 @@ export function NavigationItemAnchor({
   );
 }
 
-export function NavigationItemLink({
-  activeIndicatorLayoutId,
-  activeWhen = (isActive) => isActive,
-  badge,
-  className,
-  icon,
-  label,
-  trailing,
-  ...props
-}: NavigationItemLinkProps) {
+function NavigationItemLink({
+  item,
+}: NavigationItemRendererProps<NavigationItemLinkConfig>) {
+  const {
+    activeWhen = (isActive) => isActive,
+    badge,
+    className,
+    icon,
+    kind: _kind,
+    label,
+    testId,
+    trailing,
+    ...props
+  } = item;
+
   return (
     <NavLink
       className={({ isActive }) =>
         cn(getNavigationItemClass(activeWhen(isActive)), className)
       }
+      data-testid={testId}
       {...props}
     >
       {({ isActive }) => {
@@ -139,7 +187,6 @@ export function NavigationItemLink({
         return (
           <NavigationItemContent
             active={active}
-            activeIndicatorLayoutId={activeIndicatorLayoutId}
             badge={badge}
             icon={icon}
             label={label}
@@ -151,48 +198,33 @@ export function NavigationItemLink({
   );
 }
 
+interface NavigationItemContentProps {
+  active?: boolean;
+  badge?: ReactNode;
+  icon: Icon;
+  label: ReactNode;
+  trailing?: ReactNode;
+}
+
 function NavigationItemContent({
   active = false,
-  activeIndicatorLayoutId,
   badge,
   icon: IconComponent,
   label,
   trailing,
 }: NavigationItemContentProps) {
   return (
-    <>
-      {active && activeIndicatorLayoutId ? (
-        <NavigationItemActiveIndicator layoutId={activeIndicatorLayoutId} />
-      ) : null}
-      <span className="navigation-item__content">
-        <IconComponent
-          className="navigation-item__icon"
-          weight={active ? "duotone" : "regular"}
-        />
-        <span className="navigation-item__label-frame">
-          <span className="navigation-item__label">{label}</span>
-        </span>
-        {badge}
-        {trailing}
+    <span className="navigation-item__content">
+      <IconComponent
+        className="navigation-item__icon"
+        weight={active ? "duotone" : "regular"}
+      />
+      <span className="navigation-item__label-frame">
+        <span className="navigation-item__label">{label}</span>
       </span>
-    </>
-  );
-}
-
-function NavigationItemActiveIndicator({ layoutId }: { layoutId: string }) {
-  const prefersReducedMotion = useReducedMotion();
-
-  return (
-    <motion.span
-      aria-hidden="true"
-      className="navigation-item__active-indicator"
-      layoutId={layoutId}
-      transition={
-        prefersReducedMotion
-          ? { duration: 0 }
-          : NAVIGATION_INDICATOR_TRANSITION
-      }
-    />
+      {badge}
+      {trailing}
+    </span>
   );
 }
 

@@ -8,7 +8,12 @@ import {
 } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "@phosphor-icons/react";
-import { motion, useIsPresent, type HTMLMotionProps } from "framer-motion";
+import {
+  motion,
+  useIsPresent,
+  type AnimationDefinition,
+  type HTMLMotionProps,
+} from "framer-motion";
 
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,6 +31,8 @@ const MODAL_SURFACE_ANIMATION = {
   open: { opacity: 1, y: 0, scale: 1 },
   closed: { opacity: 0, y: 10, scale: 0.98 },
 };
+
+type ModalSurfaceAnimationTarget = typeof MODAL_SURFACE_ANIMATION.closed;
 
 type RadixPresenceState = {
   "data-state"?: string;
@@ -62,6 +69,8 @@ export function ModalFrame({
   viewportClassName,
 }: ModalFrameProps) {
   const [shouldRender, setShouldRender] = useState(open);
+  const mounted = open || shouldRender;
+  const radixModal = modal && open;
 
   useEffect(() => {
     if (open) {
@@ -69,25 +78,27 @@ export function ModalFrame({
     }
   }, [open]);
 
-  const handleSurfaceAnimationComplete = useCallback(() => {
-    if (!open) {
-      setShouldRender(false);
-    }
-  }, [open]);
+  const handleSurfaceAnimationComplete = useCallback(
+    (definition: AnimationDefinition) => {
+      if (!open && isClosedSurfaceAnimation(definition)) {
+        setShouldRender(false);
+      }
+    },
+    [open],
+  );
 
   return (
-    <Dialog.Root modal={modal && open} open={open} onOpenChange={onOpenChange}>
-      {(open || shouldRender) && (
+    <Dialog.Root modal={radixModal} open={open} onOpenChange={onOpenChange}>
+      {mounted && (
         <Dialog.Portal forceMount>
-          <Dialog.Overlay asChild forceMount>
-            <ModalBackdrop
-              animate={
-                open
-                  ? MODAL_BACKDROP_ANIMATION.open
-                  : MODAL_BACKDROP_ANIMATION.closed
-              }
-            />
-          </Dialog.Overlay>
+          <ModalBackdrop
+            animate={
+              open
+                ? MODAL_BACKDROP_ANIMATION.open
+                : MODAL_BACKDROP_ANIMATION.closed
+            }
+            data-state={open ? "open" : "closed"}
+          />
           <ModalViewport className={viewportClassName}>
             <Dialog.Content asChild forceMount>
               <ModalSurface
@@ -112,10 +123,31 @@ export function ModalFrame({
   );
 }
 
+function isClosedSurfaceAnimation(definition: AnimationDefinition): boolean {
+  if (
+    typeof definition !== "object" ||
+    definition === null ||
+    Array.isArray(definition)
+  ) {
+    return false;
+  }
+
+  const target = definition as Partial<
+    Record<keyof ModalSurfaceAnimationTarget, unknown>
+  >;
+
+  return (
+    target.opacity === MODAL_SURFACE_ANIMATION.closed.opacity &&
+    target.y === MODAL_SURFACE_ANIMATION.closed.y &&
+    target.scale === MODAL_SURFACE_ANIMATION.closed.scale
+  );
+}
+
 const ModalBackdrop = forwardRef<HTMLDivElement, HTMLMotionProps<"div">>(
-  ({ className, ...props }, ref) => {
+  ({ className, style, ...props }, ref) => {
     const isPresent = useIsPresent();
     const isClosed = (props as RadixPresenceState)["data-state"] === "closed";
+    const inert = !isPresent || isClosed;
 
     return (
       <motion.div
@@ -127,8 +159,12 @@ const ModalBackdrop = forwardRef<HTMLDivElement, HTMLMotionProps<"div">>(
         className={cn(
           "fixed inset-0 z-50 bg-black/35 backdrop-blur-md",
           className,
-          (!isPresent || isClosed) && "pointer-events-none",
+          inert && "pointer-events-none",
         )}
+        style={{
+          ...style,
+          pointerEvents: inert ? "none" : style?.pointerEvents,
+        }}
         {...props}
       />
     );
@@ -159,14 +195,22 @@ interface ModalSurfaceProps extends HTMLMotionProps<"div"> {
 }
 
 const ModalSurface = forwardRef<HTMLDivElement, ModalSurfaceProps>(
-  ({ className, sizeClassName = SETTINGS_MODAL_SIZE_CLASS, ...props }, ref) => {
+  (
+    { className, sizeClassName = SETTINGS_MODAL_SIZE_CLASS, style, ...props },
+    ref,
+  ) => {
     const isPresent = useIsPresent();
     const isClosed = (props as RadixPresenceState)["data-state"] === "closed";
+    const inert = !isPresent || isClosed;
 
     return (
       <motion.div
         ref={ref}
-        initial={{ opacity: 0, y: 14, scale: 0.98 }}
+        initial={
+          isClosed
+            ? MODAL_SURFACE_ANIMATION.open
+            : { opacity: 0, y: 14, scale: 0.98 }
+        }
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: 0.98 }}
         transition={{ duration: 0.16, ease: "easeOut" }}
@@ -174,8 +218,12 @@ const ModalSurface = forwardRef<HTMLDivElement, ModalSurfaceProps>(
           "flex overflow-hidden rounded-[32px] bg-card text-card-foreground shadow-[0_36px_120px_rgba(0,0,0,0.32)] pointer-events-auto",
           sizeClassName,
           className,
-          (!isPresent || isClosed) && "pointer-events-none",
+          inert && "pointer-events-none",
         )}
+        style={{
+          ...style,
+          pointerEvents: inert ? "none" : style?.pointerEvents,
+        }}
         {...props}
       />
     );
