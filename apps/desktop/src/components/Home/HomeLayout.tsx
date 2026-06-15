@@ -27,11 +27,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SettingsModal, type SettingsModalSection } from "./SettingsModal";
 import { MODAL_NAV_WIDTH_CLASS } from "./ModalShell";
 import {
+  Navigation,
   NavigationAttentionBadge,
-  NavigationGroup,
-  NavigationItemAnchor,
-  NavigationItemButton,
-  NavigationItemLink,
+  type NavigationItemConfig,
 } from "./NavigationItem";
 
 const FEEDBACK_URL = "https://github.com/joe223/AriaType/issues/new";
@@ -45,6 +43,7 @@ const SETTINGS_ROUTES = new Set([
 ]);
 
 interface PrimaryNavItem {
+  id: string;
   to: string;
   icon: Icon;
   label: string;
@@ -110,15 +109,6 @@ export function HomeLayout() {
     };
   }, []);
 
-  const primaryNavItems: PrimaryNavItem[] = [
-    { to: "/", icon: CirclesFour, label: t("nav.dashboard") },
-    { to: "/history", icon: ClockCounterClockwise, label: t("nav.history") },
-    { to: "/dictionary", icon: BookOpenText, label: t("nav.dictionary") },
-    { to: "/polish-templates", icon: MagicWand, label: t("nav.polishTemplates") },
-  ];
-  const settingsNeedsAttention = !hasModel || badges.permission;
-  const settingsRouteActive = SETTINGS_ROUTES.has(location.pathname);
-
   const openSettingsModal = (section: SettingsModalSection = "basics") => {
     setSettingsInitialSection(section);
     if (settingsOpenFrameRef.current !== null) {
@@ -130,6 +120,87 @@ export function HomeLayout() {
       setSettingsModalOpen(true);
     });
   };
+
+  const primaryNavItems: PrimaryNavItem[] = [
+    {
+      id: "dashboard",
+      to: "/",
+      icon: CirclesFour,
+      label: t("nav.dashboard"),
+    },
+    {
+      id: "history",
+      to: "/history",
+      icon: ClockCounterClockwise,
+      label: t("nav.history"),
+    },
+    {
+      id: "dictionary",
+      to: "/dictionary",
+      icon: BookOpenText,
+      label: t("nav.dictionary"),
+    },
+    {
+      id: "polish-templates",
+      to: "/polish-templates",
+      icon: MagicWand,
+      label: t("nav.polishTemplates"),
+    },
+  ];
+  const settingsNeedsAttention = !hasModel || badges.permission;
+  const settingsRouteActive = SETTINGS_ROUTES.has(location.pathname);
+  const mainNavigationItems: NavigationItemConfig[] = [
+    ...primaryNavItems.map((item) => ({
+      kind: "link" as const,
+      activeWhen: (isActive: boolean) => isActive && !settingsModalOpen,
+      end: item.to === "/",
+      icon: item.icon,
+      id: item.id,
+      label: item.label,
+      to: item.to,
+    })),
+    {
+      kind: "button",
+      active: settingsModalOpen || settingsRouteActive,
+      badge: settingsNeedsAttention ? <NavigationAttentionBadge /> : undefined,
+      icon: GearSix,
+      id: "settings",
+      label: t("nav.settings"),
+      onClick: () =>
+        openSettingsModal(getSettingsSectionForPath(location.pathname)),
+      testId: "open-settings-modal",
+    },
+    {
+      kind: "link",
+      activeWhen: (isActive) => isActive && !settingsModalOpen,
+      badge: badges.about ? <NavigationAttentionBadge /> : undefined,
+      icon: Info,
+      id: "about",
+      label: t("nav.about"),
+      testId: "nav-about",
+      to: "/about",
+    },
+  ];
+  const supportNavigationItems: NavigationItemConfig[] = [
+    {
+      kind: "anchor",
+      href: showGithubSupportLink ? GITHUB_SUPPORT_URL : FEEDBACK_URL,
+      icon: showGithubSupportLink ? GithubLogo : ChatCircleText,
+      id: showGithubSupportLink ? "github-support" : "feedback",
+      label: showGithubSupportLink
+        ? t("nav.githubSupport")
+        : t("nav.feedback"),
+      rel: "noopener noreferrer",
+      target: "_blank",
+      testId: showGithubSupportLink ? "nav-github-support" : "nav-feedback",
+      trailing: (
+        <ArrowSquareOut
+          className="h-3 w-3 shrink-0 opacity-50"
+          weight="fill"
+        />
+      ),
+    },
+  ];
 
   const handleOnboardingClose = useCallback(async () => {
     closeOnboarding();
@@ -186,61 +257,16 @@ export function HomeLayout() {
             </span>
           </div>
           <nav className="px-4 py-4 flex flex-col h-[calc(100%-4.5rem)]">
-            <NavigationGroup id="home-sidebar-navigation">
-              <div className="space-y-1">
-                {primaryNavItems.map((item) => {
-                  const to = item.to;
-
-                  return (
-                    <NavigationItemLink
-                      activeIndicatorLayoutId="home-sidebar-active-item"
-                      activeWhen={(isActive) => isActive && !settingsModalOpen}
-                      end={to === "/"}
-                      icon={item.icon}
-                      key={to}
-                      label={item.label}
-                      to={to}
-                    />
-                  );
-                })}
-
-                <NavigationItemButton
-                  active={settingsModalOpen || settingsRouteActive}
-                  activeIndicatorLayoutId="home-sidebar-active-item"
-                  badge={settingsNeedsAttention ? <NavigationAttentionBadge /> : undefined}
-                  data-testid="open-settings-modal"
-                  icon={GearSix}
-                  label={t("nav.settings")}
-                  onClick={() => openSettingsModal(getSettingsSectionForPath(location.pathname))}
-                />
-
-                <NavigationItemLink
-                  activeIndicatorLayoutId="home-sidebar-active-item"
-                  activeWhen={(isActive) => isActive && !settingsModalOpen}
-                  badge={badges.about ? <NavigationAttentionBadge /> : undefined}
-                  data-testid="nav-about"
-                  icon={Info}
-                  label={t("nav.about")}
-                  to="/about"
-                />
-              </div>
-            </NavigationGroup>
-            <div className="mt-auto border-t border-border/70 py-3 space-y-1">
-              <NavigationItemAnchor
-                data-testid={showGithubSupportLink ? "nav-github-support" : "nav-feedback"}
-                href={showGithubSupportLink ? GITHUB_SUPPORT_URL : FEEDBACK_URL}
-                icon={showGithubSupportLink ? GithubLogo : ChatCircleText}
-                label={showGithubSupportLink ? t("nav.githubSupport") : t("nav.feedback")}
-                rel="noopener noreferrer"
-                target="_blank"
-                trailing={
-                  <ArrowSquareOut
-                    className="h-3 w-3 shrink-0 opacity-50"
-                    weight="fill"
-                  />
-                }
-              />
-            </div>
+            <Navigation
+              className="space-y-1"
+              id="home-sidebar-navigation"
+              items={mainNavigationItems}
+            />
+            <Navigation
+              className="mt-auto border-t border-border/70 py-3 space-y-1"
+              id="home-sidebar-support-navigation"
+              items={supportNavigationItems}
+            />
           </nav>
         </aside>
         <main className="flex-1 relative">
