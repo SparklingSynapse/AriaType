@@ -5,12 +5,55 @@ import { readFileSync } from 'node:fs';
 const {
   WINDOWS_CROSS_BUILD_COMMAND,
   checkRequiredBuildTools,
+  createDmgTraceCommand,
   detachRepoDmgMounts,
+  findLastBundledDmgPath,
   findRepoDmgMounts,
+  inferDmgVolumeName,
   parseHdiutilMountedImages,
   runCommand,
   windowsCrossBuildEnv,
 } = await import('./build-all-platforms-lib.mjs');
+
+test('extracts the last bundled DMG path from a Tauri build log', () => {
+  const buildLog = `
+    Bundling AriaType_1.0.0_aarch64.dmg (/repo/target/aarch64/release/bundle/dmg/AriaType_1.0.0_aarch64.dmg)
+     Running bundle_dmg.sh
+    Bundling AriaType_1.0.0_x64.dmg (/repo/target/x86/release/bundle/dmg/AriaType_1.0.0_x64.dmg)
+     Running bundle_dmg.sh
+`;
+
+  assert.equal(
+    findLastBundledDmgPath(buildLog),
+    '/repo/target/x86/release/bundle/dmg/AriaType_1.0.0_x64.dmg',
+  );
+});
+
+test('builds a replayable bundle_dmg trace command with required arguments', () => {
+  const command = createDmgTraceCommand({
+    scriptPath: '/repo/target/x86/release/bundle/dmg/bundle_dmg.sh',
+    dmgPath: '/repo/target/x86/release/bundle/dmg/AriaType_1.0.0_x64.dmg',
+    sourceDir: '/repo/target/x86/release/bundle/macos',
+    traceDmgPath: '/repo/target/x86/release/bundle/dmg/trace.AriaType_1.0.0_x64.dmg',
+    traceLogPath: '/repo/apps/desktop/.build-diagnostics/run/bundle_dmg.trace.log',
+    backgroundPath: '/repo/apps/desktop/assets/background.png',
+    windowSize: { width: 660, height: 400 },
+  });
+
+  assert.match(command, /^set -o pipefail; cd '\/repo\/target\/x86\/release\/bundle\/dmg' && bash -x \.\/bundle_dmg\.sh /);
+  assert.match(command, /'--volname' 'AriaType'/);
+  assert.match(command, /'--background' '\/repo\/apps\/desktop\/assets\/background\.png'/);
+  assert.match(command, /'--window-size' '660' '400'/);
+  assert.match(command, /'\/repo\/target\/x86\/release\/bundle\/dmg\/trace\.AriaType_1\.0\.0_x64\.dmg' '\/repo\/target\/x86\/release\/bundle\/macos'/);
+  assert.match(command, /2>&1 \| tee '\/repo\/apps\/desktop\/\.build-diagnostics\/run\/bundle_dmg\.trace\.log'$/);
+});
+
+test('infers DMG volume names for release artifacts with spaces', () => {
+  assert.equal(
+    inferDmgVolumeName('/repo/dmg/AriaType Inhouse_0.5.2_x64.dmg'),
+    'AriaType Inhouse',
+  );
+});
 
 test('retries once when notarization upload times out', () => {
   let attempts = 0;

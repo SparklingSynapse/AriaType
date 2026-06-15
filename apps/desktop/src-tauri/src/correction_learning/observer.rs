@@ -180,16 +180,18 @@ fn looks_like_direct_edit(delivered_text: &str, snapshot: &str) -> bool {
         return false;
     }
 
-    if extract_correction_pair(&delivered_text, &snapshot).is_none() {
+    let Some(pair) = extract_correction_pair(&delivered_text, &snapshot) else {
         return false;
-    }
+    };
 
     let delivered_chars: Vec<char> = delivered_text.chars().collect();
     let snapshot_chars: Vec<char> = snapshot.chars().collect();
     let common_context = common_affix_chars(&delivered_chars, &snapshot_chars);
     let min_len = delivered_chars.len().min(snapshot_chars.len());
 
-    common_context >= DIRECT_EDIT_MIN_COMMON_CONTEXT_CHARS || common_context * 2 >= min_len
+    common_context >= DIRECT_EDIT_MIN_COMMON_CONTEXT_CHARS
+        || common_context * 2 >= min_len
+        || is_whole_output_term_replacement(&delivered_text, &snapshot, &pair)
 }
 
 fn should_learn_stable_edit(baseline: &str, current: &str) -> bool {
@@ -224,6 +226,96 @@ fn normalize_for_containment(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn is_whole_output_term_replacement(
+    delivered_text: &str,
+    snapshot: &str,
+    pair: &super::types::CorrectionPair,
+) -> bool {
+    let delivered_term = normalize_whole_output_term(delivered_text);
+    let snapshot_term = normalize_whole_output_term(snapshot);
+
+    pair.wrong == delivered_term
+        && pair.corrected == snapshot_term
+        && is_compact_dictionary_phrase(&delivered_term)
+        && is_compact_dictionary_phrase(&snapshot_term)
+}
+
+fn normalize_whole_output_term(text: &str) -> String {
+    text.trim()
+        .trim_matches(is_observer_boundary_punctuation)
+        .trim()
+        .to_string()
+}
+
+fn is_compact_dictionary_phrase(text: &str) -> bool {
+    if text.is_empty() || text.chars().count() > 40 {
+        return false;
+    }
+    if text.chars().any(is_observer_boundary_punctuation) {
+        return false;
+    }
+
+    let token_count = text
+        .split_whitespace()
+        .filter(|token| token.chars().any(is_dictionary_content_char))
+        .count();
+
+    token_count <= 4 && text.chars().any(is_dictionary_content_char)
+}
+
+fn is_dictionary_content_char(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '_' | '-' | '.') || is_cjk(c)
+}
+
+fn is_observer_boundary_punctuation(c: char) -> bool {
+    matches!(
+        c,
+        ',' | '.'
+            | '!'
+            | '?'
+            | ';'
+            | ':'
+            | '"'
+            | '\''
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '，'
+            | '。'
+            | '、'
+            | '！'
+            | '？'
+            | '；'
+            | '：'
+            | '（'
+            | '）'
+            | '【'
+            | '】'
+            | '「'
+            | '」'
+            | '『'
+            | '』'
+            | '《'
+            | '》'
+            | '“'
+            | '”'
+            | '‘'
+            | '’'
+            | '…'
+            | '—'
+    )
+}
+
+fn is_cjk(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x3040..=0x30FF | 0xAC00..=0xD7AF
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{looks_like_direct_edit, should_learn_stable_edit, snapshot_contains_delivery};
@@ -255,6 +347,17 @@ mod tests {
             "那你进行详细完整的流程，试一试搜题现在的功能是不是符合预期的？",
             "那你进行详细完整的流程，试一试sootie现在的功能是不是符合预期的？"
         ));
+    }
+
+    #[test]
+    fn accepts_whole_output_term_replacement_after_user_retypes() {
+        assert!(looks_like_direct_edit("搜题", "sootie"));
+        assert!(looks_like_direct_edit("Air Tap", "AriaType"));
+    }
+
+    #[test]
+    fn rejects_whole_output_deletion_without_replacement_text() {
+        assert!(!looks_like_direct_edit("搜题", ""));
     }
 
     #[test]

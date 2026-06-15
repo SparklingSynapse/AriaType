@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import * as Dialog from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import {
   CaretRight,
@@ -39,10 +40,8 @@ import {
   resolveOnboardingModelReady,
 } from "./onboarding-model";
 import {
-  ModalBackdrop,
   ModalCloseButton,
-  ModalSurface,
-  ModalViewport,
+  ModalFrame,
   ONBOARDING_MODAL_SIZE_CLASS,
 } from "./ModalShell";
 
@@ -960,10 +959,10 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
     }
   };
 
-  const handleSkip = () => {
+  const handleSkip = useCallback(() => {
     analytics.track(AnalyticsEvents.ONBOARDING_SKIPPED, { step: currentStep });
     onClose();
-  };
+  }, [currentStep, onClose]);
 
   useEffect(() => {
     if (isOpen) {
@@ -997,8 +996,6 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
       });
     }
   }, [isOpen, currentStep]);
-
-  if (!isOpen) return null;
 
   const current = steps[currentStep];
   const isLastStep = currentStep === steps.length - 1;
@@ -1034,93 +1031,96 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
   };
 
   return (
-    <>
-      <ModalBackdrop onClick={handleSkip} />
+    <ModalFrame
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          handleSkip();
+        }
+      }}
+      open={isOpen}
+      sizeClassName={ONBOARDING_MODAL_SIZE_CLASS}
+      surfaceClassName="relative flex-col"
+      surfaceProps={{ "data-step-id": current.id }}
+      testId="onboarding-modal"
+    >
+      <div className="flex shrink-0 items-center justify-between gap-5 border-b border-border/70 px-8 py-4">
+        <div className="min-w-0">
+          <Dialog.Title asChild>
+            <h2 className="text-lg font-semibold leading-6 text-foreground">
+              {current.title}
+            </h2>
+          </Dialog.Title>
+          <Dialog.Description asChild>
+            <p className="mt-0.5 max-w-xl text-sm leading-5 text-muted-foreground">
+              {current.description}
+            </p>
+          </Dialog.Description>
+        </div>
+        <Dialog.Close asChild>
+          <ModalCloseButton aria-label={t("onboarding.skip")} />
+        </Dialog.Close>
+      </div>
 
-      <ModalViewport>
-        <ModalSurface
-          className="relative flex-col"
-          sizeClassName={ONBOARDING_MODAL_SIZE_CLASS}
-          data-testid="onboarding-modal"
-          data-step-id={current.id}
+      <div
+        className="flex min-h-0 flex-1 flex-col px-14 pb-5 pt-6"
+        data-testid="onboarding-modal-body"
+      >
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          {renderStepContent()}
+        </div>
+        <div
+          className="flex shrink-0 justify-center gap-2 pt-4"
+          data-testid="onboarding-step-progress"
         >
-          <div className="flex shrink-0 items-center justify-between gap-5 border-b border-border/70 px-8 py-4">
-            <div className="min-w-0">
-              <h2 className="text-lg font-semibold leading-6 text-foreground">
-                {current.title}
-              </h2>
-              <p className="mt-0.5 max-w-xl text-sm leading-5 text-muted-foreground">
-                {current.description}
-              </p>
-            </div>
-            <ModalCloseButton
-              aria-label={t("onboarding.skip")}
-              onClick={handleSkip}
+          {steps.map((_, index) => (
+            <button
+              key={index}
+              onClick={() => setCurrentStep(index)}
+              className={cn(
+                "h-1.5 rounded-full transition-all duration-300 cursor-pointer",
+                index === currentStep
+                  ? "w-6 bg-primary"
+                  : index < currentStep
+                    ? "w-1.5 bg-primary"
+                    : "w-1.5 bg-input",
+              )}
             />
-          </div>
+          ))}
+        </div>
+      </div>
 
-          <div
-            className="flex min-h-0 flex-1 flex-col px-14 pb-5 pt-6"
-            data-testid="onboarding-modal-body"
+      <div className="flex shrink-0 items-center justify-between gap-4 border-t border-border/70 px-8 py-4">
+        {currentStep > 0 ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handlePrev}
+            className="gap-2"
           >
-            <div className="flex min-h-0 flex-1 items-center justify-center">
-              {renderStepContent()}
-            </div>
-            <div
-              className="flex shrink-0 justify-center gap-2 pt-4"
-              data-testid="onboarding-step-progress"
-            >
-              {steps.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => setCurrentStep(index)}
-                  className={cn(
-                    "h-1.5 rounded-full transition-all duration-300 cursor-pointer",
-                    index === currentStep
-                      ? "w-6 bg-primary"
-                      : index < currentStep
-                        ? "w-1.5 bg-primary"
-                        : "w-1.5 bg-input",
-                  )}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center justify-between gap-4 border-t border-border/70 px-8 py-4">
-            {currentStep > 0 ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handlePrev}
-                className="gap-2"
-              >
-                <CaretLeft className="w-4 h-4" />
-                {t("onboarding.prev")}
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleSkip}
-                className="text-muted-foreground"
-              >
-                {t("onboarding.skip")}
-              </Button>
-            )}
-            <Button
-              size="sm"
-              onClick={handleNext}
-              disabled={!canProceed()}
-              className="gap-2"
-              data-testid="onboarding-primary-action"
-            >
-              {isLastStep ? t("onboarding.finish") : t("onboarding.next")}
-              {!isLastStep && <CaretRight className="w-4 h-4" />}
-            </Button>
-          </div>
-        </ModalSurface>
-      </ModalViewport>
-    </>
+            <CaretLeft className="w-4 h-4" />
+            {t("onboarding.prev")}
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleSkip}
+            className="text-muted-foreground"
+          >
+            {t("onboarding.skip")}
+          </Button>
+        )}
+        <Button
+          size="sm"
+          onClick={handleNext}
+          disabled={!canProceed()}
+          className="gap-2"
+          data-testid="onboarding-primary-action"
+        >
+          {isLastStep ? t("onboarding.finish") : t("onboarding.next")}
+          {!isLastStep && <CaretRight className="w-4 h-4" />}
+        </Button>
+      </div>
+    </ModalFrame>
   );
 }

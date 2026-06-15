@@ -24,6 +24,25 @@ async function openSettingsModal(tauriPage: E2EPage) {
   return settingsModal;
 }
 
+async function getTopHitHrefAtCenter(tauriPage: E2EPage, selector: string) {
+  return tauriPage.locator(selector).evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return hit?.closest('a')?.getAttribute('href') ?? null;
+  });
+}
+
+async function getSettingsModalState(tauriPage: E2EPage) {
+  const modal = tauriPage.locator('[data-testid="settings-modal"]');
+  if ((await modal.count()) === 0) {
+    return 'unmounted';
+  }
+
+  return modal.evaluate((element) => element.getAttribute('data-state') ?? 'mounted');
+}
+
 test('Settings modal navigation matches current sections', async ({ tauriPage }, testInfo) => {
   disableAutoSnapshot(testInfo);
   const settingsModal = await openSettingsModal(tauriPage);
@@ -83,6 +102,9 @@ test('Settings modal unmounts after close and releases the page', async ({ tauri
   const settingsModal = await openSettingsModal(tauriPage);
 
   await tauriPage.keyboard.press('Escape');
+  await expect.poll(() => getSettingsModalState(tauriPage), { timeout: 1000 }).toMatch(/^(closed|unmounted)$/);
+  const historyHitHref = await getTopHitHrefAtCenter(tauriPage, 'a[href="/history"]');
+  expect(historyHitHref).toBe('/history');
   await expect(settingsModal).toHaveCount(0, { timeout: 5000 });
 
   await tauriPage.click('a[href="/history"]');

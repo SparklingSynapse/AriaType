@@ -274,7 +274,7 @@ fn best_hotword_match(
             continue;
         }
 
-        let score = hotword_similarity(&candidate.key, entry);
+        let score = hotword_similarity(candidate, entry);
         if score < HOTWORD_REPLACEMENT_THRESHOLD {
             continue;
         }
@@ -302,13 +302,45 @@ fn best_hotword_match(
     best
 }
 
-fn hotword_similarity(candidate_key: &str, entry: &HotwordEntry) -> f64 {
-    std::iter::once(entry.term.as_str())
-        .chain(entry.aliases.iter().map(String::as_str))
-        .map(phonetic_key)
-        .filter(|key| key.len() >= MIN_FUZZY_KEY_LEN)
-        .map(|key| normalized_similarity(candidate_key, &key))
-        .fold(0.0, f64::max)
+fn hotword_similarity(candidate: &CandidateSpan, entry: &HotwordEntry) -> f64 {
+    let term_score = hotword_source_similarity(candidate, &entry.term, false);
+    let alias_score = entry
+        .aliases
+        .iter()
+        .map(|alias| hotword_source_similarity(candidate, alias, true))
+        .fold(0.0, f64::max);
+
+    term_score.max(alias_score)
+}
+
+fn hotword_source_similarity(candidate: &CandidateSpan, source: &str, explicit_alias: bool) -> f64 {
+    if explicit_alias && candidate.text.eq_ignore_ascii_case(source.trim()) {
+        return 1.0;
+    }
+
+    let source_key = phonetic_key(source);
+    if source_key.len() < MIN_FUZZY_KEY_LEN {
+        return 0.0;
+    }
+
+    let score = normalized_similarity(&candidate.key, &source_key);
+    if score < HOTWORD_REPLACEMENT_THRESHOLD {
+        return 0.0;
+    }
+
+    if !explicit_alias && !allows_implicit_fuzzy_hotword_match(&candidate.text, source) {
+        return 0.0;
+    }
+
+    score
+}
+
+fn allows_implicit_fuzzy_hotword_match(candidate: &str, source: &str) -> bool {
+    if candidate.eq_ignore_ascii_case(source.trim()) {
+        return true;
+    }
+
+    !(is_all_cjk(candidate) && is_all_cjk(source) && candidate.chars().count() < 3)
 }
 
 fn build_candidate_spans(text: &str) -> Vec<CandidateSpan> {
@@ -500,6 +532,10 @@ fn is_cjk(c: char) -> bool {
     )
 }
 
+fn is_all_cjk(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(is_cjk)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,5 +571,23 @@ mod tests {
 
         assert_eq!(result.text, "ask Claude");
         assert_eq!(result.applied, vec![CorrectionPair::new("Cloud", "Claude")]);
+    }
+
+    #[test]
+    fn avoids_short_cjk_homophone_replacement_without_alias() {
+        let entries = vec![HotwordEntry::new("功利", Vec::new(), 1, "test").unwrap()];
+        let result = apply_hotwords_to_text("跑了三公里", &entries);
+
+        assert_eq!(result.text, "跑了三公里");
+        assert!(result.applied.is_empty());
+    }
+
+    #[test]
+    fn applies_short_cjk_replacement_with_explicit_alias() {
+        let entries = vec![HotwordEntry::new("功利", vec!["公里".to_string()], 1, "test").unwrap()];
+        let result = apply_hotwords_to_text("跑了三公里", &entries);
+
+        assert_eq!(result.text, "跑了三功利");
+        assert_eq!(result.applied, vec![CorrectionPair::new("公里", "功利")]);
     }
 }

@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import {
   CirclesFour,
   GearSix,
@@ -7,7 +7,6 @@ import {
   BookOpenText,
   ChatCircleText,
   ArrowSquareOut,
-  ArrowCircleUp,
   GithubLogo,
   Info,
   type Icon,
@@ -27,6 +26,13 @@ import { useNavBadges } from "@/hooks/useNavBadges";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SettingsModal, type SettingsModalSection } from "./SettingsModal";
 import { MODAL_NAV_WIDTH_CLASS } from "./ModalShell";
+import {
+  NavigationAttentionBadge,
+  NavigationGroup,
+  NavigationItemAnchor,
+  NavigationItemButton,
+  NavigationItemLink,
+} from "./NavigationItem";
 
 const FEEDBACK_URL = "https://github.com/joe223/AriaType/issues/new";
 const GITHUB_SUPPORT_URL = "https://github.com/joe223/AriaType";
@@ -60,15 +66,6 @@ function getSettingsSectionForPath(pathname: string): SettingsModalSection {
   }
 }
 
-function getNavItemClass(isActive: boolean) {
-  return cn(
-    "flex w-full items-center gap-3 rounded-[22px] px-3 py-2.5 text-left text-sm transition-colors",
-    isActive
-      ? "bg-white text-zinc-950 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700"
-      : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-zinc-800/70",
-  );
-}
-
 export function HomeLayout() {
   const { t } = useTranslation();
   const [hasModel, setHasModel] = useState(true);
@@ -80,6 +77,7 @@ export function HomeLayout() {
   const badges = useNavBadges();
   const location = useLocation();
   const supportLinkPathRef = useRef(location.pathname);
+  const settingsOpenFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     analytics.track(AnalyticsEvents.SCREEN_VIEW, {
@@ -104,6 +102,14 @@ export function HomeLayout() {
     return () => window.clearInterval(rotationTimer);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (settingsOpenFrameRef.current !== null) {
+        window.cancelAnimationFrame(settingsOpenFrameRef.current);
+      }
+    };
+  }, []);
+
   const primaryNavItems: PrimaryNavItem[] = [
     { to: "/", icon: CirclesFour, label: t("nav.dashboard") },
     { to: "/history", icon: ClockCounterClockwise, label: t("nav.history") },
@@ -115,7 +121,14 @@ export function HomeLayout() {
 
   const openSettingsModal = (section: SettingsModalSection = "basics") => {
     setSettingsInitialSection(section);
-    setSettingsModalOpen(true);
+    if (settingsOpenFrameRef.current !== null) {
+      window.cancelAnimationFrame(settingsOpenFrameRef.current);
+    }
+
+    settingsOpenFrameRef.current = window.requestAnimationFrame(() => {
+      settingsOpenFrameRef.current = null;
+      setSettingsModalOpen(true);
+    });
   };
 
   const handleOnboardingClose = useCallback(async () => {
@@ -173,88 +186,60 @@ export function HomeLayout() {
             </span>
           </div>
           <nav className="px-4 py-4 flex flex-col h-[calc(100%-4.5rem)]">
-            <div className="space-y-1">
-              {primaryNavItems.map((item) => {
-                const to = item.to;
-                return (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={to === "/"}
-                    className={({ isActive }) => getNavItemClass(isActive)}
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <item.icon
-                          className="h-5 w-5 shrink-0"
-                          weight={isActive ? "duotone" : "regular"}
-                        />
-                        <span className="block min-w-0 text-sm font-medium">
-                          {item.label}
-                        </span>
-                      </>
-                    )}
-                  </NavLink>
-                );
-              })}
+            <NavigationGroup id="home-sidebar-navigation">
+              <div className="space-y-1">
+                {primaryNavItems.map((item) => {
+                  const to = item.to;
 
-              <button
-                type="button"
-                onClick={() => openSettingsModal(getSettingsSectionForPath(location.pathname))}
-                className={getNavItemClass(settingsModalOpen || settingsRouteActive)}
-                data-testid="open-settings-modal"
-              >
-                <GearSix
-                  className="h-5 w-5 shrink-0"
-                  weight={settingsModalOpen || settingsRouteActive ? "duotone" : "regular"}
-                />
-                <span className="block min-w-0 text-sm font-medium">
-                  {t("nav.settings")}
-                </span>
-                {settingsNeedsAttention && (
-                  <ArrowCircleUp className="ml-auto h-4 w-4 text-green-500" weight="fill" />
-                )}
-              </button>
-
-              <NavLink
-                to="/about"
-                className={({ isActive }) => getNavItemClass(isActive)}
-                data-testid="nav-about"
-              >
-                {({ isActive }) => (
-                  <>
-                    <Info
-                      className="h-5 w-5 shrink-0"
-                      weight={isActive ? "duotone" : "regular"}
+                  return (
+                    <NavigationItemLink
+                      activeIndicatorLayoutId="home-sidebar-active-item"
+                      activeWhen={(isActive) => isActive && !settingsModalOpen}
+                      end={to === "/"}
+                      icon={item.icon}
+                      key={to}
+                      label={item.label}
+                      to={to}
                     />
-                    <span className="block min-w-0 text-sm font-medium">
-                      {t("nav.about")}
-                    </span>
-                    {badges.about && (
-                      <ArrowCircleUp className="ml-auto h-4 w-4 text-green-500" weight="fill" />
-                    )}
-                  </>
-                )}
-              </NavLink>
-            </div>
+                  );
+                })}
+
+                <NavigationItemButton
+                  active={settingsModalOpen || settingsRouteActive}
+                  activeIndicatorLayoutId="home-sidebar-active-item"
+                  badge={settingsNeedsAttention ? <NavigationAttentionBadge /> : undefined}
+                  data-testid="open-settings-modal"
+                  icon={GearSix}
+                  label={t("nav.settings")}
+                  onClick={() => openSettingsModal(getSettingsSectionForPath(location.pathname))}
+                />
+
+                <NavigationItemLink
+                  activeIndicatorLayoutId="home-sidebar-active-item"
+                  activeWhen={(isActive) => isActive && !settingsModalOpen}
+                  badge={badges.about ? <NavigationAttentionBadge /> : undefined}
+                  data-testid="nav-about"
+                  icon={Info}
+                  label={t("nav.about")}
+                  to="/about"
+                />
+              </div>
+            </NavigationGroup>
             <div className="mt-auto border-t border-border/70 py-3 space-y-1">
-              <a
-                href={showGithubSupportLink ? GITHUB_SUPPORT_URL : FEEDBACK_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={getNavItemClass(false)}
+              <NavigationItemAnchor
                 data-testid={showGithubSupportLink ? "nav-github-support" : "nav-feedback"}
-              >
-                {showGithubSupportLink ? (
-                  <GithubLogo className="h-5 w-5 shrink-0" weight="regular" />
-                ) : (
-                  <ChatCircleText className="h-5 w-5 shrink-0" weight="regular" />
-                )}
-                <span className="block min-w-0 text-sm font-medium">
-                  {showGithubSupportLink ? t("nav.githubSupport") : t("nav.feedback")}
-                </span>
-                <ArrowSquareOut className="ml-auto h-3 w-3 opacity-50" weight="fill" />
-              </a>
+                href={showGithubSupportLink ? GITHUB_SUPPORT_URL : FEEDBACK_URL}
+                icon={showGithubSupportLink ? GithubLogo : ChatCircleText}
+                label={showGithubSupportLink ? t("nav.githubSupport") : t("nav.feedback")}
+                rel="noopener noreferrer"
+                target="_blank"
+                trailing={
+                  <ArrowSquareOut
+                    className="h-3 w-3 shrink-0 opacity-50"
+                    weight="fill"
+                  />
+                }
+              />
             </div>
           </nav>
         </aside>
