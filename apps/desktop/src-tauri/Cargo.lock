@@ -149,7 +149,7 @@ dependencies = [
 
 [[package]]
 name = "ariatype"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "async-trait",
  "atspi",

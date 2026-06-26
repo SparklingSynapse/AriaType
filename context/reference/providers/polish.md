@@ -204,15 +204,13 @@ The desktop settings store a `local_polish_runtime` object:
 ```
 
 The Private AI > Polish page exposes presets for `llama-server`, `LM Studio`,
-and `Ollama`, plus a custom endpoint. The check button validates the configured
-runtime before users rely on local polish. When the selected polish model is
-already downloaded, the same check prepares that model through the normal local
-runtime path, so bundled, PATH-installed, or configured `llama-server`
-processes can be started and verified. Without a downloaded selected model, the
-check falls back to a lightweight `/v1/models` endpoint health check. The
-selected model status separates file download state from runtime readiness; a
-downloaded GGUF does not show as fully ready until the local runtime is also
-reachable.
+and `Ollama`, plus a custom endpoint. The check button only validates the
+configured runtime by calling the lightweight `/v1/models` health endpoint; it
+must not start `llama-server`, open files, or mutate runtime process state.
+Starting a managed runtime happens only when a local polish request actually
+needs the selected downloaded model. The selected model status separates file
+download state from runtime readiness; a downloaded GGUF does not show as fully
+ready until the local runtime is also reachable.
 
 When Cloud Polish is enabled, AriaType stops any local polish runtime process
 that it started and does not preload or fall back to local polish for incomplete
@@ -223,8 +221,8 @@ or Ollama remain under the user's control.
 
 For the `llama-server` preset, leaving `server_command` empty makes AriaType
 try to auto-detect a bundled `llama-server` resource first, then a
-`llama-server` on `PATH`, before reporting the runtime unavailable. This code
-path is ready for a packaged sidecar. Build scripts generate
+`llama-server` on `PATH` (`llama-server.exe` on Windows), before reporting the
+runtime unavailable. This code path is ready for a packaged sidecar. Build scripts generate
 `tauri.runtime.generated.conf.json` before packaging and add existing
 `llama-server` sidecar binaries to Tauri resources without breaking builds when
 those binaries are absent.
@@ -233,7 +231,7 @@ Recognized bundled sidecar locations are:
 
 - macOS: `bin/apple-silicon/llama-server`, `bin/intel/llama-server`,
   `bin/universal/llama-server`, or `bin/macos/llama-server`
-- Windows: `bin/windows/llama-server.exe` or `bin/windows/llama-server`
+- Windows: `bin/windows/llama-server.exe`
 - Linux: `bin/linux/llama-server` or `bin/llama-server`
 
 The repository still needs the actual sidecar binary resource to deliver a fully
