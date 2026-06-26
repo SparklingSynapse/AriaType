@@ -55,6 +55,9 @@ user's repeated corrections.
    for automatic application.
 6. Deleting the delivered output and retyping a compact replacement is still a
    correction pair. Deleting without replacement is not a dictionary mapping.
+7. A learned mapping must be word or short-phrase level. Sentence fragments,
+   paragraphs, and ordinary prose rewrites are discarded even when the text
+   delta is short.
 
 ## Information Architecture
 
@@ -228,5 +231,6 @@ And the `Dictate -> Dictation` mapping remains.
 
 ## Privacy Notes
 
-Correction Learning stores only bounded correction pairs. The observer discards
-full focused text snapshots after extracting a mapping.
+Correction Learning stores only bounded word-level or short dictionary-phrase
+correction pairs. The observer discards full focused text snapshots after
+extracting a mapping.
