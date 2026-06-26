@@ -274,7 +274,69 @@ fn get_monitor_at_cursor(app: &AppHandle) -> Option<tauri::Monitor> {
     None
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "windows", test))]
+fn physical_point_in_rect(
+    point_x: i32,
+    point_y: i32,
+    origin_x: i32,
+    origin_y: i32,
+    width: u32,
+    height: u32,
+) -> bool {
+    let dx = point_x as i64 - origin_x as i64;
+    let dy = point_y as i64 - origin_y as i64;
+
+    dx >= 0 && dy >= 0 && dx < width as i64 && dy < height as i64
+}
+
+#[cfg(target_os = "windows")]
+fn monitor_contains_physical_point(monitor: &tauri::Monitor, point_x: i32, point_y: i32) -> bool {
+    let origin = monitor.position();
+    let size = monitor.size();
+
+    physical_point_in_rect(
+        point_x,
+        point_y,
+        origin.x,
+        origin.y,
+        size.width,
+        size.height,
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn get_monitor_at_cursor(app: &AppHandle) -> Option<tauri::Monitor> {
+    use tracing::{debug, info};
+    use winapi::shared::windef::POINT;
+    use winapi::um::winuser::GetCursorPos;
+
+    let mut point = POINT { x: 0, y: 0 };
+    let ok = unsafe { GetCursorPos(&mut point) };
+    if ok == 0 {
+        info!("monitor_not_found_cursor");
+        return None;
+    }
+
+    debug!(x = point.x, y = point.y, "mouse_cursor_position");
+
+    let available_monitors = app.available_monitors().ok()?;
+    for monitor in available_monitors {
+        if monitor_contains_physical_point(&monitor, point.x, point.y) {
+            info!(
+                monitor = ?monitor.name(),
+                x = point.x,
+                y = point.y,
+                "monitor_matched_cursor"
+            );
+            return Some(monitor);
+        }
+    }
+
+    info!(x = point.x, y = point.y, "monitor_not_found_cursor");
+    None
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn get_monitor_at_cursor(_app: &AppHandle) -> Option<tauri::Monitor> {
     None
 }
@@ -479,6 +541,15 @@ pub async fn show_pill_window(app: AppHandle) -> Result<(), String> {
 
     info!("show_pill_window_requested");
 
+    let preset = app
+        .try_state::<AppState>()
+        .map(|state| {
+            let settings = state.settings.lock();
+            settings.pill_position.clone()
+        })
+        .unwrap_or_else(|| "bottom-center".to_string());
+    position_pill_window(&app, &preset);
+
     let app_for_main_thread = app.clone();
     let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
@@ -507,6 +578,28 @@ pub async fn show_pill_window(app: AppHandle) -> Result<(), String> {
     result_rx
         .await
         .map_err(|_| "show_pill_window main thread task was canceled".to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::physical_point_in_rect;
+
+    #[test]
+    fn physical_point_in_rect_includes_top_left_and_excludes_bottom_right_edges() {
+        assert!(physical_point_in_rect(100, 200, 100, 200, 800, 600));
+        assert!(physical_point_in_rect(899, 799, 100, 200, 800, 600));
+
+        assert!(!physical_point_in_rect(900, 799, 100, 200, 800, 600));
+        assert!(!physical_point_in_rect(899, 800, 100, 200, 800, 600));
+    }
+
+    #[test]
+    fn physical_point_in_rect_handles_negative_monitor_origins() {
+        assert!(physical_point_in_rect(-1200, 120, -1920, 0, 1920, 1080));
+
+        assert!(!physical_point_in_rect(0, 120, -1920, 0, 1920, 1080));
+        assert!(!physical_point_in_rect(-1200, -1, -1920, 0, 1920, 1080));
+    }
 }
 
 #[tauri::command]

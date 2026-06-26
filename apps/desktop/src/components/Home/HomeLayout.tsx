@@ -76,7 +76,6 @@ export function HomeLayout() {
   const badges = useNavBadges();
   const location = useLocation();
   const supportLinkPathRef = useRef(location.pathname);
-  const settingsOpenFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     analytics.track(AnalyticsEvents.SCREEN_VIEW, {
@@ -101,24 +100,9 @@ export function HomeLayout() {
     return () => window.clearInterval(rotationTimer);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (settingsOpenFrameRef.current !== null) {
-        window.cancelAnimationFrame(settingsOpenFrameRef.current);
-      }
-    };
-  }, []);
-
   const openSettingsModal = (section: SettingsModalSection = "basics") => {
     setSettingsInitialSection(section);
-    if (settingsOpenFrameRef.current !== null) {
-      window.cancelAnimationFrame(settingsOpenFrameRef.current);
-    }
-
-    settingsOpenFrameRef.current = window.requestAnimationFrame(() => {
-      settingsOpenFrameRef.current = null;
-      setSettingsModalOpen(true);
-    });
+    setSettingsModalOpen(true);
   };
 
   const primaryNavItems: PrimaryNavItem[] = [

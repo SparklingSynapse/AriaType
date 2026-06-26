@@ -1,7 +1,9 @@
 use tauri::{AppHandle, Emitter};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
-use super::diff::extract_correction_pair;
+use super::diff::{
+    extract_correction_pair, extract_deleted_correction_term, is_word_level_correction_pair,
+};
 use super::platform::read_focused_editable_text;
 use super::storage::CorrectionStore;
 use super::types::CorrectionLearnedEvent;
@@ -80,6 +82,15 @@ async fn observe_post_delivery_edit_inner(app: AppHandle, delivered_text: String
         }
 
         if !should_learn_stable_edit(&baseline, &current) {
+            if should_wait_for_pending_replacement_edit(&baseline, &current) {
+                debug!(
+                    baseline_chars = baseline.chars().count(),
+                    current_chars = current.chars().count(),
+                    "correction_learning_observer_waiting-pending_replacement"
+                );
+                continue;
+            }
+
             info!(
                 baseline_chars = baseline.chars().count(),
                 current_chars = current.chars().count(),
@@ -198,6 +209,25 @@ fn should_learn_stable_edit(baseline: &str, current: &str) -> bool {
     looks_like_direct_edit(baseline, current)
 }
 
+fn should_wait_for_pending_replacement_edit(baseline: &str, current: &str) -> bool {
+    let baseline = normalize_for_containment(baseline);
+    let current = normalize_for_containment(current);
+    if baseline == current || current.is_empty() {
+        return false;
+    }
+
+    if extract_deleted_correction_term(&baseline, &current).is_none() {
+        return false;
+    }
+
+    let baseline_chars: Vec<char> = baseline.chars().collect();
+    let current_chars: Vec<char> = current.chars().collect();
+    let common_context = common_affix_chars(&baseline_chars, &current_chars);
+    let min_len = baseline_chars.len().min(current_chars.len());
+
+    common_context >= DIRECT_EDIT_MIN_COMMON_CONTEXT_CHARS || common_context * 2 >= min_len
+}
+
 fn common_affix_chars(left: &[char], right: &[char]) -> usize {
     let mut prefix = 0;
     while prefix < left.len() && prefix < right.len() && left[prefix] == right[prefix] {
@@ -236,8 +266,7 @@ fn is_whole_output_term_replacement(
 
     pair.wrong == delivered_term
         && pair.corrected == snapshot_term
-        && is_compact_dictionary_phrase(&delivered_term)
-        && is_compact_dictionary_phrase(&snapshot_term)
+        && is_word_level_correction_pair(&delivered_term, &snapshot_term)
 }
 
 fn normalize_whole_output_term(text: &str) -> String {
@@ -245,26 +274,6 @@ fn normalize_whole_output_term(text: &str) -> String {
         .trim_matches(is_observer_boundary_punctuation)
         .trim()
         .to_string()
-}
-
-fn is_compact_dictionary_phrase(text: &str) -> bool {
-    if text.is_empty() || text.chars().count() > 40 {
-        return false;
-    }
-    if text.chars().any(is_observer_boundary_punctuation) {
-        return false;
-    }
-
-    let token_count = text
-        .split_whitespace()
-        .filter(|token| token.chars().any(is_dictionary_content_char))
-        .count();
-
-    token_count <= 4 && text.chars().any(is_dictionary_content_char)
-}
-
-fn is_dictionary_content_char(c: char) -> bool {
-    c.is_alphanumeric() || matches!(c, '_' | '-' | '.') || is_cjk(c)
 }
 
 fn is_observer_boundary_punctuation(c: char) -> bool {
@@ -309,16 +318,12 @@ fn is_observer_boundary_punctuation(c: char) -> bool {
     )
 }
 
-fn is_cjk(c: char) -> bool {
-    matches!(
-        c as u32,
-        0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x3040..=0x30FF | 0xAC00..=0xD7AF
-    )
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{looks_like_direct_edit, should_learn_stable_edit, snapshot_contains_delivery};
+    use super::{
+        looks_like_direct_edit, should_learn_stable_edit, should_wait_for_pending_replacement_edit,
+        snapshot_contains_delivery,
+    };
 
     #[test]
     fn accepts_exact_delivery_snapshot() {
@@ -356,6 +361,11 @@ mod tests {
     }
 
     #[test]
+    fn rejects_whole_output_plain_sentence_fragment_replacement() {
+        assert!(!looks_like_direct_edit("delete this", "new text"));
+    }
+
+    #[test]
     fn rejects_whole_output_deletion_without_replacement_text() {
         assert!(!looks_like_direct_edit("搜题", ""));
     }
@@ -381,6 +391,47 @@ mod tests {
         assert!(should_learn_stable_edit(
             "Before. 那你试一试搜题现在的功能是不是符合预期的？ After.",
             "Before. 那你试一试sootie现在的功能是不是符合预期的？ After."
+        ));
+    }
+
+    #[test]
+    fn waits_when_user_deleted_a_term_before_typing_replacement() {
+        assert!(should_wait_for_pending_replacement_edit(
+            "Before Air Tap After",
+            "Before After"
+        ));
+        assert!(should_wait_for_pending_replacement_edit(
+            "Before open ai api After",
+            "Before After"
+        ));
+
+        assert!(!should_learn_stable_edit(
+            "Before Air Tap After",
+            "Before After"
+        ));
+    }
+
+    #[test]
+    fn does_not_wait_when_user_deleted_sentence_fragment_before_retyping() {
+        assert!(!should_wait_for_pending_replacement_edit(
+            "Before one short sentence After",
+            "Before After"
+        ));
+        assert!(!should_wait_for_pending_replacement_edit(
+            "Before delete this After",
+            "Before After"
+        ));
+    }
+
+    #[test]
+    fn does_not_wait_for_completed_replacement_or_unrelated_text() {
+        assert!(!should_wait_for_pending_replacement_edit(
+            "Before Air Tap After",
+            "Before AriaType After"
+        ));
+        assert!(!should_wait_for_pending_replacement_edit(
+            "Before Air Tap After",
+            "completely unrelated focused field"
         ));
     }
 }
