@@ -1,34 +1,34 @@
 {
-  "version": "1.0.1",
-  "pub_date": "2026-06-15T12:49:31.253Z",
+  "version": "1.0.2",
+  "pub_date": "2026-06-26T04:09:53.111Z",
   "notes": "",
-  "url": "https://ariatype.com/release/AriaType_1.0.1_aarch64.dmg",
+  "url": "https://ariatype.com/release/AriaType_1.0.2_aarch64.dmg",
   "platforms": {
     "mac": {
       "universal": "",
-      "aarch64": "https://ariatype.com/release/AriaType_1.0.1_aarch64.dmg",
-      "x86_64": "https://ariatype.com/release/AriaType_1.0.1_x64.dmg"
+      "aarch64": "https://ariatype.com/release/AriaType_1.0.2_aarch64.dmg",
+      "x86_64": "https://ariatype.com/release/AriaType_1.0.2_x64.dmg"
     },
     "windows": {
-      "exe": "https://ariatype.com/release/AriaType_1.0.1_x64-setup.exe",
+      "exe": "https://ariatype.com/release/AriaType_1.0.2_x64-setup.exe",
       "msi": ""
     }
   },
   "files": [
     {
-      "file": "AriaType_1.0.1_aarch64.dmg",
-      "channel": "mac-aarch",
-      "url": "https://ariatype.com/release/AriaType_1.0.1_aarch64.dmg"
-    },
-    {
-      "file": "AriaType_1.0.1_x64.dmg",
-      "channel": "mac-intel",
-      "url": "https://ariatype.com/release/AriaType_1.0.1_x64.dmg"
-    },
-    {
-      "file": "AriaType_1.0.1_x64-setup.exe",
+      "file": "AriaType_1.0.2_x64-setup.exe",
       "channel": "win-exe",
-      "url": "https://ariatype.com/release/AriaType_1.0.1_x64-setup.exe"
+      "url": "https://ariatype.com/release/AriaType_1.0.2_x64-setup.exe"
+    },
+    {
+      "file": "AriaType_1.0.2_aarch64.dmg",
+      "channel": "mac-aarch",
+      "url": "https://ariatype.com/release/AriaType_1.0.2_aarch64.dmg"
+    },
+    {
+      "file": "AriaType_1.0.2_x64.dmg",
+      "channel": "mac-intel",
+      "url": "https://ariatype.com/release/AriaType_1.0.2_x64.dmg"
     }
   ]
 }
