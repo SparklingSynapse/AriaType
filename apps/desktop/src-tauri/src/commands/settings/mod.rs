@@ -189,15 +189,6 @@ struct CloudConfigValidationError {
     message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum LocalRuntimeCheckMode {
-    HealthOnly,
-    SelectedModelReady {
-        engine_type: crate::polish_engine::PolishEngineType,
-        model_id: String,
-    },
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LocalPolishRuntimeSettingAction {
     None,
@@ -1619,12 +1610,9 @@ pub async fn check_local_polish_runtime_config(
     state: State<'_, AppState>,
 ) -> Result<CloudConnectionCheckResult, String> {
     let started_at = Instant::now();
-    let (runtime_settings, polish_model_id) = {
+    let runtime_settings = {
         let settings = state.settings.lock();
-        (
-            settings.local_polish_runtime.clone(),
-            settings.polish_model.clone(),
-        )
+        settings.local_polish_runtime.clone()
     };
 
     if !validate_required_url(&runtime_settings.base_url) {
@@ -1635,43 +1623,22 @@ pub async fn check_local_polish_runtime_config(
         ));
     }
 
-    let check_mode = local_runtime_check_mode(&state.polish_manager, &polish_model_id);
     let polish_manager = state.polish_manager.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || match check_mode {
-        LocalRuntimeCheckMode::HealthOnly => polish_manager
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        polish_manager
             .check_local_runtime_config(&runtime_settings, LOCAL_POLISH_RUNTIME_CHECK_TIMEOUT)
-            .map(|_| LocalRuntimeCheckMode::HealthOnly),
-        LocalRuntimeCheckMode::SelectedModelReady {
-            engine_type,
-            model_id,
-        } => {
-            polish_manager.configure_local_runtime(&runtime_settings)?;
-            polish_manager.load_model(engine_type, &model_id).map(|_| {
-                LocalRuntimeCheckMode::SelectedModelReady {
-                    engine_type,
-                    model_id,
-                }
-            })
-        }
     })
     .await
     .map_err(|e| format!("Local polish runtime check task failed: {e}"))?;
 
     match result {
-        Ok(mode) => {
-            let message = match mode {
-                LocalRuntimeCheckMode::HealthOnly => "Local polish runtime is reachable.",
-                LocalRuntimeCheckMode::SelectedModelReady { .. } => {
-                    "Local polish runtime is ready for the selected model."
-                }
-            };
+        Ok(()) => {
             info!(
-                mode = ?mode,
                 duration_ms = elapsed_ms(started_at),
                 "local_polish_runtime_config_check_ok"
             );
             Ok(CloudConnectionCheckResult::success(
-                message,
+                "Local polish runtime is reachable.",
                 elapsed_ms(started_at),
             ))
         }
@@ -1688,41 +1655,6 @@ pub async fn check_local_polish_runtime_config(
                 elapsed_ms(started_at),
             ))
         }
-    }
-}
-
-fn local_runtime_check_mode(
-    polish_manager: &crate::polish_engine::UnifiedPolishManager,
-    polish_model_id: &str,
-) -> LocalRuntimeCheckMode {
-    selected_local_runtime_check_mode(
-        polish_model_id,
-        crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(polish_model_id),
-        |engine_type, model_id| polish_manager.is_model_downloaded(engine_type, model_id),
-    )
-}
-
-fn selected_local_runtime_check_mode(
-    polish_model_id: &str,
-    engine_type: Option<crate::polish_engine::PolishEngineType>,
-    is_model_downloaded: impl FnOnce(crate::polish_engine::PolishEngineType, &str) -> bool,
-) -> LocalRuntimeCheckMode {
-    let model_id = polish_model_id.trim();
-    if model_id.is_empty() {
-        return LocalRuntimeCheckMode::HealthOnly;
-    }
-
-    let Some(engine_type) = engine_type else {
-        return LocalRuntimeCheckMode::HealthOnly;
-    };
-
-    if !is_model_downloaded(engine_type, model_id) {
-        return LocalRuntimeCheckMode::HealthOnly;
-    }
-
-    LocalRuntimeCheckMode::SelectedModelReady {
-        engine_type,
-        model_id: model_id.to_string(),
     }
 }
 

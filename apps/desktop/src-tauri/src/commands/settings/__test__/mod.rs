@@ -2,11 +2,9 @@ use super::{
     classify_cloud_check_error, migrate_platform_shortcut_defaults_for_test,
     migrate_to_profiles_map_for_test, normalize_pill_background_color,
     normalize_pill_background_opacity, polish_runtime_action_for_setting_update,
-    selected_local_runtime_check_mode, validate_cloud_polish_config_for_check,
-    validate_cloud_stt_config_for_check, AppSettings, CloudProviderConfig, CloudSttConfig,
-    LocalPolishRuntimeSettingAction, LocalRuntimeCheckMode,
+    validate_cloud_polish_config_for_check, validate_cloud_stt_config_for_check, AppSettings,
+    CloudProviderConfig, CloudSttConfig, LocalPolishRuntimeSettingAction,
 };
-use crate::polish_engine::PolishEngineType;
 use serde_json::json;
 
 #[test]
@@ -248,44 +246,6 @@ fn local_polish_runtime_uses_default_when_missing() {
         "http://127.0.0.1:8000/v1"
     );
     assert_eq!(settings.local_polish_runtime.ready_timeout_secs, 20);
-}
-
-#[test]
-fn local_runtime_check_uses_health_only_without_selected_model() {
-    let mode = selected_local_runtime_check_mode("", None, |_, _| true);
-
-    assert_eq!(mode, LocalRuntimeCheckMode::HealthOnly);
-}
-
-#[test]
-fn local_runtime_check_uses_health_only_when_selected_model_is_not_downloaded() {
-    let mode =
-        selected_local_runtime_check_mode("qwen3.5-0.8b", Some(PolishEngineType::Qwen), |_, _| {
-            false
-        });
-
-    assert_eq!(mode, LocalRuntimeCheckMode::HealthOnly);
-}
-
-#[test]
-fn local_runtime_check_prepares_selected_downloaded_model() {
-    let mode = selected_local_runtime_check_mode(
-        " qwen3.5-0.8b ",
-        Some(PolishEngineType::Qwen),
-        |engine_type, model_id| {
-            assert_eq!(engine_type, PolishEngineType::Qwen);
-            assert_eq!(model_id, "qwen3.5-0.8b");
-            true
-        },
-    );
-
-    assert_eq!(
-        mode,
-        LocalRuntimeCheckMode::SelectedModelReady {
-            engine_type: PolishEngineType::Qwen,
-            model_id: "qwen3.5-0.8b".to_string(),
-        }
-    );
 }
 
 #[test]

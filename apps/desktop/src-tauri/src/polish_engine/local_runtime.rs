@@ -190,6 +190,7 @@ impl LocalPolishRuntimeManager {
                     base_url = %config.base_url,
                     "local_polish_runtime_starting"
                 );
+                validate_server_command_for_spawn(&command)?;
 
                 let child = Command::new(&command)
                     .args(&args)
@@ -446,7 +447,7 @@ fn find_llama_server_command() -> Option<String> {
 
 fn llama_server_command_candidates() -> &'static [&'static str] {
     if cfg!(windows) {
-        &["llama-server.exe", "llama-server"]
+        &["llama-server.exe"]
     } else {
         &["llama-server"]
     }
@@ -578,6 +579,73 @@ where
     }
 
     None
+}
+
+fn validate_server_command_for_spawn(command: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        validate_windows_server_command_for_spawn(command)?;
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+
+    Ok(())
+}
+
+#[cfg(any(windows, test))]
+fn validate_windows_server_command_for_spawn(command: &str) -> Result<(), String> {
+    let command = command.trim();
+    if !command_looks_like_path(command) {
+        return Ok(());
+    }
+
+    let path = Path::new(command);
+    let metadata = std::fs::metadata(path).map_err(|e| {
+        format!(
+            "Local polish runtime command path is not accessible ({}): {}",
+            path.display(),
+            e
+        )
+    })?;
+
+    if !metadata.is_file() {
+        return Err(format!(
+            "Local polish runtime command must be an executable file, not a directory: {}",
+            path.display()
+        ));
+    }
+
+    if !has_windows_executable_extension(path) {
+        return Err(format!(
+            "Local polish runtime command must point to an executable file (.exe, .cmd, .bat, or .com): {}",
+            path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(any(windows, test))]
+fn command_looks_like_path(command: &str) -> bool {
+    let command = command.trim();
+    Path::new(command).is_absolute()
+        || command.contains('\\')
+        || command.contains('/')
+        || command.as_bytes().get(1) == Some(&b':')
+}
+
+#[cfg(any(windows, test))]
+fn has_windows_executable_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "exe" | "cmd" | "bat" | "com"
+            )
+        })
 }
 
 fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -937,6 +1005,58 @@ mod tests {
         .unwrap();
 
         assert_eq!(command, binary_path.to_string_lossy());
+    }
+
+    #[test]
+    fn detects_path_like_runtime_commands() {
+        assert!(command_looks_like_path("/usr/local/bin/llama-server"));
+        assert!(command_looks_like_path(r"C:\Tools\llama-server.exe"));
+        assert!(command_looks_like_path("D:llama-server.exe"));
+
+        assert!(!command_looks_like_path("llama-server"));
+        assert!(!command_looks_like_path("python3"));
+    }
+
+    #[test]
+    fn recognizes_windows_executable_extensions() {
+        assert!(has_windows_executable_extension(Path::new(
+            "llama-server.exe"
+        )));
+        assert!(has_windows_executable_extension(Path::new(
+            "start-runtime.CMD"
+        )));
+        assert!(has_windows_executable_extension(Path::new(
+            "start-runtime.bat"
+        )));
+        assert!(has_windows_executable_extension(Path::new("runtime.com")));
+
+        assert!(!has_windows_executable_extension(Path::new("model.gguf")));
+        assert!(!has_windows_executable_extension(Path::new(
+            "settings.json"
+        )));
+        assert!(!has_windows_executable_extension(Path::new("llama-server")));
+    }
+
+    #[test]
+    fn rejects_windows_runtime_command_path_that_is_not_executable() {
+        let root = tempfile::tempdir().unwrap();
+        let model_path = root.path().join("model.gguf");
+        std::fs::write(&model_path, "not an executable").unwrap();
+
+        let err =
+            validate_windows_server_command_for_spawn(&model_path.to_string_lossy()).unwrap_err();
+
+        assert!(err.contains("must point to an executable file"));
+    }
+
+    #[test]
+    fn rejects_windows_runtime_command_path_that_is_directory() {
+        let root = tempfile::tempdir().unwrap();
+
+        let err =
+            validate_windows_server_command_for_spawn(&root.path().to_string_lossy()).unwrap_err();
+
+        assert!(err.contains("not a directory"));
     }
 
     #[test]
