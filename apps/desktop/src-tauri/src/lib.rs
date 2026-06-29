@@ -82,6 +82,19 @@ fn show_main_window_best_effort(app: &tauri::AppHandle, reason: &'static str) {
     }
 }
 
+fn stop_managed_local_polish_runtime(app: &tauri::AppHandle, reason: &'static str) {
+    let Some(state) = app.try_state::<AppState>() else {
+        warn!(
+            reason,
+            "local_polish_runtime_stop_skipped-app_state_unavailable"
+        );
+        return;
+    };
+
+    state.polish_manager.stop_local_runtime();
+    info!(reason, "local_polish_runtime_stop_requested-app_shutdown");
+}
+
 fn cleanup_old_logs(log_dir: &std::path::Path, keep_days: u64) {
     let cutoff =
         std::time::SystemTime::now() - std::time::Duration::from_secs(keep_days * 24 * 3600);
@@ -753,17 +766,24 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, _event| {
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { code, .. } => {
+                info!(exit_code = ?code, "app_exit_requested");
+                stop_managed_local_polish_runtime(app, "exit_requested");
+            }
+            tauri::RunEvent::Exit => {
+                stop_managed_local_polish_runtime(app, "exit");
+            }
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen {
+            tauri::RunEvent::Reopen {
                 has_visible_windows,
                 ..
-            } = _event
-            {
+            } => {
                 if should_show_main_window_on_reopen(has_visible_windows) {
-                    show_main_window_best_effort(_app, "dock_reopen");
+                    show_main_window_best_effort(app, "dock_reopen");
                 }
             }
+            _ => {}
         });
 }
 

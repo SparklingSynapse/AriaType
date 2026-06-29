@@ -1,6 +1,6 @@
 [package]
 name = "ariatype"
-version = "1.0.2"
+version = "1.0.3"
 description = "AriaType - Voice to Text Application"
 authors = ["AriaType Team"]
 edition = "2021"
@@ -78,7 +78,7 @@ objc2-core-graphics = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 enigo = { version = "0.6", default-features = false }
-winapi = { version = "0.3", features = ["winuser", "libloaderapi", "processthreadsapi", "errhandlingapi", "sysinfoapi"] }
+winapi = { version = "0.3", features = ["winuser", "libloaderapi", "processthreadsapi", "errhandlingapi", "sysinfoapi", "jobapi2", "handleapi", "winnt"] }
 uiautomation = { version = "0.25", default-features = false, features = ["input", "pattern"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -137,14 +137,14 @@ fn run_windows_runner(
             .matcher_state
             .lock()
             .expect("windows matcher state poisoned");
-        let outcome = handle_input(&mut matcher_state, &snapshot, input);
+        let outcome = handle_input(&mut matcher_state, &snapshot, input.clone());
         drop(matcher_state);
 
         for matcher_event in outcome.events {
             let _ = shared.event_tx.send(RuntimeEvent::Matcher(matcher_event));
         }
 
-        if outcome.swallow && shared.mode == RunnerMode::Main {
+        if super::should_swallow_windows_input(outcome.swallow, shared.mode, &input) {
             1
         } else {
             unsafe { CallNextHookEx(ptr::null_mut(), code, w_param, l_param) }
