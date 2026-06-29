@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
+#[cfg(any(test, target_os = "windows"))]
+use crate::shortcut::matcher::MatcherInput;
 use crate::shortcut::matcher::{MatcherEvent, MatcherSnapshot};
 
 #[cfg(target_os = "macos")]
@@ -32,6 +34,20 @@ pub trait PlatformRunner: Send {
     fn stop(&mut self) -> Result<(), String>;
 }
 
+#[cfg(any(test, target_os = "windows"))]
+fn should_swallow_windows_input(
+    outcome_swallow: bool,
+    mode: RunnerMode,
+    input: &MatcherInput,
+) -> bool {
+    outcome_swallow
+        && mode == RunnerMode::Main
+        && !matches!(
+            input,
+            MatcherInput::ModifierPressed(_) | MatcherInput::ModifierReleased(_)
+        )
+}
+
 pub fn start_platform_runner(
     mode: RunnerMode,
     snapshot: SharedMatcherSnapshot,
@@ -55,5 +71,48 @@ pub fn start_platform_runner(
         let _ = event_tx;
         let _ = generation;
         Err("shortcut platform runner unsupported on this platform".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{should_swallow_windows_input, RunnerMode};
+    use crate::shortcut::matcher::{MatcherInput, ModifierKey};
+
+    #[test]
+    fn windows_main_runner_passes_modifier_events_through() {
+        assert!(!should_swallow_windows_input(
+            true,
+            RunnerMode::Main,
+            &MatcherInput::ModifierPressed(ModifierKey::OptLeft)
+        ));
+        assert!(!should_swallow_windows_input(
+            true,
+            RunnerMode::Main,
+            &MatcherInput::ModifierReleased(ModifierKey::OptLeft)
+        ));
+    }
+
+    #[test]
+    fn windows_main_runner_still_swallows_primary_key_events() {
+        assert!(should_swallow_windows_input(
+            true,
+            RunnerMode::Main,
+            &MatcherInput::KeyPressed("Slash".to_string())
+        ));
+        assert!(should_swallow_windows_input(
+            true,
+            RunnerMode::Main,
+            &MatcherInput::KeyReleased("Slash".to_string())
+        ));
+    }
+
+    #[test]
+    fn windows_capture_runner_does_not_swallow_events() {
+        assert!(!should_swallow_windows_input(
+            true,
+            RunnerMode::CaptureOnly,
+            &MatcherInput::KeyPressed("Slash".to_string())
+        ));
     }
 }
