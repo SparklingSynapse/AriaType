@@ -129,9 +129,9 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
             <FloatingFocusManager context={context} initialFocus={searchRef.current ? 0 : -1} returnFocus={true}>
               <div
                 ref={refs.setFloating}
-                style={floatingStyles}
                 className="z-[9999] flex flex-col rounded-2xl border border-border bg-card shadow-lg outline-none overflow-hidden"
                 {...getFloatingProps()}
+                style={{ ...floatingStyles, pointerEvents: "auto" }}
               >
                 {options.length > 8 && (
                   <div className="flex-shrink-0 p-2 border-b border-border">
