@@ -6,6 +6,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
+- Select popover can not be clicked (8d7caa9)
 - Learn compact corrections safely (3f327a2)
 - Pill/tooltip position in windows (e33bf62)
 - Preserve modal close transitions (5df5f22)

@@ -192,21 +192,15 @@ impl LocalPolishRuntimeManager {
                 );
                 validate_server_command_for_spawn(&command)?;
 
-                let child = Command::new(&command)
-                    .args(&args)
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .map_err(|e| {
-                        error!(
-                            model_id,
-                            command,
-                            error = %e,
-                            "local_polish_runtime_spawn_failed"
-                        );
-                        format!("Failed to start local polish server ({command}): {e}")
-                    })?;
+                let child = spawn_managed_runtime_child(&command, &args).map_err(|e| {
+                    error!(
+                        model_id,
+                        command,
+                        error = %e,
+                        "local_polish_runtime_spawn_failed"
+                    );
+                    format!("Failed to start local polish server ({command}): {e}")
+                })?;
 
                 state.child = Some(child);
                 state.model_id = Some(model_id.to_string());
@@ -648,6 +642,34 @@ fn has_windows_executable_extension(path: &Path) -> bool {
         })
 }
 
+fn spawn_managed_runtime_child(command: &str, args: &[String]) -> std::io::Result<Child> {
+    let mut child_command = Command::new(command);
+    child_command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    apply_managed_runtime_process_options(&mut child_command);
+    child_command.spawn()
+}
+
+#[cfg(windows)]
+fn apply_managed_runtime_process_options(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    command.creation_flags(windows_create_no_window_flag());
+}
+
+#[cfg(not(windows))]
+fn apply_managed_runtime_process_options(_command: &mut Command) {}
+
+#[cfg(any(windows, test))]
+fn windows_create_no_window_flag() -> u32 {
+    // CREATE_NO_WINDOW prevents console-subsystem runtimes such as llama-server.exe
+    // from showing a terminal when launched by the GUI app.
+    0x0800_0000
+}
+
 fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut unique = Vec::new();
     for path in paths {
@@ -1035,6 +1057,11 @@ mod tests {
             "settings.json"
         )));
         assert!(!has_windows_executable_extension(Path::new("llama-server")));
+    }
+
+    #[test]
+    fn managed_windows_runtime_processes_use_hidden_console_flag() {
+        assert_eq!(windows_create_no_window_flag(), 0x0800_0000);
     }
 
     #[test]
