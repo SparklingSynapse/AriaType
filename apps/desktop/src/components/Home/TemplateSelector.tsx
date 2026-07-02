@@ -155,9 +155,9 @@ export function TemplateSelector({
           <FloatingFocusManager context={context}>
             <div
               ref={refs.setFloating}
-              style={floatingStyles}
               className="z-[9999] flex flex-col rounded-2xl border border-border bg-card shadow-lg outline-none overflow-hidden"
               {...getFloatingProps()}
+              style={{ ...floatingStyles, pointerEvents: "auto" }}
             >
               <div className="overflow-y-auto">
                 {builtInTemplates.length > 0 && (

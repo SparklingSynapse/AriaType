@@ -554,9 +554,9 @@ export function GeneralSettings({
                       <FloatingFocusManager context={colorPickerContext} modal={false}>
                         <div
                           ref={colorPickerRefs.setFloating}
-                          style={colorPickerFloatingStyles}
                           className="z-[9999] w-56 rounded-2xl border border-border bg-card p-3 shadow-lg outline-none"
                           {...getColorPickerFloatingProps()}
+                          style={{ ...colorPickerFloatingStyles, pointerEvents: "auto" }}
                         >
                           <HexColorPicker
                             color={pillBackgroundColor}

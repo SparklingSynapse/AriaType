@@ -1,7 +1,7 @@
 use crate::utils::AppPaths;
 use reqwest::Url;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -87,9 +87,52 @@ fn set_current_config(config: LocalPolishRuntimeConfig) {
 
 #[derive(Debug, Default)]
 struct LocalPolishRuntimeState {
-    child: Option<Child>,
+    child: Option<ManagedRuntimeChild>,
     model_id: Option<String>,
     last_used_at: Option<Instant>,
+}
+
+#[derive(Debug)]
+struct ManagedRuntimeChild {
+    child: Child,
+    #[cfg(windows)]
+    _shutdown_job: Option<WindowsJobHandle>,
+}
+
+impl ManagedRuntimeChild {
+    fn spawn(command: &str, args: &[String]) -> std::io::Result<Self> {
+        let mut child_command = Command::new(command);
+        child_command
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        apply_managed_runtime_process_options(&mut child_command);
+
+        let child = child_command.spawn()?;
+        Ok(attach_managed_runtime_shutdown_guard(child))
+    }
+
+    #[cfg(test)]
+    fn from_existing_child(child: Child) -> Self {
+        Self {
+            child,
+            #[cfg(windows)]
+            _shutdown_job: None,
+        }
+    }
+
+    fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
+        self.child.try_wait()
+    }
+
+    fn kill(&mut self) -> std::io::Result<()> {
+        self.child.kill()
+    }
+
+    fn wait(&mut self) -> std::io::Result<ExitStatus> {
+        self.child.wait()
+    }
 }
 
 #[derive(Debug)]
@@ -192,21 +235,15 @@ impl LocalPolishRuntimeManager {
                 );
                 validate_server_command_for_spawn(&command)?;
 
-                let child = Command::new(&command)
-                    .args(&args)
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .map_err(|e| {
-                        error!(
-                            model_id,
-                            command,
-                            error = %e,
-                            "local_polish_runtime_spawn_failed"
-                        );
-                        format!("Failed to start local polish server ({command}): {e}")
-                    })?;
+                let child = spawn_managed_runtime_child(&command, &args).map_err(|e| {
+                    error!(
+                        model_id,
+                        command,
+                        error = %e,
+                        "local_polish_runtime_spawn_failed"
+                    );
+                    format!("Failed to start local polish server ({command}): {e}")
+                })?;
 
                 state.child = Some(child);
                 state.model_id = Some(model_id.to_string());
@@ -648,6 +685,121 @@ fn has_windows_executable_extension(path: &Path) -> bool {
         })
 }
 
+fn spawn_managed_runtime_child(
+    command: &str,
+    args: &[String],
+) -> std::io::Result<ManagedRuntimeChild> {
+    ManagedRuntimeChild::spawn(command, args)
+}
+
+#[cfg(windows)]
+fn apply_managed_runtime_process_options(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    command.creation_flags(windows_create_no_window_flag());
+}
+
+#[cfg(not(windows))]
+fn apply_managed_runtime_process_options(_command: &mut Command) {}
+
+#[cfg(windows)]
+#[derive(Debug)]
+struct WindowsJobHandle(winapi::shared::ntdef::HANDLE);
+
+#[cfg(windows)]
+unsafe impl Send for WindowsJobHandle {}
+
+#[cfg(windows)]
+impl WindowsJobHandle {
+    fn create_kill_on_close() -> std::io::Result<Self> {
+        use std::mem;
+        use std::ptr;
+        use winapi::shared::minwindef::DWORD;
+        use winapi::um::jobapi2::{CreateJobObjectW, SetInformationJobObject};
+        use winapi::um::winnt::{
+            JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+
+        unsafe {
+            let handle = CreateJobObjectW(ptr::null_mut(), ptr::null());
+            if handle.is_null() {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = mem::zeroed();
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let ok = SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformation,
+                &mut limits as *mut _ as *mut _,
+                mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as DWORD,
+            );
+            if ok == 0 {
+                let error = std::io::Error::last_os_error();
+                winapi::um::handleapi::CloseHandle(handle);
+                return Err(error);
+            }
+
+            Ok(Self(handle))
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for WindowsJobHandle {
+    fn drop(&mut self) {
+        unsafe {
+            winapi::um::handleapi::CloseHandle(self.0);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn attach_managed_runtime_shutdown_guard(child: Child) -> ManagedRuntimeChild {
+    use std::os::windows::io::AsRawHandle;
+    use winapi::um::jobapi2::AssignProcessToJobObject;
+
+    match WindowsJobHandle::create_kill_on_close() {
+        Ok(job) => {
+            let assigned =
+                unsafe { AssignProcessToJobObject(job.0, child.as_raw_handle() as *mut _) } != 0;
+            if assigned {
+                info!("local_polish_runtime_job_assigned");
+                return ManagedRuntimeChild {
+                    child,
+                    _shutdown_job: Some(job),
+                };
+            }
+
+            warn!(
+                error = %std::io::Error::last_os_error(),
+                "local_polish_runtime_job_assignment_failed"
+            );
+        }
+        Err(error) => {
+            warn!(error = %error, "local_polish_runtime_job_create_failed");
+        }
+    }
+
+    ManagedRuntimeChild {
+        child,
+        _shutdown_job: None,
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_managed_runtime_shutdown_guard(child: Child) -> ManagedRuntimeChild {
+    ManagedRuntimeChild { child }
+}
+
+#[cfg(any(windows, test))]
+fn windows_create_no_window_flag() -> u32 {
+    // CREATE_NO_WINDOW prevents console-subsystem runtimes such as llama-server.exe
+    // from showing a terminal when launched by the GUI app.
+    0x0800_0000
+}
+
 fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut unique = Vec::new();
     for path in paths {
@@ -843,6 +995,25 @@ mod tests {
         format!("http://{}:{}/v1", addr.ip(), addr.port())
     }
 
+    #[cfg(unix)]
+    fn wait_for_text_file(path: &PathBuf) -> String {
+        let mut last_error = None;
+        for _ in 0..100 {
+            match std::fs::read_to_string(path) {
+                Ok(content) => return content,
+                Err(error) => {
+                    last_error = Some(error);
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+        }
+
+        panic!(
+            "timed out waiting for text file at {:?}; last error: {:?}",
+            path, last_error
+        );
+    }
+
     #[test]
     fn parses_socket_endpoint_from_base_url() {
         assert_eq!(
@@ -1035,6 +1206,11 @@ mod tests {
             "settings.json"
         )));
         assert!(!has_windows_executable_extension(Path::new("llama-server")));
+    }
+
+    #[test]
+    fn managed_windows_runtime_processes_use_hidden_console_flag() {
+        assert_eq!(windows_create_no_window_flag(), 0x0800_0000);
     }
 
     #[test]
@@ -1249,7 +1425,7 @@ mod tests {
             .ensure_ready("qwen3.5-0.8b", "Qwen3.5-0.8B-Q5_K_M.gguf")
             .unwrap();
 
-        let spawned_args = std::fs::read_to_string(args_path).unwrap();
+        let spawned_args = wait_for_text_file(&args_path);
         assert!(spawned_args.contains("--model\n"));
         assert!(spawned_args.contains("Qwen3.5-0.8B-Q5_K_M.gguf"));
         assert!(spawned_args.contains("--alias\nqwen3.5-0.8b"));
@@ -1285,7 +1461,7 @@ mod tests {
 
         {
             let mut state = manager.state.lock().unwrap();
-            state.child = Some(child);
+            state.child = Some(ManagedRuntimeChild::from_existing_child(child));
             state.model_id = Some("qwen3.5-0.8b".to_string());
             state.last_used_at = Some(Instant::now() - Duration::from_secs(120));
         }
@@ -1304,7 +1480,7 @@ mod tests {
 
         {
             let mut state = manager.state.lock().unwrap();
-            state.child = Some(child);
+            state.child = Some(ManagedRuntimeChild::from_existing_child(child));
             state.model_id = Some("qwen3.5-0.8b".to_string());
             state.last_used_at = Some(Instant::now());
         }

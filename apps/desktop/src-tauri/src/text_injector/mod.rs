@@ -9,7 +9,7 @@ pub trait TextInjector: Send + Sync {
 
 #[cfg(target_os = "macos")]
 mod macos;
-#[cfg(target_os = "windows")]
+#[cfg(any(test, target_os = "windows"))]
 mod windows;
 
 pub fn create_injector() -> Box<dyn TextInjector> {
