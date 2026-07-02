@@ -6,6 +6,8 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
+- Stt sidecar should not lanuch terminal (83863b5)
+- Llm sidecar should not lanuch terminal (165caab)
 - Select popover can not be clicked (8d7caa9)
 - Learn compact corrections safely (3f327a2)
 - Pill/tooltip position in windows (e33bf62)
