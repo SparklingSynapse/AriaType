@@ -45,8 +45,10 @@ pub enum PressedInput {
     Key(String),
 }
 
-pub fn canonicalize_hotkey_string(_input: &str) -> Result<String, String> {
-    let pattern = parse_hotkey_pattern(_input)?;
+pub fn canonicalize_hotkey_string(input: &str) -> Result<String, String> {
+    let token_order = normalize_hotkey_input_tokens(input)?;
+    let pattern = parse_hotkey_pattern(input)?;
+    validate_user_hotkey_pattern(&pattern, &token_order)?;
     Ok(pattern.canonical.clone())
 }
 
@@ -117,13 +119,16 @@ pub fn pattern_matches_state(
 
 pub fn analyze_pressed_sequence(_sequence: &[PressedInput]) -> Result<String, String> {
     let mut canonical_modifiers = BTreeSet::new();
+    let mut modifier_order = Vec::new();
     let mut key = None;
 
     for input in _sequence {
         match input {
             PressedInput::Modifier(token) => {
                 let (canonical_modifier, _) = normalize_modifier_token(token)?;
-                canonical_modifiers.insert(canonical_modifier);
+                if canonical_modifiers.insert(canonical_modifier.clone()) {
+                    modifier_order.push(canonical_modifier);
+                }
             }
             PressedInput::Key(token) => {
                 let normalized_key = normalize_key_token(token);
@@ -144,6 +149,13 @@ pub fn analyze_pressed_sequence(_sequence: &[PressedInput]) -> Result<String, St
 
     match key.as_deref() {
         None if has_fn && !has_regular_modifier => Ok("Fn".to_string()),
+        None if has_fn && has_regular_modifier && first_distinct_modifier_is_fn(&modifier_order) => {
+            Ok(build_hotkey_string(&canonical_modifiers, None))
+        }
+        None if has_fn && has_regular_modifier => Err(
+            "Fn must be pressed before Ctrl/Cmd/Alt/Shift when the shortcut has no regular key."
+                .to_string(),
+        ),
         None => Err("Modifier-only hotkey not supported. Press a key after modifiers.".to_string()),
         Some(key_token) if !has_fn && !has_regular_modifier && !is_function_key_name(key_token) => {
             Err("Single key requires a modifier (e.g., Cmd+A, Shift+Space). F1-F20 and Fn are exceptions.".to_string())
@@ -275,6 +287,21 @@ fn normalize_key_token(token: &str) -> String {
     }
 }
 
+fn normalize_hotkey_input_tokens(input: &str) -> Result<Vec<PressedInput>, String> {
+    input
+        .split('+')
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(|token| {
+            if let Ok((canonical_modifier, _)) = normalize_modifier_token(token) {
+                Ok(PressedInput::Modifier(canonical_modifier))
+            } else {
+                Ok(PressedInput::Key(normalize_key_token(token)))
+            }
+        })
+        .collect()
+}
+
 fn normalize_modifier_token(token: &str) -> Result<(String, SideRequirement), String> {
     let lowered = token.trim().to_ascii_lowercase();
     match lowered.as_str() {
@@ -305,6 +332,47 @@ fn normalize_modifier_token(token: &str) -> Result<(String, SideRequirement), St
     }
 }
 
+fn validate_user_hotkey_pattern(
+    pattern: &HotkeyPattern,
+    token_order: &[PressedInput],
+) -> Result<(), String> {
+    let has_regular_modifier = pattern.ctrl.is_some()
+        || pattern.opt.is_some()
+        || pattern.shift.is_some()
+        || pattern.cmd.is_some();
+
+    match pattern.key.as_deref() {
+        None if pattern.function && !has_regular_modifier => Ok(()),
+        None if pattern.function && has_regular_modifier && first_input_modifier_is_fn(token_order) => {
+            Ok(())
+        }
+        None if pattern.function && has_regular_modifier => Err(
+            "Fn must come before Ctrl/Cmd/Alt/Shift when the shortcut has no regular key."
+                .to_string(),
+        ),
+        None => Err("Modifier-only hotkey not supported. Press a key after modifiers.".to_string()),
+        Some(key_token)
+            if !pattern.function && !has_regular_modifier && !is_function_key_name(key_token) =>
+        {
+            Err("Single key requires a modifier (e.g., Cmd+A, Shift+Space). F1-F20 and Fn are exceptions.".to_string())
+        }
+        Some(_) => Ok(()),
+    }
+}
+
+fn first_input_modifier_is_fn(token_order: &[PressedInput]) -> bool {
+    token_order.iter().find_map(|token| match token {
+        PressedInput::Modifier(modifier) => Some(modifier.as_str()),
+        PressedInput::Key(_) => None,
+    }) == Some("Fn")
+}
+
+fn first_distinct_modifier_is_fn(modifier_order: &[String]) -> bool {
+    modifier_order
+        .first()
+        .is_some_and(|modifier| modifier == "Fn")
+}
+
 fn ordered_modifier_tokens(tokens: &BTreeSet<String>) -> Vec<String> {
     let mut ordered = Vec::new();
     for group in ["Ctrl", "Opt", "Shift", "Cmd", "Fn"] {
@@ -317,8 +385,29 @@ fn ordered_modifier_tokens(tokens: &BTreeSet<String>) -> Vec<String> {
     ordered
 }
 
+fn ordered_fn_chord_modifier_tokens(tokens: &BTreeSet<String>) -> Vec<String> {
+    let mut ordered = Vec::new();
+    if tokens.contains("Fn") {
+        ordered.push("Fn".to_string());
+    }
+    for group in ["Ctrl", "Opt", "Shift", "Cmd"] {
+        for token in tokens {
+            if token.starts_with(group) {
+                ordered.push(token.clone());
+            }
+        }
+    }
+    ordered
+}
+
 fn build_hotkey_string(modifiers: &BTreeSet<String>, key: Option<&str>) -> String {
-    let mut parts = ordered_modifier_tokens(modifiers);
+    let has_fn_modifier_chord =
+        key.is_none() && modifiers.contains("Fn") && modifiers.iter().any(|token| token != "Fn");
+    let mut parts = if has_fn_modifier_chord {
+        ordered_fn_chord_modifier_tokens(modifiers)
+    } else {
+        ordered_modifier_tokens(modifiers)
+    };
     if let Some(key_token) = key {
         parts.push(key_token.to_string());
     }
@@ -372,6 +461,18 @@ mod tests {
     }
 
     #[test]
+    fn canonicalizes_fn_plus_regular_modifier_chord() {
+        let canonical = canonicalize_hotkey_string("fn+ctrl").unwrap();
+        assert_eq!(canonical, "Fn+Ctrl");
+    }
+
+    #[test]
+    fn rejects_regular_modifier_followed_by_fn_as_terminal_key() {
+        let error = canonicalize_hotkey_string("ctrl+fn").unwrap_err();
+        assert!(error.contains("Fn must come before"));
+    }
+
+    #[test]
     fn generic_modifier_binding_matches_either_side() {
         let pattern = parse_hotkey_pattern("Cmd+Slash").unwrap();
 
@@ -409,6 +510,36 @@ mod tests {
     fn analyzes_fn_only_capture() {
         let hotkey = analyze_pressed_sequence(&[PressedInput::Modifier("Fn".to_string())]).unwrap();
         assert_eq!(hotkey, "Fn");
+    }
+
+    #[test]
+    fn analyzes_fn_plus_regular_modifier_capture() {
+        let hotkey = analyze_pressed_sequence(&[
+            PressedInput::Modifier("Fn".to_string()),
+            PressedInput::Modifier("CtrlLeft".to_string()),
+        ])
+        .unwrap();
+
+        assert_eq!(hotkey, "Fn+CtrlLeft");
+    }
+
+    #[test]
+    fn rejects_regular_modifier_only_capture() {
+        let error = analyze_pressed_sequence(&[PressedInput::Modifier("CtrlLeft".to_string())])
+            .unwrap_err();
+
+        assert!(error.contains("Modifier-only"));
+    }
+
+    #[test]
+    fn rejects_regular_modifier_then_fn_capture_without_regular_key() {
+        let error = analyze_pressed_sequence(&[
+            PressedInput::Modifier("CtrlLeft".to_string()),
+            PressedInput::Modifier("Fn".to_string()),
+        ])
+        .unwrap_err();
+
+        assert!(error.contains("Fn must be pressed before"));
     }
 
     #[test]
