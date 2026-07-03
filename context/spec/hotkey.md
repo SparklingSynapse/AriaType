@@ -53,9 +53,10 @@ In hold mode, Enter must also work while the user is still holding the shortcut 
 | `F1-F20` alone | ✅ | Function keys, not prone to accidental triggers |
 | Modifier + single key | ✅ | Standard combination (e.g., `Cmd+A`, `Shift+Space`) |
 | Multiple modifiers + single key | ✅ | Complex combination (e.g., `Cmd+Shift+A`) |
-| `Fn` as modifier + key | ✅ | `Fn` with another key (e.g., `Fn+Space`) |
+| `Fn` as modifier + key | ✅ | `Fn` with any following key except `Fn` itself (e.g., `Fn+Space`, `Fn+Ctrl`) |
 | Single non-F key alone | ❌ | Requires modifier to prevent accidental triggers |
-| Modifier-only | ❌ | System limitation — global shortcuts need a key |
+| Regular modifier-only | ❌ | `Ctrl`, `Cmd`, `Opt`, and `Shift` cannot be complete shortcuts by themselves |
+| Regular modifier + `Fn` as terminal key | ❌ | `Fn` is the shortcut anchor, not the following key (use `Fn+Ctrl`, not `Ctrl+Fn`) |
 | Multiple keys | ❌ | System limitation — only one non-modifier key supported |
 
 ### Side-Specific Modifiers
@@ -150,15 +151,17 @@ This means pressing the registered hotkey during capture:
 
 ## Backend Analysis Logic
 
-### `listener.rs:analyze_sequence`
+### `hotkey_codec.rs:analyze_pressed_sequence`
 
 ```rust
 // 1. Separate modifiers and actual keys
 // 2. Validate:
 //    - FN alone → valid
+//    - FN + regular modifier key → valid (for example Fn+Ctrl)
 //    - F1-F20 alone → valid
 //    - Single non-F key without modifier → invalid
-//    - Modifier-only → invalid
+//    - Regular modifier-only → invalid
+//    - Regular modifier + FN with no regular key → invalid
 //    - Multiple non-modifier keys → invalid
 // 3. Build hotkey string: modifiers (standard order) + key
 // 4. Handle side-specific modifiers (CmdLeft, CmdRight, etc.)
@@ -227,7 +230,8 @@ Implementation: `handy_keys::HotkeyManager` intercepts at kernel level on macOS,
 
 | Component | File |
 |-----------|------|
-| Backend capture listener | `apps/desktop/src-tauri/src/shortcut/listener.rs` |
+| Backend hotkey analysis | `apps/desktop/src-tauri/src/shortcut/hotkey_codec.rs` |
+| Backend runtime matcher | `apps/desktop/src-tauri/src/shortcut/matcher.rs` |
 | Backend registration manager | `apps/desktop/src-tauri/src/shortcut/manager.rs` |
 | Backend IPC commands | `apps/desktop/src-tauri/src/commands/hotkey.rs` |
 | Frontend UI | `apps/desktop/src/components/ui/hotkey-input.tsx` |
@@ -296,14 +300,16 @@ Errors are emitted via `SHORTCUT_REGISTRATION_FAILED` event when registration fa
 
 ## Test Coverage
 
-Backend tests: 19 tests in `listener.rs::tests`
+Backend tests cover hotkey codec, runtime matcher, manager, and platform helper behavior.
 
 - Fn alone valid
+- Fn + regular modifier valid (Fn+Ctrl, Fn+Cmd)
 - F-key alone valid (F1, F12, F20)
 - Side-specific modifier + key valid (CmdRight+Slash, CmdLeft+A)
 - Single key without modifier invalid
 - Space without modifier invalid
 - Modifier-only invalid
+- Regular modifier followed by Fn without a regular key invalid
 - Multiple modifiers-only invalid
 - Modifier + key valid
 - Multiple modifiers + key valid
