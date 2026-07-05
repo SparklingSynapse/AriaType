@@ -12,7 +12,7 @@ test('desktop unsigned mac build script merges in-house and unsigned configs', (
 
   assert.equal(
     packageJson.scripts['tauri:build:mac:unsigned'],
-    'node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --config src-tauri/tauri.runtime.generated.conf.json && pnpm copy-installer'
+    'node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --config src-tauri/tauri.runtime.generated.conf.json'
   );
 });
 

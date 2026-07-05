@@ -6,4 +6,5 @@ pub mod permissions;
 pub mod settings;
 pub mod system;
 pub mod text;
+pub mod updater;
 pub mod window;

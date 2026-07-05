@@ -14,7 +14,7 @@
     "version:major": "pnpm --filter @ariatype/desktop version:major",
     "prepare": "simple-git-hooks",
     "dev": "npm run tauri:dev",
-    "build": "npm run tauri:build:mac",
+    "build": "node scripts/build-all.mjs",
     "build:unsigned": "npm run tauri:build:mac:unsigned",
     "build:all": "node scripts/build-all.mjs",
     "build:all:unsigned": "node scripts/build-all.mjs --unsigned",
@@ -28,7 +28,7 @@
     "release:local": "pnpm tauri:build:mac && pnpm build:website",
     "release:local:universal": "pnpm tauri:build:mac-universal && pnpm build:website",
     "dev:website": "pnpm --filter @ariatype/website dev",
-    "build:website": "pnpm --filter @ariatype/website build && node scripts/sync-website-export.mjs",
+    "build:website": "npm run build --prefix packages/website && node scripts/sync-website-export.mjs",
     "e2e": "pnpm --filter @ariatype/desktop run test:e2e",
     "test:e2e": "pnpm --filter @ariatype/desktop run test:e2e"
   },

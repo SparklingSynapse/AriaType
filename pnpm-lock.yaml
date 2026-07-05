@@ -84,9 +84,6 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
-      compare-versions:
-        specifier: ^6.1.1
-        version: 6.1.1
       framer-motion:
         specifier: ^11.18.0
         version: 11.18.2(react-dom@19.2.4)(react@19.2.4)
@@ -3165,10 +3162,6 @@ packages:
       array-ify: 1.0.0
       dot-prop: 5.3.0
     dev: true
-
-  /compare-versions@6.1.1:
-    resolution: {integrity: sha512-4hm4VPpIecmlg59CHXnRDnqGplJFrbLG4aFEl5vl6cK1u76ws3LLvX7ikFnTDl5vo39sjWD6AaDPYodJp/NNHg==}
-    dev: false
 
   /config-chain@1.1.13:
     resolution: {integrity: sha512-qj+f8APARXHrM0hraqXYb2/bOVSV4PvJQlNZ/DVj0QrmNM2q2euizkeuVckQ57J+W0mRH6Hvi+k50M4Jul2VRQ==}
