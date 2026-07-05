@@ -9,12 +9,12 @@ env:
   LLAMA_CPP_RELEASE_TAG: b9568
 
 # Builds macOS and Windows installers in parallel, publishes them to the
-# public releases repo (ariatype/releases), then deploys the website.
+# GitHub release for this repository, then deploys the website with download
+# links pointing to GitHub Releases.
 #
 # Required secrets:
 #   CLOUDFLARE_API_TOKEN      — Cloudflare API token (Pages deploy)
 #   CLOUDFLARE_ACCOUNT_ID     — Cloudflare account ID
-#   RELEASES_REPO_TOKEN       — GitHub PAT with `repo` scope on the public releases repo
 #   HOMEBREW_TAP_TOKEN        — GitHub PAT with `repo` scope on ariatype/homebrew-ariatype
 #   APPLE_CERTIFICATE         — base64-encoded Developer ID Application .p12
 #   APPLE_CERTIFICATE_PASSWORD — password used when exporting the .p12
@@ -22,6 +22,9 @@ env:
 #   APPLE_ID                  — Apple ID email
 #   APPLE_PASSWORD            — App-Specific Password from appleid.apple.com
 #   APPLE_TEAM_ID             — 10-character Team ID
+#   TAURI_SIGNING_PRIVATE_KEY — Tauri updater private signing key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — Optional password for the Tauri updater private key
+#   TAURI_UPDATER_PUBKEY      — Public key embedded in the app for update signature checks
 
 jobs:
   # ── macOS ──────────────────────────────────────────────────────────────────
@@ -88,21 +91,22 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
           ARIATYPE_REQUIRE_LOCAL_POLISH_RUNTIME: "1"
         run: pnpm tauri:build:mac-universal
 
       - name: Verify bundled local polish runtimes
         run: node scripts/verify-tauri-runtime-resources.mjs --platform macos --smoke --smoke-timeout-ms 30000
 
-      - name: Collect DMG
-        run: |
-          DMG=$(find apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" | head -1)
-          echo "DMG_PATH=$DMG" >> $GITHUB_ENV
-
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg
-          path: ${{ env.DMG_PATH }}
+          name: macos-release-assets
+          path: |
+            apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           retention-days: 1
 
   # ── Windows ────────────────────────────────────────────────────────────────
@@ -149,6 +153,9 @@ jobs:
       - name: Build Windows NSIS installer
         working-directory: apps/desktop
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
           ARIATYPE_REQUIRE_LOCAL_POLISH_RUNTIME: "1"
         run: pnpm tauri:build:win
 
@@ -156,16 +163,16 @@ jobs:
         shell: bash
         run: node scripts/verify-tauri-runtime-resources.mjs --platform windows --smoke --smoke-timeout-ms 30000
 
-      - name: Collect installer
-        shell: bash
-        run: |
-          EXE=$(find apps/desktop/src-tauri/target/release/bundle/nsis -name "*.exe" | head -1)
-          echo "EXE_PATH=$EXE" >> $GITHUB_ENV
-
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-exe
-          path: ${{ env.EXE_PATH }}
+          name: windows-release-assets
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.nsis.zip
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi.zip
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi.zip.sig
           retention-days: 1
 
   # ── Publish ────────────────────────────────────────────────────────────────
@@ -173,7 +180,7 @@ jobs:
     needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       deployments: write
 
     steps:
@@ -195,24 +202,35 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: macos-dmg
+          name: macos-release-assets
           path: dist/
 
       - uses: actions/download-artifact@v4
         with:
-          name: windows-exe
+          name: windows-release-assets
           path: dist/
 
-      # Publish installers to the public releases-only repo.
-      # This repo contains no source code — only release assets.
-      - name: Create release on public releases repo
+      - name: Generate GitHub release manifests
+        run: |
+          git log -1 --pretty=%B > /tmp/ariatype-release-notes.md
+          node scripts/generate-release-manifests.mjs \
+            --release-dir dist \
+            --version "${{ env.VERSION }}" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}" \
+            --notes-file /tmp/ariatype-release-notes.md \
+            --require-updater \
+            --require-updater-platform darwin-aarch64 \
+            --require-updater-platform darwin-x86_64 \
+            --require-updater-platform windows-x86_64
+
+      - name: Create release on GitHub
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh release create v${{ env.VERSION }} dist/* \
-            --repo ariatype/releases \
+            --repo ${{ github.repository }} \
             --title "AriaType v${{ env.VERSION }}" \
-            --notes "$(git log -1 --pretty=%B)"
+            --notes-file /tmp/ariatype-release-notes.md
 
       # Update Homebrew Cask formula in ariatype/homebrew-ariatype tap.
       # The tap repo must contain Casks/ariatype.rb with version/sha256 placeholders.
@@ -235,25 +253,6 @@ jobs:
           git add Casks/ariatype.rb
           git commit -m "Update AriaType to ${VERSION}"
           git push
-
-      - name: Copy installers to website public/release
-        run: |
-          mkdir -p packages/website/public/release
-          cp dist/* packages/website/public/release/
-
-      - name: Generate release/latest.json
-        run: |
-          DMG=$(find dist -name "*.dmg" | head -1)
-          DMG_NAME=$(basename "$DMG")
-          NOTES=$(git log -1 --pretty=%B)
-          cat > packages/website/public/release/latest.json <<EOF
-          {
-            "version": "${{ env.VERSION }}",
-            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "notes": $(echo "$NOTES" | jq -Rs .),
-            "url": "https://ariatype.com/release/${DMG_NAME}"
-          }
-          EOF
 
       - name: Build website
         run: pnpm --filter @ariatype/website build

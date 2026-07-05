@@ -28,8 +28,8 @@
 |----------|-------|-------|
 | `APP_VERSION` | `'1.0.0'` | Version display |
 | `APP_NAME` | `'AriaType'` | App name display |
-| `UPDATE_CHECK_URL` | `ariatype.com/releases/latest.json` | Update API |
-| `DOWNLOAD_URL` | `ariatype.com/downloads` | Download page |
+| `GITHUB_RELEASES_URL` | `github.com/joe223/AriaType/releases` | GitHub Releases index |
+| `DOWNLOAD_URL` | `github.com/joe223/AriaType/releases/latest` | Download fallback page |
 
 ---
 

@@ -1,17 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { systemCommands } from "@/lib/tauri";
-import { getVersion } from "@tauri-apps/api/app";
-import { UPDATE_CHECK_URL } from "@ariatype/shared";
-import { compareVersions, validate } from "compare-versions";
-import { logger } from "@/lib/logger";
-
-function isNewerVersion(latest: string, current: string): boolean {
-  if (!validate(latest) || !validate(current)) {
-    logger.warn("invalid_version_format", { latest, current });
-    return false;
-  }
-  return compareVersions(latest, current) > 0;
-}
+import { checkAppUpdate } from "@/lib/updateCheck";
 
 export interface NavBadges {
   permission: boolean;
@@ -36,13 +25,8 @@ export function useNavBadges(): NavBadges {
 
   const checkUpdate = useCallback(async () => {
     try {
-      const [response, appVersion] = await Promise.all([
-        fetch(UPDATE_CHECK_URL),
-        getVersion(),
-      ]);
-      if (!response.ok) return;
-      const data = await response.json();
-      setAboutBadge(!!data.version && isNewerVersion(data.version, appVersion));
+      const result = await checkAppUpdate();
+      setAboutBadge(Boolean(result.update));
     } catch {
       // ignore
     }

@@ -27,7 +27,7 @@ export function HomeDownloadButton({ lang , className}: HomeDownloadButtonProps)
     });
   };
 
-  // If we have a release and user is on Mac, show direct download
+  // Send downloads to GitHub Releases so website deployments do not host installers.
   if (canDirectDownload && downloadUrl) {
     return (
       <a
