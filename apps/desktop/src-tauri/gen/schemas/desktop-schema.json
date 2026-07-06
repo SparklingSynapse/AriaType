@@ -2445,24 +2445,6 @@
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the Playwright testing plugin\n#### This default permission set includes:\n\n- `allow-pw-result`",
-          "type": "string",
-          "const": "playwright:default",
-          "markdownDescription": "Default permissions for the Playwright testing plugin\n#### This default permission set includes:\n\n- `allow-pw-result`"
-        },
-        {
-          "description": "Enables the pw_result command without any pre-configured scope.",
-          "type": "string",
-          "const": "playwright:allow-pw-result",
-          "markdownDescription": "Enables the pw_result command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the pw_result command without any pre-configured scope.",
-          "type": "string",
-          "const": "playwright:deny-pw-result",
-          "markdownDescription": "Denies the pw_result command without any pre-configured scope."
-        },
-        {
           "description": "This permission set configures which\nprocess features are by default exposed.\n\n#### Granted Permissions\n\nThis enables to quit via `allow-exit` and restart via `allow-restart`\nthe application.\n\n#### This default permission set includes:\n\n- `allow-exit`\n- `allow-restart`",
           "type": "string",
           "const": "process:default",
