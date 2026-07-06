@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { logger } from "./logger";
 
@@ -85,6 +85,29 @@ export interface RetryErrorEvent {
   error: string;
   task_id: number;
 }
+
+export interface AppUpdateInfo {
+  version: string;
+  currentVersion: string;
+}
+
+export type UpdateInstallEvent =
+  | {
+      event: "started";
+      data: {
+        contentLength?: number | null;
+      };
+    }
+  | {
+      event: "progress";
+      data: {
+        downloaded: number;
+        contentLength?: number | null;
+      };
+    }
+  | {
+      event: "finished";
+    };
 
 export interface CloudProviderConfig {
   enabled: boolean;
@@ -365,6 +388,12 @@ checkPermission: (kind: "accessibility" | "input_monitoring" | "microphone" | "s
   getLogContent: (lines: number) => invokeWithLogging<string>("get_log_content", { lines }),
   openLogFolder: () => invokeWithLogging("open_log_folder"),
   getPlatform: () => invokeWithLogging<"macos" | "windows" | "linux" | "unknown">("get_platform"),
+};
+
+export const updateCommands = {
+  check: () => invokeWithLogging<AppUpdateInfo | null>("check_for_update"),
+  install: (onEvent: Channel<UpdateInstallEvent>) =>
+    invokeWithLogging<void>("install_update", { onEvent }),
 };
 
 export const transcribeCommands = {

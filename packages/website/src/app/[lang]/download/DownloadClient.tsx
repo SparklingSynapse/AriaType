@@ -18,7 +18,6 @@ const transition = {
 type DownloadOption = {
   label: string;
   url: string;
-  recommended?: boolean;
 };
 
 function SectionLabel({ children }: { children: string }) {
@@ -32,31 +31,20 @@ function SectionLabel({ children }: { children: string }) {
 function DownloadOptionRow({
   option,
   onClick,
-  recommendedLabel,
 }: {
   option: DownloadOption;
   onClick: () => void;
-  recommendedLabel: string;
 }) {
   return (
     <a
       href={option.url}
       onClick={onClick}
-      className={`group flex items-center justify-between gap-4 rounded-2xl px-4 py-4 text-left transition-colors ${
-        option.recommended
-          ? "bg-foreground/[0.035] hover:bg-foreground/[0.05]"
-          : "hover:bg-foreground/[0.025]"
-      }`}
+      className="group flex items-center justify-between gap-4 rounded-2xl px-4 py-4 text-left transition-colors hover:bg-foreground/[0.025]"
     >
       <span className="flex min-w-0 items-center gap-3">
         <span className="min-w-0 font-medium text-foreground">
           {option.label}
         </span>
-        {option.recommended && (
-          <span className="rounded-full bg-background px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-foreground/80">
-            {recommendedLabel}
-          </span>
-        )}
       </span>
       <Download className="h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-y-[1px]" />
     </a>
@@ -69,7 +57,6 @@ function PlatformBlock({
   requirements,
   options,
   emptyText,
-  recommendedLabel,
   onTrack,
 }: {
   title: string;
@@ -77,7 +64,6 @@ function PlatformBlock({
   requirements: string;
   options: DownloadOption[];
   emptyText: string;
-  recommendedLabel: string;
   onTrack: (url: string) => void;
 }) {
   return (
@@ -101,7 +87,6 @@ function PlatformBlock({
               key={option.url}
               option={option}
               onClick={() => onTrack(option.url)}
-              recommendedLabel={recommendedLabel}
             />
           ))
         ) : (
@@ -115,88 +100,36 @@ function PlatformBlock({
 }
 
 export default function DownloadClient() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const {
     release,
     loading,
     unavailable,
     platform,
-    defaultMacUrl,
     trackDownload,
   } = useDownload("download_page");
-  const macUniversalUrl = release?.platforms?.mac?.universal || "";
-  const macArmUrl = release?.platforms?.mac?.aarch64 || "";
-  const macIntelUrl = release?.platforms?.mac?.x86_64 || "";
-  const macOptions = [
-    {
-      label: t("download.universal"),
-      url: macUniversalUrl,
-      recommended: macUniversalUrl === defaultMacUrl,
-    },
-    {
-      label: t("download.macArm"),
-      url: macArmUrl,
-      recommended: macArmUrl === defaultMacUrl,
-    },
-    {
-      label: t("download.macIntel"),
-      url: macIntelUrl,
-      recommended: macIntelUrl === defaultMacUrl,
-    },
-  ].filter((item) => item.url);
-  const windowsExeUrl = release?.platforms?.windows?.exe || "";
-  const windowsMsiUrl = release?.platforms?.windows?.msi || "";
-  const windowsOptions = [
-    { label: t("download.windowsExe"), url: windowsExeUrl },
-    { label: t("download.windowsMsi"), url: windowsMsiUrl },
-  ].filter((item) => item.url);
-  const recommendedMacOption =
-    macOptions.find((item) => item.recommended) ?? macOptions[0];
-  const recommendedWindowsOption = windowsOptions[0];
-  const primaryDownloadOption =
-    platform === "mac"
-      ? recommendedMacOption
-      : platform === "win"
-        ? recommendedWindowsOption
-        : (recommendedMacOption ?? recommendedWindowsOption);
+  const releasePageOption: DownloadOption = {
+    label: t("download.primaryCtaGithub"),
+    url: release.url,
+  };
+  const macOptions: DownloadOption[] = [
+    { ...releasePageOption, label: t("download.githubReleaseMac") },
+  ];
+  const windowsOptions: DownloadOption[] = [
+    { ...releasePageOption, label: t("download.githubReleaseWindows") },
+  ];
   const requirementsNote =
     platform === "win"
       ? t("download.requirementsWin")
       : t("download.requirementsMac");
+  const currentVersionFact = release?.version
+    ? `${t("download.currentVersion")}: v${release.version}`
+    : null;
   const topFacts = [
     t("download.subtitle"),
-    release ? `${t("download.currentVersion")}: v${release.version}` : null,
+    currentVersionFact,
     requirementsNote,
   ].filter(Boolean);
-  const primaryButtonLabel = (() => {
-    if (!primaryDownloadOption) {
-      return t("download.primaryCta");
-    }
-
-    if (primaryDownloadOption.url === macArmUrl) {
-      return t("download.primaryCtaMacArm");
-    }
-
-    if (primaryDownloadOption.url === macIntelUrl) {
-      return t("download.primaryCtaMacIntel");
-    }
-
-    if (primaryDownloadOption.url === macUniversalUrl) {
-      return t("download.primaryCtaMacUniversal");
-    }
-
-    if (primaryDownloadOption.url === windowsExeUrl) {
-      return t("download.primaryCtaWindowsExe");
-    }
-
-    if (primaryDownloadOption.url === windowsMsiUrl) {
-      return t("download.primaryCtaWindowsMsi");
-    }
-
-    return i18n.language.startsWith("zh")
-      ? `${t("download.primaryCta")}${primaryDownloadOption.label}`
-      : `${t("download.primaryCta")} ${primaryDownloadOption.label}`;
-  })();
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(120,113,108,0.08),transparent_42%)]">
@@ -255,14 +188,14 @@ export default function DownloadClient() {
                 </div>
               )}
 
-              {!loading && release && primaryDownloadOption && (
+              {!loading && release && (
                 <div className="flex min-h-40 items-center justify-center">
                   <a
-                    href={primaryDownloadOption.url}
-                    onClick={() => trackDownload(primaryDownloadOption.url)}
+                    href={releasePageOption.url}
+                    onClick={() => trackDownload(releasePageOption.url)}
                     className="inline-flex min-h-14 items-center justify-center gap-3 rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                   >
-                    <span>{primaryButtonLabel}</span>
+                    <span>{releasePageOption.label}</span>
                     <Download className="h-4 w-4 flex-shrink-0" />
                   </a>
                 </div>
@@ -297,19 +230,8 @@ export default function DownloadClient() {
                   title={t("download.macos")}
                   description={t("download.platformMacDescription")}
                   requirements={t("download.requirementsMac")}
-                  options={
-                    macOptions.length > 0
-                      ? macOptions
-                      : [
-                          {
-                            label: t("download.macos"),
-                            url: release.url,
-                            recommended: platform === "mac",
-                          },
-                        ]
-                  }
+                  options={macOptions}
                   emptyText={t("download.comingSoon")}
-                  recommendedLabel={t("download.recommendedBadge")}
                   onTrack={trackDownload}
                 />
                 <PlatformBlock
@@ -318,7 +240,6 @@ export default function DownloadClient() {
                   requirements={t("download.requirementsWin")}
                   options={windowsOptions}
                   emptyText={t("download.comingSoon")}
-                  recommendedLabel={t("download.recommendedBadge")}
                   onTrack={trackDownload}
                 />
               </div>

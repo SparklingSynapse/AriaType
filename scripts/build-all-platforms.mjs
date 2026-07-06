@@ -2,18 +2,21 @@
 /**
  * Build AriaType for all platforms: macOS (ARM + Intel) and Windows.
  *
+ * Root release build:
+ *   npm run build                     # Desktop all platforms, then website
+ *
  * Usage:
- *   pnpm build:all                    # Build all platforms
+ *   pnpm build:all                    # Build desktop for all supported platforms
  *   pnpm build:all --skip-mac-arm     # Skip macOS ARM
  *   pnpm build:all --skip-mac-intel   # Skip macOS Intel
  *   pnpm build:all --skip-win         # Skip Windows
  *   pnpm build:all --unsigned         # Build unsigned (no signing)
- *   pnpm build:all --cross-win        # Cross-compile Windows from macOS/Linux
+ *   pnpm build:all --cross-win        # Explicitly cross-compile Windows from macOS/Linux
  *
  * Cross-compilation notes:
  *   - Windows builds require either:
  *     a) Running on Windows (native)
- *     b) --cross-win flag with cargo-xwin installed
+ *     b) Non-Windows host with cargo-xwin installed (default unless --skip-win)
  *   - Cross-compilation requirements:
  *     brew install ninja llvm nsis
  *     cargo install cargo-xwin
@@ -24,15 +27,19 @@ import { basename, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { platform } from 'os';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import {
   WINDOWS_NATIVE_BUILD_COMMAND,
   WINDOWS_CROSS_BUILD_COMMAND,
+  WINDOWS_CROSS_UNSIGNED_BUILD_COMMAND,
   checkRequiredBuildTools,
   createDmgTraceCommand,
   detachRepoDmgMounts,
   findLastBundledDmgPath,
   runCommand,
+  WINDOWS_NATIVE_UNSIGNED_BUILD_COMMAND,
+  collectReleaseAssetsFromTarget,
+  createBundleArtifactPreserver,
   windowsCrossBuildEnv,
 } from './build-all-platforms-lib.mjs';
 
@@ -44,13 +51,12 @@ const skipMacArm = args.includes('--skip-mac-arm');
 const skipMacIntel = args.includes('--skip-mac-intel');
 const skipWin = args.includes('--skip-win');
 const unsigned = args.includes('--unsigned');
-const crossWin = args.includes('--cross-win');
 
 const hostPlatform = platform();
 const isMacOS = hostPlatform === 'darwin';
 const isWindows = hostPlatform === 'win32';
+const crossWin = args.includes('--cross-win') || (!skipWin && !isWindows);
 
-// Cross-compilation requires --cross-win flag on non-Windows hosts
 const canCrossCompile = crossWin && !isWindows;
 const autoSkipWin = skipWin || (!isWindows && !crossWin);
 const autoSkipMacArm = skipMacArm || !isMacOS;
@@ -58,8 +64,12 @@ const autoSkipMacIntel = skipMacIntel || !isMacOS;
 
 const desktopDir = resolve(root, 'apps/desktop');
 const tauriTargetDir = resolve(desktopDir, 'src-tauri/target');
+const githubReleaseDir = resolve(tauriTargetDir, 'release/github-release');
 const buildDiagnosticsDir = resolve(desktopDir, '.build-diagnostics');
 const runtimeConfig = 'src-tauri/tauri.runtime.generated.conf.json';
+const updaterConfig = 'src-tauri/tauri.updater.conf.json';
+const signedTauriBuildCommand = 'node ../../scripts/run-tauri-build-with-updater-signing.mjs --';
+const tauriBuildCommand = 'npm run tauri -- build';
 
 function ninjaInstallHint() {
   if (isMacOS) {
@@ -79,6 +89,11 @@ function requiredBuildTools() {
   const tools = [];
 
   if (canCrossCompile) {
+    tools.push({
+      command: 'cargo xwin',
+      description: 'cargo-xwin (required by Windows cross builds)',
+      installHint: 'cargo install cargo-xwin',
+    });
     tools.push({
       command: 'ninja',
       description: 'Ninja (required by Windows cargo-xwin builds)',
@@ -144,6 +159,47 @@ function createDiagnosticDir(targetTriple) {
 function writeDiagnosticFile(diagnosticsDir, name, content) {
   const text = String(content);
   writeFileSync(resolve(diagnosticsDir, name), text.endsWith('\n') ? text : `${text}\n`);
+}
+
+function desktopVersion() {
+  return JSON.parse(readFileSync(resolve(desktopDir, 'package.json'), 'utf8')).version;
+}
+
+function requiredUpdaterPlatforms(results) {
+  const required = [];
+  for (const result of results) {
+    if (!result.success) continue;
+    if (result.platform === 'macOS ARM (Apple Silicon)') required.push('darwin-aarch64');
+    if (result.platform === 'macOS Intel (x64)') required.push('darwin-x86_64');
+    if (result.platform === 'Windows') required.push('windows-x86_64');
+  }
+  return required;
+}
+
+function generateGithubReleaseAssets(results) {
+  const version = desktopVersion();
+  const copiedAssets = collectReleaseAssetsFromTarget({
+    targetDir: tauriTargetDir,
+    releaseDir: githubReleaseDir,
+    version,
+  });
+  const requiredPlatforms = requiredUpdaterPlatforms(results);
+  const args = [
+    'scripts/generate-release-manifests.mjs',
+    '--release-dir',
+    githubReleaseDir,
+    '--version',
+    version,
+    '--base-url',
+    `https://github.com/joe223/AriaType/releases/download/v${version}`,
+    '--require-updater',
+  ];
+  for (const platform of requiredPlatforms) {
+    args.push('--require-updater-platform', platform);
+  }
+
+  execFileSync(process.execPath, args, { cwd: root, stdio: 'inherit' });
+  return copiedAssets;
 }
 
 function prepareMacBuildDiagnostics(targetTriple, command) {
@@ -280,6 +336,7 @@ if (!checkRequiredBuildTools(requiredBuildTools())) {
 }
 
 const results = [];
+const bundleArtifactPreserver = createBundleArtifactPreserver({ targetDir: tauriTargetDir });
 
 // macOS ARM (Apple Silicon)
 if (!autoSkipMacArm) {
@@ -287,8 +344,8 @@ if (!autoSkipMacArm) {
   detachRepoDmgMounts({ repoRoot: root });
 
   const cmd = unsigned
-    ? `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --config ${runtimeConfig} --target aarch64-apple-darwin`
-    : `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && node ../../scripts/sign-macos-binaries.mjs && pnpm tauri build --config src-tauri/tauri.macos.conf.json --config ${runtimeConfig} --target aarch64-apple-darwin`;
+    ? `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD ${tauriBuildCommand} --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --config ${runtimeConfig} --target aarch64-apple-darwin`
+    : `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && node ../../scripts/sign-macos-binaries.mjs && ${signedTauriBuildCommand} ${tauriBuildCommand} --config src-tauri/tauri.macos.conf.json --config ${updaterConfig} --config ${runtimeConfig} --target aarch64-apple-darwin`;
   const diagnosticsDir = prepareMacBuildDiagnostics('aarch64-apple-darwin', cmd);
 
   const success = runCommand(cmd, 'Building macOS ARM', {
@@ -301,10 +358,7 @@ if (!autoSkipMacArm) {
     },
   });
   if (success) {
-    runCommand('pnpm copy-installer', 'Copying macOS ARM installer', {
-      cwd: desktopDir,
-      env: { ...process.env },
-    });
+    bundleArtifactPreserver.preserve('aarch64-apple-darwin');
   }
   results.push({
     platform: 'macOS ARM (Apple Silicon)',
@@ -321,8 +375,8 @@ if (!autoSkipMacIntel) {
   detachRepoDmgMounts({ repoRoot: root });
 
   const cmd = unsigned
-    ? `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD pnpm tauri build --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --config ${runtimeConfig} --target x86_64-apple-darwin`
-    : `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && node ../../scripts/sign-macos-binaries.mjs && pnpm tauri build --config src-tauri/tauri.macos.conf.json --config ${runtimeConfig} --target x86_64-apple-darwin`;
+    ? `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && env -u APPLE_SIGNING_IDENTITY -u APPLE_TEAM_ID -u APPLE_ID -u APPLE_PASSWORD ${tauriBuildCommand} --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.macos.unsigned.conf.json --config ${runtimeConfig} --target x86_64-apple-darwin`
+    : `node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && node ../../scripts/sign-macos-binaries.mjs && ${signedTauriBuildCommand} ${tauriBuildCommand} --config src-tauri/tauri.macos.conf.json --config ${updaterConfig} --config ${runtimeConfig} --target x86_64-apple-darwin`;
   const diagnosticsDir = prepareMacBuildDiagnostics('x86_64-apple-darwin', cmd);
 
   const success = runCommand(cmd, 'Building macOS Intel', {
@@ -335,10 +389,7 @@ if (!autoSkipMacIntel) {
     },
   });
   if (success) {
-    runCommand('pnpm copy-installer', 'Copying macOS Intel installer', {
-      cwd: desktopDir,
-      env: { ...process.env },
-    });
+    bundleArtifactPreserver.preserve('x86_64-apple-darwin');
   }
   results.push({
     platform: 'macOS Intel (x64)',
@@ -358,7 +409,7 @@ if (!autoSkipWin) {
   
   if (isWindows) {
     // Native Windows build
-    cmd = WINDOWS_NATIVE_BUILD_COMMAND;
+    cmd = unsigned ? WINDOWS_NATIVE_UNSIGNED_BUILD_COMMAND : WINDOWS_NATIVE_BUILD_COMMAND;
   } else {
     // Cross-compilation from macOS/Linux using cargo-xwin
     console.log('🔧 Cross-compiling Windows from ' + hostPlatform + '\n');
@@ -366,7 +417,7 @@ if (!autoSkipWin) {
     // Check if cargo-xwin is installed
     try {
       execSync('cargo xwin --version', { stdio: 'ignore' });
-      cmd = WINDOWS_CROSS_BUILD_COMMAND;
+      cmd = unsigned ? WINDOWS_CROSS_UNSIGNED_BUILD_COMMAND : WINDOWS_CROSS_BUILD_COMMAND;
     } catch {
       console.error('❌ cargo-xwin not found. Install with:');
       console.error('   cargo install cargo-xwin');
@@ -386,10 +437,7 @@ if (!autoSkipWin) {
       }
     );
     if (success) {
-      runCommand('pnpm copy-installer', 'Copying Windows installer', {
-        cwd: desktopDir,
-        env: { ...process.env },
-      });
+      bundleArtifactPreserver.preserve('x86_64-pc-windows-msvc');
     }
     results.push({
       platform: 'Windows',
@@ -405,6 +453,29 @@ if (!autoSkipWin) {
   }
 }
 
+let artifactRestoreFailed = false;
+try {
+  const restoredTargets = bundleArtifactPreserver.restore();
+  if (restoredTargets.length > 0) {
+    console.log(`\n📦 Restored bundle artifacts in src-tauri/target for: ${restoredTargets.join(', ')}\n`);
+  }
+} catch (error) {
+  artifactRestoreFailed = true;
+  console.error(`\n❌ Failed to restore preserved bundle artifacts: ${error.message}\n`);
+} finally {
+  bundleArtifactPreserver.cleanup();
+}
+
+if (!artifactRestoreFailed && results.length > 0 && results.every((result) => result.success)) {
+  try {
+    generateGithubReleaseAssets(results);
+    results.push({ platform: 'GitHub release assets', success: true });
+  } catch (error) {
+    console.error(`\n❌ Failed to generate GitHub release assets: ${error.message}\n`);
+    results.push({ platform: 'GitHub release assets', success: false });
+  }
+}
+
 // Summary
 console.log('\n' + '═'.repeat(50));
 console.log('📊 Build Summary');
@@ -416,6 +487,7 @@ for (const result of results) {
   console.log(`  ${icon} ${result.platform}`);
   if (!result.success) allSuccess = false;
 }
+if (artifactRestoreFailed) allSuccess = false;
 
 console.log('\n' + '═'.repeat(50));
 

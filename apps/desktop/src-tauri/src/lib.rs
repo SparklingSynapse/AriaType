@@ -38,7 +38,7 @@ use commands::audio::{
     cancel_recording, get_audio_level, get_recording_state, start_audio_level_monitor,
     start_recording, stop_recording,
 };
-use commands::{hotkey, model, model_cache, settings, system, text, window};
+use commands::{hotkey, model, model_cache, settings, system, text, updater, window};
 use events::EventName;
 use state::app_state::AppState;
 
@@ -232,6 +232,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             let _ = app.emit("single-instance", ());
             show_main_window_best_effort(app, "single_instance");
@@ -334,6 +335,8 @@ pub fn run() {
             hotkey::update_shortcut_profile,
             hotkey::create_custom_profile,
             hotkey::delete_custom_profile,
+            updater::check_for_update,
+            updater::install_update,
         ])
         .setup(|app| {
             // Initialize AppPaths with Tauri's PathResolver for app-specific data directory

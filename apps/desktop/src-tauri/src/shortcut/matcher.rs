@@ -544,6 +544,55 @@ mod tests {
     }
 
     #[test]
+    fn fn_plus_regular_modifier_pattern_triggers_and_releases() {
+        let mut profiles = HashMap::new();
+        profiles.insert(
+            "dictate".to_string(),
+            parse_hotkey_pattern("Fn+Ctrl").unwrap(),
+        );
+        let snapshot = MatcherSnapshot {
+            profiles,
+            cancel: Vec::new(),
+            end: Vec::new(),
+            capture_active: false,
+        };
+        let mut state = MatcherState::default();
+
+        let fn_pressed = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::ModifierPressed(ModifierKey::Function),
+        );
+        let ctrl_pressed = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::ModifierPressed(ModifierKey::CtrlLeft),
+        );
+        let ctrl_released = handle_input(
+            &mut state,
+            &snapshot,
+            MatcherInput::ModifierReleased(ModifierKey::CtrlLeft),
+        );
+
+        assert!(!fn_pressed.swallow);
+        assert!(fn_pressed.events.is_empty());
+        assert!(ctrl_pressed.swallow);
+        assert_eq!(
+            ctrl_pressed.events,
+            vec![MatcherEvent::ProfilePressed {
+                profile_id: "dictate".to_string()
+            }]
+        );
+        assert!(ctrl_released.swallow);
+        assert_eq!(
+            ctrl_released.events,
+            vec![MatcherEvent::ProfileReleased {
+                profile_id: "dictate".to_string()
+            }]
+        );
+    }
+
+    #[test]
     fn cancel_hotkey_takes_precedence_over_active_fn_profile() {
         let mut profiles = HashMap::new();
         profiles.insert("dictate".to_string(), parse_hotkey_pattern("Fn").unwrap());

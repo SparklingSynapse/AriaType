@@ -129,7 +129,7 @@ jobs:
 
       - name: Build Windows NSIS installer
         working-directory: apps/desktop
-        run: pnpm tauri:build:win
+        run: pnpm tauri:build:win:unsigned
 
       - name: Verify installer exists
         shell: bash

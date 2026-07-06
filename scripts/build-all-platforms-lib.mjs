@@ -1,5 +1,7 @@
 import { execSync } from 'child_process';
-import { basename, dirname, resolve, sep } from 'path';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { basename, dirname, join, resolve, sep } from 'path';
 
 export const ENSURE_WINDOWS_RUNTIME_COMMAND =
   'node ../../scripts/ensure-llama-server-runtime.mjs --platform windows';
@@ -7,10 +9,22 @@ export const ENSURE_WINDOWS_RUNTIME_COMMAND =
 export const PREPARE_WINDOWS_RUNTIME_COMMAND =
   'node ../../scripts/prepare-tauri-runtime-resources.mjs --platform windows --require-runtime';
 
+export const RUN_TAURI_BUILD_WITH_UPDATER_SIGNING_COMMAND =
+  'node ../../scripts/run-tauri-build-with-updater-signing.mjs --';
+
+export const UPDATER_CONFIG = 'src-tauri/tauri.updater.conf.json';
+export const NPM_TAURI_BUILD_COMMAND = 'npm run tauri -- build';
+
 export const WINDOWS_NATIVE_BUILD_COMMAND =
-  `${ENSURE_WINDOWS_RUNTIME_COMMAND} && ${PREPARE_WINDOWS_RUNTIME_COMMAND} && pnpm tauri build --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --target x86_64-pc-windows-msvc`;
+  `${ENSURE_WINDOWS_RUNTIME_COMMAND} && ${PREPARE_WINDOWS_RUNTIME_COMMAND} && ${RUN_TAURI_BUILD_WITH_UPDATER_SIGNING_COMMAND} ${NPM_TAURI_BUILD_COMMAND} --config src-tauri/tauri.windows.conf.json --config ${UPDATER_CONFIG} --config src-tauri/tauri.runtime.generated.conf.json --target x86_64-pc-windows-msvc`;
 
 export const WINDOWS_CROSS_BUILD_COMMAND =
+  `${ENSURE_WINDOWS_RUNTIME_COMMAND} && ${PREPARE_WINDOWS_RUNTIME_COMMAND} && ${RUN_TAURI_BUILD_WITH_UPDATER_SIGNING_COMMAND} cargo tauri build --config src-tauri/tauri.windows.conf.json --config ${UPDATER_CONFIG} --config src-tauri/tauri.runtime.generated.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc`;
+
+export const WINDOWS_NATIVE_UNSIGNED_BUILD_COMMAND =
+  `${ENSURE_WINDOWS_RUNTIME_COMMAND} && ${PREPARE_WINDOWS_RUNTIME_COMMAND} && ${NPM_TAURI_BUILD_COMMAND} --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --target x86_64-pc-windows-msvc`;
+
+export const WINDOWS_CROSS_UNSIGNED_BUILD_COMMAND =
   `${ENSURE_WINDOWS_RUNTIME_COMMAND} && ${PREPARE_WINDOWS_RUNTIME_COMMAND} && cargo tauri build --config src-tauri/tauri.windows.conf.json --config src-tauri/tauri.runtime.generated.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc`;
 
 function write(log, level, message) {
@@ -205,6 +219,130 @@ export function windowsCrossBuildEnv(baseEnv = process.env) {
     STATIC_VCRUNTIME: 'false',
     RUSTFLAGS: appendEnvToken(baseEnv.RUSTFLAGS, '-Ctarget-feature=+crt-static'),
   };
+}
+
+export function createBundleArtifactPreserver(options) {
+  const {
+    targetDir,
+    cacheDir = mkdtempSync(join(tmpdir(), 'ariatype-build-artifacts-')),
+    log = console,
+  } = options;
+  const preserved = new Map();
+
+  function bundleDirFor(targetTriple, rootDir = targetDir) {
+    return resolve(rootDir, targetTriple, 'release/bundle');
+  }
+
+  return {
+    cacheDir,
+
+    preserve(targetTriple) {
+      const source = bundleDirFor(targetTriple);
+      if (!existsSync(source)) {
+        write(log, 'warn', `No bundle artifacts found to preserve for ${targetTriple}: ${source}`);
+        return false;
+      }
+
+      const destination = bundleDirFor(targetTriple, cacheDir);
+      rmSync(destination, { recursive: true, force: true });
+      mkdirSync(dirname(destination), { recursive: true });
+      cpSync(source, destination, { recursive: true, force: true });
+      preserved.set(targetTriple, destination);
+      write(log, 'info', `   Preserved bundle artifacts for ${targetTriple}`);
+      return true;
+    },
+
+    restore() {
+      const restored = [];
+      for (const [targetTriple, source] of preserved) {
+        const destination = bundleDirFor(targetTriple);
+        rmSync(destination, { recursive: true, force: true });
+        mkdirSync(dirname(destination), { recursive: true });
+        cpSync(source, destination, { recursive: true, force: true });
+        restored.push(targetTriple);
+      }
+      return restored;
+    },
+
+    cleanup() {
+      rmSync(cacheDir, { recursive: true, force: true });
+    },
+  };
+}
+
+export function collectReleaseAssetsFromTarget(options) {
+  const {
+    targetDir,
+    releaseDir,
+    version,
+    log = console,
+  } = options;
+  const copied = [];
+  const seen = new Set();
+
+  function copyFile(source, fileName = basename(source)) {
+    if (!existsSync(source)) {
+      return false;
+    }
+    const destination = resolve(releaseDir, fileName);
+    cpSync(source, destination, { force: true });
+    if (!seen.has(fileName)) {
+      copied.push(fileName);
+      seen.add(fileName);
+    }
+    return true;
+  }
+
+  function copyFilesFrom(sourceDir, predicate) {
+    if (!existsSync(sourceDir)) {
+      return;
+    }
+    for (const file of readdirSync(sourceDir).sort()) {
+      if (predicate(file)) {
+        copyFile(resolve(sourceDir, file), file);
+      }
+    }
+  }
+
+  rmSync(releaseDir, { recursive: true, force: true });
+  mkdirSync(releaseDir, { recursive: true });
+
+  const macTargets = [
+    { targetTriple: 'aarch64-apple-darwin', archiveSuffix: `${version}_aarch64` },
+    { targetTriple: 'x86_64-apple-darwin', archiveSuffix: `${version}_x64` },
+    { targetTriple: 'universal-apple-darwin', archiveSuffix: '' },
+  ];
+  for (const target of macTargets) {
+    const bundleDir = resolve(targetDir, target.targetTriple, 'release/bundle');
+    copyFilesFrom(resolve(bundleDir, 'dmg'), (file) => file.endsWith('.dmg'));
+
+    const updaterArchive = resolve(bundleDir, 'macos/AriaType.app.tar.gz');
+    const updaterArchiveName = target.archiveSuffix
+      ? `AriaType_${target.archiveSuffix}.app.tar.gz`
+      : 'AriaType.app.tar.gz';
+    if (copyFile(updaterArchive, updaterArchiveName)) {
+      copyFile(`${updaterArchive}.sig`, `${updaterArchiveName}.sig`);
+    }
+  }
+
+  const windowsBundleDirs = [
+    resolve(targetDir, 'x86_64-pc-windows-msvc/release/bundle/nsis'),
+    resolve(targetDir, 'release/bundle/nsis'),
+    resolve(targetDir, 'x86_64-pc-windows-msvc/release/bundle/msi'),
+    resolve(targetDir, 'release/bundle/msi'),
+  ];
+  for (const bundleDir of windowsBundleDirs) {
+    copyFilesFrom(bundleDir, (file) => (
+      file.endsWith('.exe')
+      || file.endsWith('.msi')
+      || file.endsWith('.nsis.zip')
+      || file.endsWith('.msi.zip')
+      || file.endsWith('.sig')
+    ));
+  }
+
+  write(log, 'info', `   Collected ${copied.length} GitHub release asset(s) in ${releaseDir}`);
+  return copied;
 }
 
 export function runCommand(command, description, options = {}) {

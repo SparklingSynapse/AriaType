@@ -5,6 +5,7 @@ node_modules/
 .expo-shared/
 .sisyphus/
 dist/
+.pnpm-store/
 web-build/
 coverage/
 .env
@@ -30,6 +31,7 @@ playwright-report/
 **/*-trace.zip
 apps/desktop/src-tauri/capabilities/e2e.json
 apps/desktop/src-tauri/tauri.runtime.generated.conf.json
+apps/desktop/src-tauri/tauri.updater.generated.conf.json
 apps/desktop/tests/e2e/.runtime/
 apps/desktop/.build-diagnostics/
 
@@ -56,4 +58,5 @@ out/
 
 # Website build
 packages/website/out/
+packages/website/public/release/
 apps/desktop/tsconfig.tsbuildinfo
