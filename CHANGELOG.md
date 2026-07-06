@@ -4,9 +4,13 @@ All notable changes to the desktop application will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- Support updater (9734996)
+
 ### Bug Fixes
 
-- Allow fn modifier chord hotkeys (dee9af6)
+- Allow fn modifier chord hotkeys (816a7db)
 
 ## v1.0.4 (2026-07-02)
 
