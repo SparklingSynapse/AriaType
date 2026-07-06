@@ -4,8 +4,19 @@ All notable changes to the desktop application will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- Support updater (9734996)
+
 ### Bug Fixes
 
+- Allow fn modifier chord hotkeys (816a7db)
+
+## v1.0.4 (2026-07-02)
+
+### Bug Fixes
+
+- Release modifiers after windows paste injection (b5c4a73)
 - Stt sidecar should not lanuch terminal (83863b5)
 - Llm sidecar should not lanuch terminal (165caab)
 - Select popover can not be clicked (8d7caa9)

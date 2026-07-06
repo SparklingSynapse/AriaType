@@ -1,4 +1,4 @@
-import { useRelease, getMacArchitecture, pickMacDownloadUrl } from './useRelease';
+import { useRelease, getMacArchitecture } from './useRelease';
 import { useAnalytics } from '@/lib/analytics';
 import { AnalyticsEvents } from '@/lib/events';
 
@@ -7,13 +7,12 @@ export function useDownload(location: string) {
   const { trackEvent } = useAnalytics();
 
   const isMac = platform === 'mac';
-  const defaultMacUrl = release ? pickMacDownloadUrl(release, macArch) : '';
-  const canDirectDownload = !!(release && isMac && defaultMacUrl);
-  const downloadUrl = canDirectDownload ? defaultMacUrl : null;
+  const defaultMacUrl = release.url;
+  const downloadUrl = release.url;
+  const canDirectDownload = !!downloadUrl;
 
   const trackDownload = (url?: string) => {
-    if (!release) return;
-    const trackedUrl = url || defaultMacUrl || release.url;
+    const trackedUrl = url || downloadUrl || defaultMacUrl || release.url;
     trackEvent(AnalyticsEvents.DOWNLOAD_CLICK, {
       platform,
       url: trackedUrl,

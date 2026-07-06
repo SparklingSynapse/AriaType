@@ -41,4 +41,4 @@ function run(command, commandArgs, description) {
 }
 
 run('node', ['scripts/build-all-platforms.mjs', ...args], 'Desktop multi-platform build');
-run('pnpm', ['build:website'], 'Website build');
+run('npm', ['run', 'build:website'], 'Website build');
